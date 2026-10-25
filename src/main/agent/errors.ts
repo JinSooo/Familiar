@@ -1,0 +1,31 @@
+export function agentError(error: unknown): Error {
+  const chain: string[] = []
+  let current = error
+  for (let i = 0; i < 6 && current; i++) {
+    if (current instanceof Error) chain.push(current.message)
+    if (typeof current !== 'object') break
+    const item = current as {
+      statusCode?: number
+      cause?: unknown
+      code?: string
+    }
+    chain.push(String(item.statusCode ?? ''), item.code ?? '')
+    current = item.cause
+  }
+  const text = chain.join(' ')
+  let message: string
+  if (/401|403|unauthorized|invalid.*key/i.test(text))
+    message = '模型服务拒绝访问，请检查 API Key 和账号权限。'
+  else if (/404|model.*not.*found|unknown model/i.test(text))
+    message = '模型或接口不存在，请检查模型名称、协议和 Base URL。'
+  else if (/429|rate.limit/i.test(text))
+    message = '模型服务请求过多或额度不足，请检查余额或稍后重试。'
+  else if (
+    /fetch failed|network|ECONN|ENOTFOUND|EHOST|ETIMEDOUT|timeout/i.test(text)
+  )
+    message = '无法连接模型服务，请检查网络、代理和 Base URL。'
+  else if (error instanceof Error && /[\u3400-\u9fff]/u.test(error.message))
+    message = error.message
+  else message = '模型运行失败，请检查模型设置或稍后重试。'
+  return new Error(message, { cause: error })
+}

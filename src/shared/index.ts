@@ -1,0 +1,168 @@
+import { z } from 'zod'
+export const settingsSchema = z.object({
+  model: z
+    .object({
+      protocol: z
+        .enum(['openai-compatible', 'openai-responses', 'anthropic'])
+        .default('openai-compatible'),
+      baseURL: z.string().default(''),
+      apiKey: z.string().default(''),
+      model: z.string().default(''),
+      // Relay (中转站) options. authStyle only applies to the Anthropic protocol.
+      authStyle: z.enum(['x-api-key', 'bearer']).default('x-api-key'),
+      headers: z
+        .array(z.object({ name: z.string(), value: z.string() }))
+        .default([]),
+      /** Merged verbatim into every request body. */
+      extraBody: z.record(z.string(), z.unknown()).default({}),
+    })
+    .prefault({}),
+  pet: z
+    .object({
+      id: z.string().default('xiaohei-q'),
+      name: z.string().trim().min(1).max(40).default('小黑'),
+      size: z.enum(['small', 'medium', 'large']).default('medium'),
+    })
+    .prefault({}),
+  permissionMode: z.enum(['ask', 'auto', 'full']).default('auto'),
+  dirRules: z
+    .array(
+      z.object({ path: z.string(), access: z.enum(['allow', 'ask', 'deny']) }),
+    )
+    .default([]),
+  workspacePath: z.string().default('~/Familiar'),
+})
+export type Settings = z.infer<typeof settingsSchema>
+export type PublicSettings = Omit<Settings, 'model'> & {
+  model: Omit<Settings['model'], 'apiKey'> & { apiKeySet: boolean }
+}
+export type SettingsUpdate = Omit<Settings, 'model'> & {
+  model: Omit<Settings['model'], 'apiKey'> & { apiKey?: string }
+}
+export type ApprovalDecision = 'approve' | 'deny'
+/** Long-lived activity, chosen by the main process; see docs/design.md §9. */
+export type PetState =
+  | 'idle'
+  | 'listening'
+  | 'thinking'
+  | 'talking'
+  | 'needs-you'
+  | 'done'
+  | 'failed'
+  | 'sleeping'
+/** One-shot animations that play once and fall back to the current PetState. */
+export type PetGesture = 'wave' | 'jump' | 'petted' | 'poked'
+
+/** One animation row inside a 192x208-cell, 8-column sprite sheet. */
+export const spriteRowSchema = z.object({
+  row: z.number().int().min(0),
+  frames: z.number().int().min(1).max(8),
+  loop: z.boolean(),
+})
+/**
+ * familiar.json, stored next to a ChatGPT pet's pet.json. Adds animation rows that the
+ * ChatGPT sheet lacks, in a separate sheet so the original stays untouched.
+ */
+export const skinExtensionSchema = z.object({
+  version: z.literal(1),
+  sheet: z.string(),
+  rows: z.record(z.string(), spriteRowSchema),
+})
+export type SkinExtension = z.infer<typeof skinExtensionSchema>
+export interface PetSkin {
+  id: string
+  displayName: string
+  description: string
+  /** URL the renderer can load (served by the main process). */
+  spritesheetUrl: string
+  /** ChatGPT sheet version: v1 = 1536x1872 (rows 0-8), v2 = 1536x2288 (adds look rows 9-10). */
+  version: 1 | 2
+  extension?: { sheetUrl: string; rows: SkinExtension['rows'] }
+}
+export const messageSchema = z.object({
+  role: z.enum(['user', 'assistant']),
+  content: z.string().max(100000),
+})
+export type Message = z.infer<typeof messageSchema>
+export type AgentEvent =
+  | { type: 'text-delta'; text: string }
+  | { type: 'tool-call'; id: string; toolName: string; input: unknown }
+  | {
+      type: 'tool-approval-request'
+      id: string
+      toolName: string
+      input: unknown
+      reason: string
+    }
+  | { type: 'tool-result'; id: string; output: unknown }
+  | { type: 'finish'; stopped?: boolean }
+  | { type: 'error'; message: string }
+export const IPC = {
+  settingsGet: 'settings:get',
+  settingsSave: 'settings:save',
+  agentRun: 'agent:run',
+  agentStop: 'agent:stop',
+  agentEvent: 'agent:event',
+  approval: 'agent:approval',
+  petState: 'pet:state',
+  petSize: 'pet:size',
+  petFinished: 'pet:finished',
+  typing: 'pet:typing',
+  petHit: 'pet:hit',
+  drag: 'pet:drag',
+  toggleChat: 'chat:toggle',
+  view: 'chat:view',
+  petGesture: 'pet:gesture',
+  petSkin: 'pet:skin',
+  petsList: 'pets:list',
+  petsImport: 'pets:import',
+  ready: 'window:ready',
+  session: 'session:changed',
+  sessionGet: 'session:get',
+  sessionNew: 'session:new',
+  capsule: 'overlay:capsule',
+  appearance: 'appearance:changed',
+  settingsOpen: 'settings:open',
+} as const
+export type DragAction = 'start' | 'move' | 'end'
+export interface FamiliarAPI {
+  getSettings(): Promise<PublicSettings>
+  saveSettings(settings: SettingsUpdate): Promise<PublicSettings>
+  run(text: string): Promise<void>
+  getSession(): Promise<Session>
+  onSession(callback: (session: Session) => void): () => void
+  newSession(): void
+  openSettings(): void
+  capsule(open: boolean): void
+  onCapsule(callback: (open: boolean) => void): () => void
+  onAppearance(callback: (accent: string) => void): () => void
+  stop(): void
+  approve(id: string, decision: ApprovalDecision): void
+  hit(inside: boolean): void
+  drag(action: DragAction): void
+  toggleChat(): void
+  ready(): void
+  onEvent(callback: (event: AgentEvent) => void): () => void
+  onState(callback: (state: PetState) => void): () => void
+  onView(callback: (view: 'chat' | 'settings') => void): () => void
+  typing(hasText: boolean): void
+  animationFinished(): void
+  onSize(callback: (size: Settings['pet']['size']) => void): () => void
+  getPetSkin(): Promise<PetSkin>
+  listPets(): Promise<PetSkin[]>
+  /** Copies pets from ~/.codex/pets into Familiar's own pet library. */
+  importCodexPets(): Promise<PetSkin[]>
+  onGesture(callback: (gesture: PetGesture) => void): () => void
+  onSkin(callback: (skin: PetSkin) => void): () => void
+}
+
+export type Approval = Extract<AgentEvent, { type: 'tool-approval-request' }>
+export interface Session {
+  messages: Message[]
+  running: boolean
+  approvals: Approval[]
+  tools: { id: string; name: string; done: boolean }[]
+  error: string
+  origin: 'capsule' | 'chat'
+  bubble: string
+}

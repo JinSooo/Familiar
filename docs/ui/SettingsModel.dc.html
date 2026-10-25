@@ -1,0 +1,625 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>设置模型</title>
+    <script src="./support.js"></script>
+  </head>
+  <body>
+    <x-dc>
+      <helmet>
+        <style>
+          body {
+            margin: 0;
+          }
+          a {
+            color: #0a66d8;
+          }
+          a:hover {
+            color: #0852ae;
+          }
+        </style>
+      </helmet>
+      <div
+        style="
+          width: 760px;
+          height: 600px;
+          box-sizing: border-box;
+          display: flex;
+          border-radius: 14px;
+          overflow: hidden;
+          background: #f5f5f5;
+          box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.2);
+          font-family:
+            -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC',
+            system-ui, sans-serif;
+          font-size: 13px;
+          color: #1d1d1f;
+        "
+      >
+        <nav
+          aria-label="设置分类"
+          style="
+            width: 200px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            padding: 12px 10px;
+            background: #e9e9eb;
+            border-right: 0.5px solid rgba(0, 0, 0, 0.12);
+          "
+        >
+          <div style="display: flex; gap: 8px; padding: 2px 4px 12px">
+            <span
+              style="
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+                background: #ff5f57;
+              "
+            ></span>
+            <span
+              style="
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+                background: #febc2e;
+              "
+            ></span>
+            <span
+              style="
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+                background: #28c840;
+              "
+            ></span>
+          </div>
+          <label
+            for="settings-search"
+            style="
+              position: absolute;
+              width: 1px;
+              height: 1px;
+              overflow: hidden;
+              clip: rect(0 0 0 0);
+            "
+            >搜索</label
+          >
+          <input
+            id="settings-search"
+            placeholder="搜索"
+            style="
+              height: 26px;
+              box-sizing: border-box;
+              margin-bottom: 10px;
+              padding: 0 8px;
+              border-radius: 7px;
+              border: 0;
+              background: rgba(0, 0, 0, 0.06);
+              font-family: inherit;
+              font-size: 13px;
+            "
+          />
+          <a
+            href="#model"
+            style="
+              display: flex;
+              align-items: center;
+              gap: 8px;
+              height: 28px;
+              padding: 0 6px;
+              border-radius: 7px;
+              background: #0a66d8;
+              color: #ffffff;
+              text-decoration: none;
+            "
+          >
+            <span
+              style="
+                width: 20px;
+                height: 20px;
+                border-radius: 5px;
+                background: #ffffff;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: #0a66d8;
+              "
+            >
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.4"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path
+                  d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z"
+                ></path>
+              </svg> </span
+            >模型</a
+          >
+          <a
+            href="#permissions"
+            style="
+              display: flex;
+              align-items: center;
+              gap: 8px;
+              height: 28px;
+              padding: 0 6px;
+              border-radius: 7px;
+              color: #1d1d1f;
+              text-decoration: none;
+            "
+          >
+            <span
+              style="
+                width: 20px;
+                height: 20px;
+                border-radius: 5px;
+                background: #8e8e93;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: #ffffff;
+              "
+            >
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.4"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <rect x="5" y="11" width="14" height="10" rx="2"></rect>
+                <path d="M8 11V7a4 4 0 0 1 8 0v4"></path>
+              </svg> </span
+            >权限</a
+          >
+          <a
+            href="SettingsPet.dc.html"
+            style="
+              display: flex;
+              align-items: center;
+              gap: 8px;
+              height: 28px;
+              padding: 0 6px;
+              border-radius: 7px;
+              color: #1d1d1f;
+              text-decoration: none;
+            "
+          >
+            <span
+              style="
+                width: 20px;
+                height: 20px;
+                border-radius: 5px;
+                background: #34a853;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: #ffffff;
+              "
+            >
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <circle cx="7" cy="9" r="2.2"></circle>
+                <circle cx="17" cy="9" r="2.2"></circle>
+                <circle cx="10" cy="5" r="2"></circle>
+                <circle cx="14" cy="5" r="2"></circle>
+                <path
+                  d="M12 11c-3 0-6 3.5-6 6.5 0 2 2 2.5 3.5 2 1-.3 1.7-.6 2.5-.6s1.5.3 2.5.6c1.5.5 3.5 0 3.5-2 0-3-3-6.5-6-6.5z"
+                ></path>
+              </svg> </span
+            >宠物</a
+          >
+          <a
+            href="#privacy"
+            style="
+              display: flex;
+              align-items: center;
+              gap: 8px;
+              height: 28px;
+              padding: 0 6px;
+              border-radius: 7px;
+              color: #1d1d1f;
+              text-decoration: none;
+            "
+          >
+            <span
+              style="
+                width: 20px;
+                height: 20px;
+                border-radius: 5px;
+                background: #2f7cf6;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: #ffffff;
+              "
+            >
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.4"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"></path>
+              </svg> </span
+            >隐私</a
+          >
+        </nav>
+
+        <div
+          style="
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+          "
+        >
+          <div
+            style="
+              height: 52px;
+              flex-shrink: 0;
+              display: flex;
+              align-items: center;
+              padding: 0 24px;
+            "
+          >
+            <h1 style="margin: 0; font-size: 15px; font-weight: 600">模型</h1>
+          </div>
+          <div
+            style="
+              flex-grow: 1;
+              display: flex;
+              flex-direction: column;
+              gap: 18px;
+              padding: 4px 24px 24px;
+              overflow: hidden;
+            "
+          >
+            <div
+              style="
+                display: flex;
+                flex-direction: column;
+                border-radius: 10px;
+                background: #ffffff;
+                box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.1);
+              "
+            >
+              <div
+                style="
+                  display: flex;
+                  align-items: center;
+                  gap: 12px;
+                  min-height: 40px;
+                  padding: 0 12px;
+                "
+              >
+                <span style="flex-grow: 1">协议</span>
+                <select
+                  aria-label="协议"
+                  style="
+                    height: 22px;
+                    padding: 0 6px;
+                    border-radius: 5px;
+                    border: 0;
+                    background: #ffffff;
+                    box-shadow:
+                      0 0 0 0.5px rgba(0, 0, 0, 0.2),
+                      0 1px 1px rgba(0, 0, 0, 0.06);
+                    font-family: inherit;
+                    font-size: 13px;
+                    color: #1d1d1f;
+                  "
+                >
+                  <option>Anthropic Messages</option>
+                  <option>OpenAI 兼容</option>
+                  <option>OpenAI Responses</option>
+                </select>
+              </div>
+              <div
+                style="
+                  height: 0.5px;
+                  margin-left: 12px;
+                  background: rgba(0, 0, 0, 0.1);
+                "
+              ></div>
+              <label
+                style="
+                  display: flex;
+                  align-items: center;
+                  gap: 12px;
+                  min-height: 40px;
+                  padding: 0 12px;
+                "
+              >
+                <span style="flex-grow: 1">Base URL</span>
+                <input
+                  value="https://relay.example.com/v1"
+                  style="
+                    width: 260px;
+                    height: 22px;
+                    box-sizing: border-box;
+                    padding: 0 6px;
+                    border-radius: 5px;
+                    border: 0;
+                    background: #ffffff;
+                    box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.22);
+                    font-family: inherit;
+                    font-size: 13px;
+                    text-align: right;
+                    color: #1d1d1f;
+                  "
+                />
+              </label>
+              <div
+                style="
+                  height: 0.5px;
+                  margin-left: 12px;
+                  background: rgba(0, 0, 0, 0.1);
+                "
+              ></div>
+              <label
+                style="
+                  display: flex;
+                  align-items: center;
+                  gap: 12px;
+                  min-height: 40px;
+                  padding: 0 12px;
+                "
+              >
+                <span style="flex-grow: 1">模型</span>
+                <input
+                  value="[模型名]"
+                  style="
+                    width: 260px;
+                    height: 22px;
+                    box-sizing: border-box;
+                    padding: 0 6px;
+                    border-radius: 5px;
+                    border: 0;
+                    background: #ffffff;
+                    box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.22);
+                    font-family: inherit;
+                    font-size: 13px;
+                    text-align: right;
+                    color: #1d1d1f;
+                  "
+                />
+              </label>
+              <div
+                style="
+                  height: 0.5px;
+                  margin-left: 12px;
+                  background: rgba(0, 0, 0, 0.1);
+                "
+              ></div>
+              <label
+                style="
+                  display: flex;
+                  align-items: center;
+                  gap: 12px;
+                  min-height: 40px;
+                  padding: 0 12px;
+                "
+              >
+                <span style="flex-grow: 1">API Key</span>
+                <input
+                  type="password"
+                  placeholder="已保存在钥匙串"
+                  style="
+                    width: 260px;
+                    height: 22px;
+                    box-sizing: border-box;
+                    padding: 0 6px;
+                    border-radius: 5px;
+                    border: 0;
+                    background: #ffffff;
+                    box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.22);
+                    font-family: inherit;
+                    font-size: 13px;
+                    text-align: right;
+                  "
+                />
+              </label>
+              <div
+                style="
+                  height: 0.5px;
+                  margin-left: 12px;
+                  background: rgba(0, 0, 0, 0.1);
+                "
+              ></div>
+              <div
+                style="
+                  display: flex;
+                  align-items: center;
+                  gap: 12px;
+                  min-height: 40px;
+                  padding: 0 12px;
+                "
+              >
+                <span style="flex-grow: 1">认证方式</span>
+                <select
+                  aria-label="认证方式"
+                  style="
+                    height: 22px;
+                    padding: 0 6px;
+                    border-radius: 5px;
+                    border: 0;
+                    background: #ffffff;
+                    box-shadow:
+                      0 0 0 0.5px rgba(0, 0, 0, 0.2),
+                      0 1px 1px rgba(0, 0, 0, 0.06);
+                    font-family: inherit;
+                    font-size: 13px;
+                    color: #1d1d1f;
+                  "
+                >
+                  <option>Authorization: Bearer</option>
+                  <option>x-api-key</option>
+                </select>
+              </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 6px">
+              <span style="padding: 0 12px; font-size: 13px; font-weight: 600"
+                >中转高级参数</span
+              >
+              <div
+                style="
+                  display: flex;
+                  flex-direction: column;
+                  border-radius: 10px;
+                  background: #ffffff;
+                  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.1);
+                "
+              >
+                <div
+                  style="
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    min-height: 36px;
+                    padding: 0 12px;
+                    font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+                    font-size: 12px;
+                  "
+                >
+                  <span style="flex-grow: 1">X-Relay-Group</span>
+                  <span style="color: #6e6e73">claude</span>
+                </div>
+                <div
+                  style="
+                    height: 0.5px;
+                    margin-left: 12px;
+                    background: rgba(0, 0, 0, 0.1);
+                  "
+                ></div>
+                <div
+                  style="
+                    display: flex;
+                    align-items: center;
+                    gap: 4px;
+                    min-height: 32px;
+                    padding: 0 8px;
+                  "
+                >
+                  <button
+                    aria-label="添加请求头"
+                    style="
+                      width: 22px;
+                      height: 22px;
+                      border-radius: 5px;
+                      border: 0;
+                      background: transparent;
+                      color: #1d1d1f;
+                      font-size: 16px;
+                      line-height: 1;
+                    "
+                  >
+                    +
+                  </button>
+                  <button
+                    aria-label="删除请求头"
+                    style="
+                      width: 22px;
+                      height: 22px;
+                      border-radius: 5px;
+                      border: 0;
+                      background: transparent;
+                      color: #1d1d1f;
+                      font-size: 16px;
+                      line-height: 1;
+                    "
+                  >
+                    −
+                  </button>
+                  <span
+                    style="margin-left: 6px; font-size: 11px; color: #6e6e73"
+                    >自定义请求头</span
+                  >
+                </div>
+                <div
+                  style="
+                    height: 0.5px;
+                    margin-left: 12px;
+                    background: rgba(0, 0, 0, 0.1);
+                  "
+                ></div>
+                <label
+                  style="
+                    display: flex;
+                    flex-direction: column;
+                    gap: 6px;
+                    padding: 10px 12px;
+                  "
+                >
+                  <span>额外请求参数</span>
+                  <textarea
+                    rows="2"
+                    style="
+                      box-sizing: border-box;
+                      padding: 6px 8px;
+                      border-radius: 6px;
+                      border: 0;
+                      background: #f5f5f7;
+                      box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.14);
+                      resize: none;
+                      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+                      font-size: 12px;
+                      color: #1d1d1f;
+                    "
+                  >
+{ "service_tier": "default" }</textarea>
+                </label>
+              </div>
+              <span
+                style="
+                  padding: 0 12px;
+                  font-size: 11px;
+                  line-height: 1.5;
+                  color: #6e6e73;
+                "
+                >请求头和参数会附加到每一次模型请求。认证方式只对 Anthropic
+                协议生效。</span
+              >
+            </div>
+          </div>
+        </div>
+      </div>
+    </x-dc>
+    <script
+      type="text/x-dc"
+      data-dc-script
+      data-props='{"$preview":{"width":760,"height":600}}'
+    >
+      class Component extends DCLogic {
+        renderVals() {
+          return {};
+        }
+      }
+    </script>
+  </body>
+</html>

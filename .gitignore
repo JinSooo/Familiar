@@ -1,0 +1,7 @@
+node_modules/
+out/
+.DS_Store
+*.log
+.smoke-user-data/
+.pnpm-store/
+.pnpm-state/

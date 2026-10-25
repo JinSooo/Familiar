@@ -1,0 +1,7 @@
+node_modules
+out
+pnpm-lock.yaml
+docs/design.md
+.smoke-user-data
+.pnpm-store
+.pnpm-state

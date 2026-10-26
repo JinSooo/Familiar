@@ -17,8 +17,8 @@ export function beginTurn(
     ...session,
     messages: [
       ...session.messages.filter((m) => m.content),
-      { role: 'user', content: text },
-      { role: 'assistant', content: '' },
+      { role: 'user', content: text, createdAt: Date.now() },
+      { role: 'assistant', content: '', createdAt: Date.now() },
     ],
     running: true,
     approvals: [],

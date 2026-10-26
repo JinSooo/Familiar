@@ -158,7 +158,7 @@ export interface FamiliarAPI {
 
 export type Approval = Extract<AgentEvent, { type: 'tool-approval-request' }>
 export interface Session {
-  messages: Message[]
+  messages: (Message & { createdAt: number })[]
   running: boolean
   approvals: Approval[]
   tools: { id: string; name: string; done: boolean }[]

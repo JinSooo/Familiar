@@ -1,5 +1,6 @@
 import {
   app,
+  shell,
   BrowserWindow,
   ipcMain,
   Menu,
@@ -183,8 +184,23 @@ function persistPosition(): void {
   }
 }
 async function loadWindow(win: BrowserWindow, kind: string): Promise<void> {
-  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-  win.webContents.on('will-navigate', (event) => event.preventDefault())
+  const openExternal = (url: string) => {
+    if (kind !== 'chat' && kind !== 'settings') return
+    try {
+      if (['http:', 'https:', 'mailto:'].includes(new URL(url).protocol))
+        void shell.openExternal(url).catch(console.error)
+    } catch {
+      /* Invalid URLs are denied. */
+    }
+  }
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    openExternal(url)
+    return { action: 'deny' }
+  })
+  win.webContents.on('will-navigate', (event, url) => {
+    event.preventDefault()
+    openExternal(url)
+  })
   win.webContents.on('render-process-gone', (_event, details) =>
     console.error('Renderer exited', details.reason),
   )
@@ -397,7 +413,9 @@ async function start(): Promise<void> {
       text,
       event.sender === pet.webContents ? 'capsule' : 'chat',
     )
-    const messages = session.messages.filter((m) => m.content)
+    const messages = session.messages
+      .filter((m) => m.content)
+      .map(({ role, content }) => ({ role, content }))
     publishSession()
     resetRequested = false
     const run = new AbortController()

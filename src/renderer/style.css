@@ -467,6 +467,10 @@ h2 {
   padding: 2px;
 }
 .segmented button {
+  height: 22px;
+  padding: 0 14px;
+  border-radius: 5px;
+  font-size: 12px;
   box-shadow: none;
   background: transparent;
 }
@@ -515,10 +519,24 @@ h2 {
   font-size: 13px;
   font-weight: 600;
 }
+/* Fixed height with zero vertical padding: 4px padding inside 22px left 14px for 18px text. */
 .settings input,
 .settings select {
-  height: 22px;
+  height: 24px;
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: 24px;
   font-size: 13px;
+}
+/* Chromium's native mac popup ignores our box and clips its label, so draw it ourselves. */
+.settings select {
+  appearance: none;
+  padding: 0 26px 0 10px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23999' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  background-size: 10px 6px;
+  cursor: default;
 }
 .settings .group > label.stacked {
   flex-direction: column;

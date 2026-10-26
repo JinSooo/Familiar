@@ -1,3 +1,4 @@
+import { bubblePlainText } from '../chat/content'
 import { useEffect, useState, type CSSProperties } from 'react'
 import { api } from '../api'
 import { Pet } from '../pet/Pet'
@@ -71,7 +72,7 @@ export function Overlay() {
     >
       <Pet />
       {session.bubble && session.origin === 'capsule' && (
-        <Bubble text={session.bubble.slice(0, 81)} fading={fading} />
+        <Bubble text={bubblePlainText(session.bubble)} fading={fading} />
       )}
       {open && (
         <div className="capsule">

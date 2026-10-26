@@ -25,8 +25,7 @@ export function agentError(error: unknown): Error {
       text,
     )
   )
-    message =
-      '回复传到一半连接断开了（中转站或代理不稳定），请重试。'
+    message = '回复传到一半连接断开了（中转站或代理不稳定），请重试。'
   else if (
     /fetch failed|network|ECONN|ENOTFOUND|EHOST|ETIMEDOUT|timeout/i.test(text)
   )

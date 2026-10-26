@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { Markdown, PlainText } from './Markdown'
+import { needsTimeDivider, formatMessageTime } from './content'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { Icon } from '../shared-ui/Icon'
 import type { PetState } from '../../shared'
 import { api } from '../api'
@@ -12,6 +14,9 @@ export function Chat() {
   const [name, setName] = useState('小黑')
   const [mode, setMode] = useState('自动')
   const bottom = useRef<HTMLDivElement>(null)
+  const list = useRef<HTMLElement>(null)
+  // Follow new output only while the reader is already near the bottom.
+  const pinned = useRef(true)
   useEffect(() => {
     const update = () => {
       void api.getSettings().then((s) => {
@@ -25,9 +30,18 @@ export function Chat() {
     window.addEventListener('focus', update)
     return () => window.removeEventListener('focus', update)
   }, [])
+  const last = session.messages.at(-1)
+  const contentKey = `${session.messages.length}:${last?.content.length ?? 0}:${session.approvals.length}:${session.tools.length}`
   useEffect(() => {
-    bottom.current?.scrollIntoView()
-  }, [session])
+    if (pinned.current) bottom.current?.scrollIntoView()
+  }, [contentKey])
+  // A message the user just sent always scrolls into view.
+  useEffect(() => {
+    if (last?.role === 'user' || (session.running && !last?.content)) {
+      pinned.current = true
+      bottom.current?.scrollIntoView()
+    }
+  }, [session.messages.length])
   return (
     <main className="chat-shell">
       {session.running && state === 'thinking' && (
@@ -64,16 +78,45 @@ export function Chat() {
             </button>
           </div>
         </header>
-        <section className="messages" aria-label="聊天消息" aria-live="polite">
+        <section
+          className="messages"
+          aria-label="聊天消息"
+          aria-live="polite"
+          ref={list}
+          onScroll={(e) => {
+            const el = e.currentTarget
+            pinned.current =
+              el.scrollHeight - el.scrollTop - el.clientHeight < 48
+          }}
+        >
           {!session.messages.length && (
             <p className="empty muted">和{name}说句话…</p>
           )}
           {session.messages.map(
             (m, i) =>
               m.content && (
-                <article className={`message ${m.role}`} key={i}>
-                  {m.content}
-                </article>
+                <Fragment key={i}>
+                  {needsTimeDivider(
+                    session.messages[i - 1]?.createdAt,
+                    m.createdAt,
+                  ) && (
+                    <div className="time-divider">
+                      {formatMessageTime(m.createdAt, Date.now())}
+                    </div>
+                  )}
+                  <article
+                    className={`message ${m.role}`}
+                    title={new Date(m.createdAt).toLocaleString('zh-CN', {
+                      hour12: false,
+                    })}
+                  >
+                    {m.role === 'assistant' ? (
+                      <Markdown content={m.content} />
+                    ) : (
+                      <PlainText content={m.content} />
+                    )}
+                  </article>
+                </Fragment>
               ),
           )}
           {session.tools.map((t) => (

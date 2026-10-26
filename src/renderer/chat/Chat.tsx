@@ -5,6 +5,7 @@ import { Icon } from '../shared-ui/Icon'
 import type { PetState } from '../../shared'
 import { api } from '../api'
 import { Pet } from '../pet/Pet'
+import { PetAvatar } from '../pet/PetAvatar'
 import { Composer } from '../shared-ui/Composer'
 import { useSession } from '../shared-ui/session'
 export function Chat() {
@@ -51,7 +52,7 @@ export function Chat() {
       )}
       <div className="chat-surface">
         <header className="chat-header">
-          <Pet embedded scale={0.12} />
+          <PetAvatar />
           <strong>{name}</strong>
           <small className="muted">{mode}</small>
           <div className="header-actions">

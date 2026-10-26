@@ -5,3 +5,7 @@ out/
 .smoke-user-data/
 .pnpm-store/
 .pnpm-state/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/binaries/
+dist/

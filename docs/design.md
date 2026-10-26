@@ -33,31 +33,28 @@ Familiar 是一只住在 macOS 桌面上的宠物，同时也是一个自主运�
 
 ## 3. 架构
 
+> 2026-10-26 从 Electron 迁移到 Tauri + TS 进程，详细分工与协议见 `docs/architecture.md`；Electron 版保留在 git 标签 `electron-prototype`。
+
 ```
-┌──────────────────────── Electron app ────────────────────────┐
-│ Renderer：宠物窗口（透明、置顶、穿透）+ 聊天面板 + 设置/数据面板 │
-│            ▲ IPC                                              │
-│ Main process = TS 大脑                                         │
-│   ├─ Agent loop：Vercel AI SDK 7（ToolLoopAgent + toolApproval）│
-│   ├─ Provider 抽象（OpenAI 兼容 / Anthropic Messages，base_url）│
-│   ├─ 记忆：Markdown 为准 + SQLite（FTS5 + sqlite-vec）索引       │
-│   ├─ 调度器：心跳、触发规则、打扰预算（croner）                  │
-│   ├─ Computer History 整理：缓冲 → 摘要 → 时间线 / 候选记忆       │
-│   ├─ 知识库索引                                                │
-│   └─ 权限引擎：三档模式 + 目录规则 + 硬性禁区 + git 快照 + 沙箱   │
-│            ▲ stdio（NDJSON JSON-RPC）                          │
-│ Swift 采集小程序：NSWorkspace 前台应用事件 + AXUIElement 文本    │
-└──────────────────────────────────────────────────────────────┘
+┌──────────── Tauri 壳（Rust，src-tauri/）────────────┐
+│ 宠物覆盖层 NSPanel · 聊天面板 NSPanel · 设置窗口       │
+│ 点击穿透（AppKit 坐标轮询）· 拖动 · 托盘 / 菜单         │
+│ familiar-pet:// 资源协议 · 启动并守护 agent 进程       │
+└──────▲ Tauri invoke / event ──────▲ stdio NDJSON ─────┘
+       │                             │
+ 界面（React，src/renderer/）   大脑（TS，Bun，agent/）
+ 宠物动画 · 胶囊 · 气泡          Agent loop：Vercel AI SDK 7
+ 聊天面板 · 设置页               Provider 抽象 · 重试 · 权限 · 工具 · 沙箱
+                                会话 · 宠物状态机 · 设置（钥匙串）
+                                记忆 / 调度 / 知识库 / Computer History（P1 起）
 ```
 
-- **壳**：Electron。整个项目基本只用 TS 一种语言，大脑直接跑在主进程里，不用再维护一个 sidecar 进程和两边的通信协议。评估过 Tauri v2 和 Swift 原生，未采用，理由见 §13。
-- **agent loop**：Vercel AI SDK 7，作为库在进程内运行，不调起任何 CLI 子进程。
+- **壳**：Tauri v2（Rust）。只负责窗口和系统集成，不放业务逻辑。宠物窗口用 tauri-nspanel 转成 NSPanel（ScreenSaver 层级、全屏与所有 Spaces 可见）；点击穿透靠 Rust 用 AppKit 坐标轮询鼠标、界面按像素判断后切换。
+- **大脑**：独立的 TS 进程，开发时 `bun agent/src/main.ts`，打包时 `bun build --compile` 成单文件放进 `.app`。业务状态的唯一来源。
+- **agent loop**：Vercel AI SDK 7，作为库在大脑进程内运行。
 - **自己写的部分**：记忆、调度、Computer History 整理、provider 抽象。将来遇到中转站兼容问题，可以在 provider 抽象层里换成 pi-ai。
-- **工程**：pnpm + electron-vite，TypeScript strict 模式。
-- **Electron 窗口要点**：
-  - 窗口用 `type: 'panel'`，可以浮在全屏 app 之上、在所有 Spaces 可见。
-  - 鼠标穿透用 `setIgnoreMouseEvents(true, { forward: true })`，由渲染层判断鼠标是否在宠物像素上，在穿透和可点击之间来回切换。
-  - 选 Electron 版本时，要确认包含 PR #52365：它修了"透明加穿透的窗口被误判为遮挡物、导致下层窗口降频"的问题。
+- **工程**：pnpm + Vite + Tauri CLI，TypeScript strict；Rust 依赖 tauri 2.12、tauri-nspanel 2.1、plugin-opener、plugin-shell。
+- **为什么换掉 Electron**：只做 Mac，Electron 的跨平台和单一语言优势用不上，却带来约 300MB 包体和一系列窗口绕路。Tauri 实验验证了三个最大风险（打包后透明不变白、全屏可见、点击穿透）都可行，包体约 12MB（不含约 60MB 的大脑进程）。
 
 ## 4. 模型接入
 
@@ -70,7 +67,7 @@ Familiar 是一只住在 macOS 桌面上的宠物，同时也是一个自主运�
   - **Claude 订阅**：不接。Anthropic 不允许第三方产品提供 claude.ai 登录，且有用户因此被封号的报道。
 - 主动性判定这类高频、低价值的调用，可以单独配置一个更便宜的小模型。
 - **中转参数**（P0.5）：认证方式（仅 Anthropic 协议：`x-api-key` 或 `Authorization: Bearer`）、自定义请求头、额外请求参数（JSON，浅合并进请求体）。
-- **网络**：主进程用 Electron 的 `net.fetch` 发请求，走系统代理，不另设代理项。
+- **网络**：大脑进程读取系统代理设置（`scutil --proxy`）并用于 Bun 的 `fetch`，不另设代理项。
 
 ## 5. 权限
 
@@ -175,7 +172,7 @@ Familiar 是一只住在 macOS 桌面上的宠物，同时也是一个自主运�
 - **交互结构**：单击宠物 → 迷你输入胶囊；短回复挂在宠物头顶的气泡里；长回复或需要审批时才展开聊天面板。参考 ChatGPT 的 Mini。
 - **个性细节**：小黑主动说话的气泡带猫耳；展开面板思考时，小黑捧书扒在面板上沿。
 - **尺寸**：宠物默认约 140pt，胶囊高 48pt，气泡和胶囊字号 15；设置窗口保持系统设置的原生尺寸。
-- **材质**：用 Electron 自带的 vibrancy，不用依赖私有接口的第三方 Liquid Glass 库。
+- **材质**：用 Tauri 的 window effects（popover / sidebar 材质，即系统 NSVisualEffectView）；暂不用依赖私有接口的 Liquid Glass。
 
 ## 10. 交互入口
 
@@ -201,7 +198,7 @@ Familiar 是一只住在 macOS 桌面上的宠物，同时也是一个自主运�
 
 | 阶段 | 内容 |
 |---|---|
-| P0 骨架 | Electron 壳、宠物窗口（占位形象，可拖可点）、聊天面板、模型设置（协议 / 地址 / key）、AI SDK agent loop、工作目录、三档权限、git 快照、沙箱 |
+| P0 骨架 | 壳（现为 Tauri）、宠物窗口（占位形象，可拖可点）、聊天面板、模型设置（协议 / 地址 / key）、AI SDK agent loop、工作目录、三档权限、git 快照、沙箱 |
 | P0.5 体验打磨 | 皮肤系统（兼容 ChatGPT 宠物）与动作状态机、补齐扩展动作、中转参数、UI 按定稿重做（胶囊 / 气泡 / 面板 / 设置窗口） |
 | P1 记忆 | 写入、反思、待确认区、遗忘、索引、记忆查看面板；最小评测集 |
 | P2 感知 | 数据控制面板 → Swift 采集程序、白名单、加密缓冲、敏感信息过滤、摘要生成时间线；固定自签证书 |
@@ -219,7 +216,8 @@ Familiar 是一只住在 macOS 桌面上的宠物，同时也是一个自主运�
 | 把 OpenClaw 整个当后端 | 是重型网关服务，默认拥有全部权限，Claude 订阅已不覆盖它；只作为记忆和心跳设计的参考 |
 | 调起 Codex / Claude Code CLI 子进程来用订阅额度 | 架构别扭；Claude 订阅接入有封号风险；改走 API key 加中转站 |
 | Mastra 作主框架 | 记忆以 LibSQL 为准，与"Markdown 为准"冲突；官方 Electron 方案要起独立服务，不能嵌进主进程 |
-| Tauri v2 | 能做，但有三个问题：透明窗口打包后变白（#13415）至今未修；穿透只能靠轮询加命中检测，全屏可见要靠社区插件 tauri-nspanel；TS 大脑要以 bun sidecar 运行，签名和 SQLite 扩展加载链路复杂。净收益主要是包体（约 70MB 对约 300MB），内存基本持平。BongoCat 在 2026-09 因同类需求离开了 Tauri |
+| Electron（P0–P0.5 曾使用） | 只做 Mac 时跨平台与单一语言的优势用不上；包体约 300MB；透明穿透、毛玻璃、原生控件都要绕路。2026-10-26 迁到 Tauri，旧版见标签 `electron-prototype` |
+| Swift 原生壳 | 窗口与控件最原生，但界面要用 SwiftUI 全部重写；Tauri 能复用现有 React 界面，实验已验证窗口能力可行 |
 | Swift 原生壳 | 窗口体验最好，但要两种语言加一层进程间通信，偏离"学 AI"的重点 |
 | screenpipe 作采集层 | 许可证已改为商业许可；只参考它"有变化才采集"的事件驱动设计 |
 | 截图加 OCR 的感知方式 | 要申请屏幕录制权限、数据量大、隐私负担重；ChatGPT 也从这条路（Chronicle）退了出来 |
@@ -228,8 +226,8 @@ Familiar 是一只住在 macOS 桌面上的宠物，同时也是一个自主运�
 
 - AI SDK 大版本迭代快（一年多从 v5 出到 v7），只支持 ESM，要求 Node 22 及以上。
 - 中转站的协议"方言"（reasoning 字段、`max_tokens` 字段名等）可能需要自己写 middleware 适配。
-- Electron 宠物窗口的组合能力（panel、穿透 forward、全屏可见）只核对了文档，还没在本机实测。P0 第一件事就是验证。
-- 用 sqlite-vec 时，要确认 Electron 内置 Node 的 `node:sqlite` 是否支持加载扩展；不支持就退回到 better-sqlite3。
+- 点击穿透靠轮询（16ms）加网页判断，鼠标瞬移后立刻点击可能落到下层窗口；真人操作一般不受影响。
+- 用 sqlite-vec 时，要确认 Bun 的 `bun:sqlite` 加载扩展的方式（需要 `Database.setCustomSQLite` 指向自带的 SQLite）。
 - 各浏览器的 URL 能不能通过 AX 树读到，要实测；读不到的改用 AppleScript。
 
 ## 附录：调研来源（2026-10-25）

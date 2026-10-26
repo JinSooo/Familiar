@@ -1,0 +1,134 @@
+//! Native application and tray menus. All actions go through the agent contract.
+use serde_json::Value;
+use tauri::{
+    image::Image,
+    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu},
+    tray::TrayIconBuilder,
+    AppHandle,
+};
+
+const TRAY_ID: &str = "familiar";
+const PET_PREFIX: &str = "pet-select:";
+const SIZE_PREFIX: &str = "pet-size:";
+
+pub fn setup(app: &AppHandle) -> tauri::Result<()> {
+    let familiar = Submenu::with_items(
+        app,
+        "Familiar",
+        true,
+        &[
+            &MenuItem::with_id(app, "settings:open", "设置…", true, Some("CmdOrCtrl+,"))?,
+            &PredefinedMenuItem::separator(app)?,
+            &MenuItem::with_id(app, "app:quit", "退出 Familiar", true, Some("CmdOrCtrl+Q"))?,
+        ],
+    )?;
+    let edit = Submenu::with_items(
+        app,
+        "编辑",
+        true,
+        &[
+            &PredefinedMenuItem::undo(app, Some("撤销"))?,
+            &PredefinedMenuItem::redo(app, Some("重做"))?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::cut(app, Some("剪切"))?,
+            &PredefinedMenuItem::copy(app, Some("复制"))?,
+            &PredefinedMenuItem::paste(app, Some("粘贴"))?,
+            &PredefinedMenuItem::select_all(app, Some("全选"))?,
+        ],
+    )?;
+    let window = Submenu::with_items(
+        app,
+        "窗口",
+        true,
+        &[
+            &PredefinedMenuItem::minimize(app, Some("最小化"))?,
+            &PredefinedMenuItem::maximize(app, Some("缩放"))?,
+            &PredefinedMenuItem::close_window(app, Some("关闭"))?,
+        ],
+    )?;
+    window.set_as_windows_menu_for_nsapp()?;
+    app.set_menu(Menu::with_items(app, &[&familiar, &edit, &window])?)?;
+    // App-level callbacks receive both menu-bar and tray actions, once per click.
+    app.on_menu_event(|app, event| {
+        let id = event.id().as_ref();
+        if let Some(pet) = id.strip_prefix(PET_PREFIX) {
+            crate::agent::menu_request(app, "pets:select", &[Value::String(pet.to_owned())]);
+        } else if let Some(size) = id.strip_prefix(SIZE_PREFIX) {
+            crate::agent::menu_request(app, "pet:size-set", &[Value::String(size.to_owned())]);
+        } else if matches!(
+            id,
+            "chat:toggle" | "settings:open" | "pets:import" | "app:quit"
+        ) {
+            crate::agent::menu_request(app, id, &[]);
+        }
+    });
+
+    // A monochrome alpha mask lets macOS adapt the tray icon to its appearance.
+    let mut rgba = vec![0; 18 * 18 * 4];
+    for y in 0..18 {
+        for x in 0..18 {
+            let distance = (x as f32 - 8.5).hypot(y as f32 - 8.5);
+            rgba[(y * 18 + x) * 4 + 3] = ((7.0 - distance).clamp(0.0, 1.0) * 255.0) as u8;
+        }
+    }
+    TrayIconBuilder::with_id(TRAY_ID)
+        .icon(Image::new_owned(rgba, 18, 18))
+        .icon_as_template(true)
+        .tooltip("Familiar")
+        .show_menu_on_left_click(true)
+        .build(app)?;
+    rebuild(app, &[], "", "medium")
+}
+
+pub fn rebuild(
+    app: &AppHandle,
+    pets: &[crate::protocol::PetEntry],
+    current_pet: &str,
+    size: &str,
+) -> tauri::Result<()> {
+    let pet_menu = Submenu::new(app, "宠物", true)?;
+    for pet in pets {
+        pet_menu.append(&CheckMenuItem::with_id(
+            app,
+            format!("{PET_PREFIX}{}", pet.id),
+            &pet.name,
+            true,
+            pet.id == current_pet,
+            None::<&str>,
+        )?)?;
+    }
+    let size_menu = Submenu::new(app, "大小", true)?;
+    for (value, text) in [("small", "小"), ("medium", "中"), ("large", "大")] {
+        size_menu.append(&CheckMenuItem::with_id(
+            app,
+            format!("{SIZE_PREFIX}{value}"),
+            text,
+            true,
+            value == size,
+            None::<&str>,
+        )?)?;
+    }
+    let menu = Menu::with_items(
+        app,
+        &[
+            &MenuItem::with_id(app, "chat:toggle", "显示/隐藏聊天", true, None::<&str>)?,
+            &MenuItem::with_id(app, "settings:open", "设置…", true, None::<&str>)?,
+            &PredefinedMenuItem::separator(app)?,
+            &pet_menu,
+            &size_menu,
+            &MenuItem::with_id(
+                app,
+                "pets:import",
+                "从 ChatGPT 导入宠物",
+                true,
+                None::<&str>,
+            )?,
+            &PredefinedMenuItem::separator(app)?,
+            &MenuItem::with_id(app, "app:quit", "退出", true, None::<&str>)?,
+        ],
+    )?;
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        tray.set_menu(Some(menu))?;
+    }
+    Ok(())
+}

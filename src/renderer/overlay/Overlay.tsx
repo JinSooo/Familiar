@@ -4,7 +4,8 @@ import { api } from '../api'
 import { Pet } from '../pet/Pet'
 import { scales } from '../pet/logic'
 import { Composer } from '../shared-ui/Composer'
-import { bubbleTimeout } from '../../main/session'
+const bubbleTimeout = (text: string) =>
+  12000 + Math.min(8000, [...text].length * 60)
 import { useSession } from '../shared-ui/session'
 export function Bubble({
   text,
@@ -17,7 +18,7 @@ export function Bubble({
 }) {
   return (
     <button
-      data-overlay-hit
+      data-hit
       className={`bubble ${variant} ${fading ? 'fading' : ''}`}
       onClick={() => api.toggleChat()}
       aria-label="展开完整对话"

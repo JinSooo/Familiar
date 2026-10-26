@@ -123,6 +123,14 @@ export const IPC = {
   capsule: 'overlay:capsule',
   appearance: 'appearance:changed',
   settingsOpen: 'settings:open',
+  // Tauri migration (see protocol.ts): Rust → pet webview cursor position for hit testing.
+  petCursor: 'pet:cursor',
+  // agent → pet webview: drag direction for the running-left/right rows.
+  petDrag: 'pet:drag',
+  // Tray menu → agent.
+  petsSelect: 'pets:select',
+  petSizeSet: 'pet:size-set',
+  appQuit: 'app:quit',
 } as const
 export type DragAction = 'start' | 'move' | 'end'
 export interface FamiliarAPI {

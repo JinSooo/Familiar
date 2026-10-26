@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-familiar-invoke"
+commands.allow = ["familiar_invoke"]
+[[permission]]
+identifier = "allow-pet-hit"
+commands.allow = ["pet_hit"]
+[[permission]]
+identifier = "allow-pet-drag-start"
+commands.allow = ["pet_drag_start"]

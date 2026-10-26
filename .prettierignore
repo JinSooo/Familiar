@@ -5,3 +5,6 @@ docs/design.md
 .smoke-user-data
 .pnpm-store
 .pnpm-state
+dist
+src-tauri/target
+src-tauri/gen

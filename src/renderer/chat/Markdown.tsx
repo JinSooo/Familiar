@@ -12,6 +12,15 @@ import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import rehypeHighlight from 'rehype-highlight'
 import { normalizeMath } from './content'
+import { openUrl } from '@tauri-apps/plugin-opener'
+import type { MouseEvent } from 'react'
+
+function openLink(event: MouseEvent<HTMLAnchorElement>) {
+  event.preventDefault()
+  const href = event.currentTarget.getAttribute('href')
+  if (href && /^(https?:|mailto:)/i.test(href))
+    void openUrl(href).catch(console.error)
+}
 import './markdown.css'
 
 function codeText(node: ReactNode): string {
@@ -69,7 +78,7 @@ export function Markdown({ content }: { content: string }) {
           a: ({ href, children }) => (
             <a
               href={href && /^(https?:|mailto:)/i.test(href) ? href : undefined}
-              target="_blank"
+              onClick={openLink}
               rel="noreferrer"
               title={href}
             >
@@ -93,9 +102,9 @@ export function Markdown({ content }: { content: string }) {
   )
 }
 export function PlainText({ content }: { content: string }) {
-  return content.split(/(https?:\/\/[^\s<>]+)/gi).map((part, i) =>
-    /^https?:\/\//i.test(part) ? (
-      <a key={i} href={part} target="_blank" rel="noreferrer" title={part}>
+  return content.split(/((?:https?:\/\/|mailto:)[^\s<>]+)/gi).map((part, i) =>
+    /^(https?:\/\/|mailto:)/i.test(part) ? (
+      <a key={i} href={part} onClick={openLink} rel="noreferrer" title={part}>
         {part}
       </a>
     ) : (

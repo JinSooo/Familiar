@@ -19,7 +19,7 @@ export function Composer({
     return () => api.typing(false)
   }, [])
   return (
-    <div className="composer-wrap" data-overlay-hit>
+    <div className="composer-wrap" data-hit>
       {error && (
         <p className="error" role="alert">
           {error}

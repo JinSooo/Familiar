@@ -1,7 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PetGesture, PetSkin, PetState, Settings } from '../../shared'
-import { api } from '../api'
-import { animation, scales, sweep, type Action, type Sweep } from './logic'
+import { api, subscribe } from '../api'
+import { IPC } from '../../shared'
+import { alphaHit, overlayHit } from './hit'
+import {
+  animation,
+  clickSequence,
+  scales,
+  sweep,
+  type Action,
+  type Sweep,
+} from './logic'
 
 export function PerceptionIndicator({
   mode,
@@ -61,7 +70,8 @@ export function Pet({
     if (!skin || !canvas.current) return
     let disposed = false
     let timer: ReturnType<typeof setInterval> | undefined
-    hit.current = () => false
+    // Keep the previous frame's hit test until the new animation draws, so a stationary
+    // cursor is not dropped to click-through while the next atlas row loads.
     const action: Action = reduced
       ? 'idle'
       : (forceState ?? direction ?? gesture ?? state)
@@ -91,15 +101,7 @@ export function Pet({
         const pixels = context.getImageData(0, 0, 192, 208).data
         hit.current = (x, y) => {
           const rect = canvas.current!.getBoundingClientRect()
-          const px = Math.floor(((x - rect.left) * 192) / rect.width)
-          const py = Math.floor(((y - rect.top) * 208) / rect.height)
-          return (
-            px >= 0 &&
-            px < 192 &&
-            py >= 0 &&
-            py < 208 &&
-            pixels[(py * 192 + px) * 4 + 3]! > 32
-          )
+          return alphaHit(pixels, 192, 208, rect, x, y)
         }
       }
       draw()
@@ -127,35 +129,49 @@ export function Pet({
     return () => {
       disposed = true
       clearInterval(timer)
-      hit.current = () => false
     }
   }, [skin, state, gesture, gestureKey, direction, reduced, forceState])
   useEffect(() => {
     if (embedded) return
-    let down:
-      { x: number; y: number; lastX: number; moved: boolean } | undefined
-    let lastHit = false
+    let down: { x: number; y: number; moved: boolean } | undefined
+    let capsuleOpen = false
+    let clicks: number[] = []
+    let clickTimer: ReturnType<typeof setTimeout> | undefined
+    const off = [
+      api.onCapsule((open) => {
+        capsuleOpen = open
+      }),
+      subscribe<'left' | 'right' | 'none'>(IPC.petDrag, (value) => {
+        setDirection(value === 'none' ? undefined : `running-${value}`)
+        if (value === 'none' && down?.moved) down = undefined
+      }),
+      subscribe<{ x: number; y: number; ignoring: boolean }>(
+        IPC.petCursor,
+        ({ x, y, ignoring }) => {
+          const inside = overlayHit(
+            hit.current(x, y),
+            document.elementFromPoint(x, y),
+          )
+          // Correct the panel whenever it disagrees, not only when our verdict changes:
+          // Rust resets click-through after drags and may resend while the cursor is still.
+          if (inside === ignoring) api.hit(inside)
+        },
+      ),
+    ]
     let stroking: Sweep = { x: 0, direction: 0, reversals: [] }
     let lastPetting = 0
     const move = (event: PointerEvent) => {
       if (down) {
-        if (Math.hypot(event.screenX - down.x, event.screenY - down.y) > 4)
+        if (
+          !down.moved &&
+          Math.hypot(event.screenX - down.x, event.screenY - down.y) > 4
+        ) {
           down.moved = true
-        if (down.moved && event.screenX !== down.lastX)
-          setDirection(
-            event.screenX > down.lastX ? 'running-right' : 'running-left',
-          )
-        down.lastX = event.screenX
-        api.drag('move')
+          api.drag('start')
+        }
         return
       }
-      const inside =
-        hit.current(event.clientX, event.clientY) ||
-        Boolean((event.target as Element).closest('[data-overlay-hit]'))
-      if (inside !== lastHit) {
-        lastHit = inside
-        api.hit(inside)
-      }
+      const inside = hit.current(event.clientX, event.clientY)
       if (inside && !event.buttons) {
         const now = Date.now()
         const next = sweep(stroking, event.screenX, now)
@@ -168,45 +184,57 @@ export function Pet({
       } else stroking = { x: event.screenX, direction: 0, reversals: [] }
     }
     const start = (event: PointerEvent) => {
-      if (event.button !== 0 || !hit.current(event.clientX, event.clientY))
+      if (
+        event.button !== 0 ||
+        event.target !== canvas.current ||
+        !hit.current(event.clientX, event.clientY)
+      )
         return
       canvas.current?.setPointerCapture(event.pointerId)
       down = {
         x: event.screenX,
         y: event.screenY,
-        lastX: event.screenX,
         moved: false,
       }
-      api.drag('start')
     }
-    const end = () => {
+    const end = (event: PointerEvent) => {
       if (!down) return
+      const moved = down.moved
       down = undefined
-      setDirection(undefined)
-      api.drag('end')
-      lastHit = false
-      api.hit(false)
+      if (canvas.current?.hasPointerCapture(event.pointerId))
+        canvas.current.releasePointerCapture(event.pointerId)
+      if (moved) return
+      const result = clickSequence(clicks, Date.now())
+      clicks = result.times
+      clearTimeout(clickTimer)
+      if (result.poked) {
+        setGesture('poked')
+        setGestureKey(++sequence.current)
+      } else
+        clickTimer = setTimeout(() => {
+          clicks = []
+          setGesture('wave')
+          setGestureKey(++sequence.current)
+          api.capsule(!capsuleOpen)
+        }, 220)
     }
-    const leave = () => {
-      if (!down) {
-        lastHit = false
-        api.hit(false)
-        stroking.reversals = []
-      }
+    const cancel = () => {
+      down = undefined
+      stroking.reversals = []
     }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerdown', start)
     window.addEventListener('pointerup', end)
-    window.addEventListener('pointercancel', end)
-    window.addEventListener('blur', end)
-    document.addEventListener('pointerleave', leave)
+    window.addEventListener('pointercancel', cancel)
+    window.addEventListener('blur', cancel)
     return () => {
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerdown', start)
       window.removeEventListener('pointerup', end)
-      window.removeEventListener('pointercancel', end)
-      window.removeEventListener('blur', end)
-      document.removeEventListener('pointerleave', leave)
+      window.removeEventListener('pointercancel', cancel)
+      window.removeEventListener('blur', cancel)
+      off.forEach((f) => f())
+      clearTimeout(clickTimer)
     }
   }, [embedded])
   return (

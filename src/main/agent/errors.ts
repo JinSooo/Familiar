@@ -21,6 +21,13 @@ export function agentError(error: unknown): Error {
   else if (/429|rate.limit/i.test(text))
     message = '模型服务请求过多或额度不足，请检查余额或稍后重试。'
   else if (
+    /ERR_INCOMPLETE_CHUNKED_ENCODING|ERR_CONNECTION_(RESET|CLOSED)|terminated|Failed to process successful response/i.test(
+      text,
+    )
+  )
+    message =
+      '回复传到一半连接断开了（中转站或代理不稳定），请重试。'
+  else if (
     /fetch failed|network|ECONN|ENOTFOUND|EHOST|ETIMEDOUT|timeout/i.test(text)
   )
     message = '无法连接模型服务，请检查网络、代理和 Base URL。'

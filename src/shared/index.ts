@@ -40,6 +40,8 @@ export type SettingsUpdate = Omit<Settings, 'model'> & {
   model: Omit<Settings['model'], 'apiKey'> & { apiKey?: string }
 }
 export type ApprovalDecision = 'approve' | 'deny'
+/** What the approval card can send: "always" also saves an allow rule for the request's directory. */
+export type ApprovalChoice = ApprovalDecision | 'always'
 /** Long-lived activity, chosen by the main process; see docs/design.md §9. */
 export type PetState =
   | 'idle'
@@ -93,6 +95,7 @@ export type AgentEvent =
       toolName: string
       input: unknown
       reason: string
+      dir?: string
     }
   | { type: 'tool-result'; id: string; output: unknown }
   | { type: 'finish'; stopped?: boolean }
@@ -145,7 +148,7 @@ export interface FamiliarAPI {
   onCapsule(callback: (open: boolean) => void): () => void
   onAppearance(callback: (accent: string) => void): () => void
   stop(): void
-  approve(id: string, decision: ApprovalDecision): void
+  approve(id: string, decision: ApprovalChoice): void
   hit(inside: boolean): void
   drag(action: DragAction): void
   toggleChat(): void
@@ -166,10 +169,12 @@ export interface FamiliarAPI {
 
 export type Approval = Extract<AgentEvent, { type: 'tool-approval-request' }>
 export interface Session {
-  messages: (Message & { createdAt: number })[]
+  /** `error` marks a reply that failed, so the transcript keeps the failure where it happened. */
+  messages: (Message & { createdAt: number; error?: string })[]
   running: boolean
   approvals: Approval[]
-  tools: { id: string; name: string; done: boolean }[]
+  /** `turn` is the index of the assistant message the call belongs to. */
+  tools: { id: string; name: string; done: boolean; turn: number }[]
   error: string
   origin: 'capsule' | 'chat'
   bubble: string

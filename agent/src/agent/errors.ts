@@ -21,6 +21,13 @@ export function agentError(error: unknown): Error {
   else if (/429|rate.limit/i.test(text))
     message = '模型服务请求过多或额度不足，请检查余额或稍后重试。'
   else if (
+    /\b50[0234]\b|Service Unavailable|Bad Gateway|Gateway Time-?out|Internal Server Error/i.test(
+      text,
+    )
+  )
+    message =
+      '模型服务暂时不可用（服务端 5xx），已自动重试仍失败，请稍后再试或换个模型。'
+  else if (
     /ERR_INCOMPLETE_CHUNKED_ENCODING|ERR_CONNECTION_(RESET|CLOSED)|terminated|Failed to process successful response/i.test(
       text,
     )

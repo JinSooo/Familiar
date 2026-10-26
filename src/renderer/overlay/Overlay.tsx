@@ -61,6 +61,14 @@ export function Overlay() {
       window.removeEventListener('focus', update)
     }
   }, [])
+  const tool = session.tools.findLast((t) => !t.done)
+  const status = session.approvals.length
+    ? '等你允许…'
+    : tool
+      ? `正在${tool.name}…`
+      : session.bubble
+        ? '正在回复…'
+        : `${name}在想…`
   return (
     <div
       className="overlay"
@@ -77,7 +85,13 @@ export function Overlay() {
       )}
       {open && (
         <div className="capsule">
-          <Composer running={session.running} mini name={name} />
+          <Composer
+            running={session.running}
+            mini
+            name={name}
+            status={status}
+            failed={session.error}
+          />
         </div>
       )}
     </div>

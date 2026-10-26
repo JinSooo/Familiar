@@ -16,7 +16,8 @@ export function beginTurn(
   return {
     ...session,
     messages: [
-      ...session.messages.filter((m) => m.content),
+      // Empty replies stay (stopped or failed turns): tool rows and errors point at them by index.
+      ...session.messages,
       { role: 'user', content: text, createdAt: Date.now() },
       { role: 'assistant', content: '', createdAt: Date.now() },
     ],
@@ -44,6 +45,7 @@ export function reduceSession(session: Session, event: AgentEvent): Session {
         id: event.id,
         name: toolDescription(event.toolName, event.input),
         done: false,
+        turn: session.messages.length - 1,
       },
     ]
   if (event.type === 'tool-result')
@@ -55,6 +57,11 @@ export function reduceSession(session: Session, event: AgentEvent): Session {
   if (event.type === 'error') {
     next.error = event.message
     next.bubble = event.message
+    next.messages = session.messages.map((m, i) =>
+      i === session.messages.length - 1 && m.role === 'assistant'
+        ? { ...m, error: event.message }
+        : m,
+    )
   }
   if (event.type === 'finish' || event.type === 'error') {
     next.running = false

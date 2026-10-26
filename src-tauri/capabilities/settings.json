@@ -1,0 +1,5 @@
+{
+  "identifier": "familiar-settings-window",
+  "windows": ["settings"],
+  "permissions": ["core:window:allow-internal-toggle-maximize"]
+}

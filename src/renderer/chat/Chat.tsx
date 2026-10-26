@@ -51,7 +51,7 @@ export function Chat() {
         </div>
       )}
       <div className="chat-surface">
-        <header className="chat-header">
+        <header className="chat-header" data-tauri-drag-region="deep">
           <PetAvatar />
           <strong>{name}</strong>
           <small className="muted">{mode}</small>
@@ -93,41 +93,48 @@ export function Chat() {
           {!session.messages.length && (
             <p className="empty muted">和{name}说句话…</p>
           )}
-          {session.messages.map(
-            (m, i) =>
-              m.content && (
-                <Fragment key={i}>
-                  {needsTimeDivider(
-                    session.messages[i - 1]?.createdAt,
-                    m.createdAt,
-                  ) && (
-                    <div className="time-divider">
-                      {formatMessageTime(m.createdAt, Date.now())}
-                    </div>
+          {session.messages.map((m, i) => (
+            <Fragment key={i}>
+              {m.content &&
+                needsTimeDivider(
+                  session.messages[i - 1]?.createdAt,
+                  m.createdAt,
+                ) && (
+                  <div className="time-divider">
+                    {formatMessageTime(m.createdAt, Date.now())}
+                  </div>
+                )}
+              {session.tools
+                .filter((t) => t.turn === i)
+                .map((t) => (
+                  <details className="tool muted" key={t.id}>
+                    <summary>
+                      {t.done ? '✓ 已' : '正在'}
+                      {t.name}
+                    </summary>
+                    <p>调用编号：{t.id}</p>
+                  </details>
+                ))}
+              {m.content && (
+                <article
+                  className={`message ${m.role}`}
+                  title={new Date(m.createdAt).toLocaleString('zh-CN', {
+                    hour12: false,
+                  })}
+                >
+                  {m.role === 'assistant' ? (
+                    <Markdown content={m.content} />
+                  ) : (
+                    <PlainText content={m.content} />
                   )}
-                  <article
-                    className={`message ${m.role}`}
-                    title={new Date(m.createdAt).toLocaleString('zh-CN', {
-                      hour12: false,
-                    })}
-                  >
-                    {m.role === 'assistant' ? (
-                      <Markdown content={m.content} />
-                    ) : (
-                      <PlainText content={m.content} />
-                    )}
-                  </article>
-                </Fragment>
-              ),
-          )}
-          {session.tools.map((t) => (
-            <details className="tool muted" key={t.id}>
-              <summary>
-                {t.done ? '✓ 已' : '正在'}
-                {t.name}
-              </summary>
-              <p>调用编号：{t.id}</p>
-            </details>
+                </article>
+              )}
+              {m.error && (
+                <p className="error" role="alert">
+                  {m.error}
+                </p>
+              )}
+            </Fragment>
           ))}
           {session.approvals.map((a) => (
             <article className="approval" key={a.id}>
@@ -146,19 +153,21 @@ export function Chat() {
                 </button>
                 <button onClick={() => api.approve(a.id, 'deny')}>拒绝</button>
               </div>
-              <button className="link" onClick={() => {}}>
-                总是允许这个目录
-              </button>
+              {a.dir && (
+                <button
+                  className="link"
+                  title={a.dir}
+                  onClick={() => api.approve(a.id, 'always')}
+                >
+                  总是允许 {a.dir.split('/').filter(Boolean).at(-1) ?? a.dir}{' '}
+                  目录
+                </button>
+              )}
             </article>
           ))}
           {session.running && (
             <p className="muted status">
               {session.approvals.length ? '等你允许…' : `${name}正在思考…`}
-            </p>
-          )}
-          {session.error && (
-            <p className="error" role="alert">
-              {session.error}
             </p>
           )}
           <div ref={bottom} />

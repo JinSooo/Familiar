@@ -209,9 +209,11 @@ async function request(
       return publicSettings()
     case IPC.settingsSave: {
       requireSender(window, ['settings'])
-      const saved = await saveSettings(
-        input as Parameters<typeof saveSettings>[0],
-      )
+      // The window only lists directory rules; approvals may have added one since it loaded.
+      const saved = await saveSettings({
+        ...(input as Parameters<typeof saveSettings>[0]),
+        dirRules: getSettings().dirRules,
+      })
       updatePet()
       publishSession()
       rebuildTray()
@@ -246,8 +248,22 @@ async function request(
     case IPC.approval: {
       requireSender(window, ['chat'])
       const id = z.string().parse(input)
-      const decision = z.enum(['approve', 'deny']).parse(args[1])
+      const choice = z.enum(['approve', 'deny', 'always']).parse(args[1])
       if (!pendingApprovals.has(id)) throw new Error('Unknown approval')
+      const dir = session.approvals.find((a) => a.id === id)?.dir
+      if (choice === 'always') {
+        if (!dir) throw new Error('这个请求不能记成目录规则')
+        const settings = publicSettings()
+        await saveSettings({
+          ...settings,
+          model: { ...settings.model, apiKey: undefined },
+          dirRules: [
+            ...settings.dirRules.filter((r) => r.path !== dir),
+            { path: dir, access: 'allow' },
+          ],
+        })
+      }
+      const decision = choice === 'deny' ? 'deny' : 'approve'
       session = {
         ...session,
         approvals: session.approvals.filter((a) => a.id !== id),

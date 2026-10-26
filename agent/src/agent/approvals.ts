@@ -10,7 +10,7 @@ export function resolveApproval(id: string, decision: ApprovalDecision): void {
 
 export function waitForApproval(
   call: ToolCall,
-  reason: string,
+  { reason, dir }: { reason: string; dir?: string },
   onEvent: (event: AgentEvent) => void,
   signal: AbortSignal,
 ): Promise<ApprovalDecision> {
@@ -37,6 +37,7 @@ export function waitForApproval(
         toolName: call.toolName,
         input: call.input,
         reason,
+        ...(dir ? { dir } : {}),
       })
     } catch (error) {
       cleanup()

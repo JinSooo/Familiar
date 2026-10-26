@@ -108,12 +108,7 @@ export async function runAgentCore(
           return { type: 'denied', reason: result.reason }
         if (result.decision === 'allow')
           return { type: 'approved', reason: result.reason }
-        const decision = await waitForApproval(
-          call,
-          result.reason,
-          emit,
-          signal,
-        )
+        const decision = await waitForApproval(call, result, emit, signal)
         signal.throwIfAborted()
         return decision === 'approve'
           ? { type: 'approved', reason: '用户已批准' }

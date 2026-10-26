@@ -1,3 +1,4 @@
+import { dirname } from 'node:path'
 import type { Settings } from '../../../src/shared'
 import { browserSecret, forbiddenRoots, normalizePath, within } from './paths'
 
@@ -9,6 +10,8 @@ export interface ToolCall {
 export type ToolDecision = {
   decision: 'allow' | 'ask' | 'deny'
   reason: string
+  /** For an ask outside the workspace: the directory an "always allow" rule would cover. */
+  dir?: string
 }
 const reads = new Set(['read_file', 'list_dir'])
 const names = new Set([
@@ -77,10 +80,12 @@ export async function decideToolCall(
     }
     if (shell && settings.permissionMode === 'auto' && !rule)
       return result('allow', '命令由工作目录写入沙箱约束')
-    return result(
-      rule?.access ?? 'ask',
-      rule ? '按目录规则处理' : '工作目录外的访问需要授权',
-    )
+    if (rule) return result(rule.access, '按目录规则处理')
+    return {
+      decision: 'ask',
+      reason: '工作目录外的访问需要授权',
+      dir: shell || call.toolName === 'list_dir' ? path : dirname(path),
+    }
   } catch {
     return result('deny', '无法安全解析路径')
   }

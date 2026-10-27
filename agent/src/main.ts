@@ -78,6 +78,8 @@ let controller: AbortController | undefined
 let state: PetState = 'idle'
 const activity: Partial<Record<PetState, boolean>> = {}
 let typingAt = 0
+/** Some window's composer holds unsent text; leaving must not throw it away. */
+let hasDraft = false
 let greetedDay = ''
 let petReady = false
 let chatVisible = false
@@ -143,11 +145,19 @@ function refreshState() {
 function setCapsule(open: boolean) {
   capsuleOpen = open
   emit(IPC.capsule, open, 'pet')
+  // Key status lets the capsule take typing and later report that the user left.
+  if (open) ui({ type: 'focus-pet' })
   if (!open) {
+    hasDraft = false
     typingAt = 0
     activity.listening = false
     refreshState()
   }
+}
+/** Back to just the pet: no panel, no capsule. A running reply still lands in the bubble. */
+function dismissChat() {
+  if (chatVisible) ui({ type: 'hide-chat' })
+  if (capsuleOpen) setCapsule(false)
 }
 function showChat() {
   activity.done = false
@@ -369,6 +379,10 @@ async function request(
     case IPC.modelTest:
       requireSender(window, ['settings'])
       return testModel(modelDraft.parse(input))
+    case IPC.chatDismiss:
+      requireSender(window, ['chat'])
+      dismissChat()
+      return
     case IPC.chatOpen:
       requireSender(window, ['tray'])
       showChat()
@@ -476,6 +490,7 @@ async function request(
     case IPC.typing:
       requireSender(window, ['pet', 'chat'])
       activity.listening = z.boolean().parse(input)
+      hasDraft = activity.listening
       typingAt = activity.listening ? Date.now() : 0
       refreshState()
       return
@@ -522,6 +537,7 @@ const signalSchema = z.object({
       focused: z.boolean(),
     }),
     z.object({ name: z.literal('app-activated') }),
+    z.object({ name: z.literal('blurred') }),
     z.object({
       name: z.literal('pet-drag'),
       phase: z.enum(['move', 'end']),
@@ -559,7 +575,11 @@ async function handle(line: string) {
         }
       } else if (signal.name === 'app-activated')
         broadcast(IPC.appearance, await accent())
-      else
+      else if (signal.name === 'blurred') {
+        // Stay put while something still needs the user here.
+        if (getSettings().chatAutoHide && !pendingApprovals.size && !hasDraft)
+          dismissChat()
+      } else
         emit(
           IPC.petDrag,
           signal.phase === 'end' ? 'none' : signal.dx >= 0 ? 'right' : 'left',

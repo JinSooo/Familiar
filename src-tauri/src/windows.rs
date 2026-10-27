@@ -174,6 +174,8 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
             tauri::WindowEvent::Focused(focused) => {
                 if *focused {
                     crate::agent::signal(&h, serde_json::json!({"name":"app-activated"}));
+                } else if label != "settings" {
+                    report_blur(&h);
                 }
                 if label == "chat" {
                     chat_signal(&h);
@@ -183,6 +185,27 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
         });
     }
     Ok(())
+}
+
+/// Tell the agent the user went elsewhere: the pet or chat lost focus and, a beat later, none of
+/// our windows has it. The delay lets focus move between our own windows (chat collapsing into
+/// the capsule, opening settings) without counting as leaving.
+fn report_blur(app: &tauri::AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        let main = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            let ours = ["pet", "chat", "settings"].iter().any(|label| {
+                main.get_webview_window(label)
+                    .and_then(|w| w.is_focused().ok())
+                    .unwrap_or(false)
+            });
+            if !ours {
+                crate::agent::signal(&main, serde_json::json!({"name":"blurred"}));
+            }
+        });
+    });
 }
 
 /// Pull the chat panel back on screen once a drag has stopped. Moved fires all through a drag,
@@ -259,6 +282,11 @@ pub fn action(app: &tauri::AppHandle, action: crate::protocol::UiAction) -> taur
         UiAction::HideChat => {
             app.get_webview_window("chat").unwrap().hide()?;
             chat_signal(app);
+        }
+        UiAction::FocusPet => {
+            if let Ok(panel) = app.get_webview_panel("pet") {
+                panel.make_key_window();
+            }
         }
         UiAction::ShowSettings => {
             let w = app.get_webview_window("settings").unwrap();

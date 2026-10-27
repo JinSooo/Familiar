@@ -27,6 +27,8 @@ pub enum AgentToShell {
 pub enum UiAction {
     ShowChat,
     HideChat,
+    /// Make the pet panel key so the capsule receives typing and its own blur.
+    FocusPet,
     ShowSettings,
     PetSize {
         width: f64,

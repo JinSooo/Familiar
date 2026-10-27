@@ -33,6 +33,8 @@ export const settingsSchema = z.object({
     )
     .default([]),
   workspacePath: z.string().default('~/Familiar'),
+  /** Close the chat panel and capsule when the user clicks another app. */
+  chatAutoHide: z.boolean().default(true),
 })
 export type Settings = z.infer<typeof settingsSchema>
 export type PublicSettings = Omit<Settings, 'model'> & {
@@ -154,6 +156,8 @@ export const IPC = {
   dirRuleRemove: 'rules:remove',
   modelTest: 'model:test',
   chatOpen: 'chat:open',
+  /** Chat panel → agent: close the panel and the capsule together (Esc). */
+  chatDismiss: 'chat:dismiss',
   chatHistory: 'chat:history',
 } as const
 export type DragAction = 'start' | 'move' | 'end'
@@ -173,6 +177,8 @@ export interface FamiliarAPI {
   hit(inside: boolean): void
   drag(action: DragAction): void
   toggleChat(): void
+  /** Close the chat panel and the capsule, leaving only the pet. */
+  dismissChat(): void
   ready(): void
   onEvent(callback: (event: AgentEvent) => void): () => void
   onState(callback: (state: PetState) => void): () => void

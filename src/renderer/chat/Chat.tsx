@@ -17,13 +17,15 @@ export function Chat() {
   const [view, setView] = useState<ChatView>('chat')
   const [openError, setOpenError] = useState('')
   useEffect(() => api.onView(setView), [])
+  // Esc steps out: history → chat, then the whole panel and capsule close at once.
   useEffect(() => {
-    if (view !== 'history') return
-    const back = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setView('chat')
+    const escape = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.isComposing) return
+      if (view === 'history') setView('chat')
+      else api.dismissChat()
     }
-    window.addEventListener('keydown', back)
-    return () => window.removeEventListener('keydown', back)
+    window.addEventListener('keydown', escape)
+    return () => window.removeEventListener('keydown', escape)
   }, [view])
   const [name, setName] = useState('小黑')
   const [mode, setMode] = useState('自动')

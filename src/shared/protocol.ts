@@ -27,6 +27,8 @@ export type ShellSignal =
   | { name: 'chat-window'; visible: boolean; focused: boolean }
   /** The app became active; refresh things like the accent colour. */
   | { name: 'app-activated' }
+  /** The user went to another app: the pet or chat lost focus and no Familiar window has it. */
+  | { name: 'blurred' }
   /** Pet overlay drag progress, for the running-left/right animation. */
   | { name: 'pet-drag'; phase: 'move' | 'end'; dx: number }
 
@@ -45,6 +47,8 @@ export type AgentToShell =
 export type UiAction =
   | { type: 'show-chat' }
   | { type: 'hide-chat' }
+  /** Make the pet panel key so the capsule gets typing and notices when the user leaves. */
+  | { type: 'focus-pet' }
   | { type: 'show-settings' }
   /** Resize the pet overlay, keeping its bottom-right corner fixed. */
   | { type: 'pet-size'; width: number; height: number }

@@ -442,8 +442,30 @@ export function SettingsView() {
                   ))}
                 </div>
               </div>
+              <div className="setting-row">
+                <span>点击别处时</span>
+                <div className="segmented">
+                  {([true, false] as const).map((hide) => (
+                    <button
+                      type="button"
+                      key={String(hide)}
+                      className={
+                        settings.chatAutoHide === hide ? 'selected' : ''
+                      }
+                      onClick={() =>
+                        setSettings({ ...settings, chatAutoHide: hide })
+                      }
+                    >
+                      {hide ? '自动收起' : '保持显示'}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
             <p className="caption">
+              「自动收起」：点到其他应用后，聊天面板和胶囊一起收起，只留宠物；等你允许或输入框里有没发出的字时不收。聊天面板里按
+              Esc 也能一步收起。
+              <br />
               跟随系统的「减少动态效果」，开启后宠物保持静止，气泡和胶囊不播放动效。
             </p>
           </section>

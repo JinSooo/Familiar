@@ -58,6 +58,7 @@ export const api: FamiliarAPI = {
     if (action === 'start') void invoke('pet_drag_start').catch(console.error)
   },
   toggleChat: () => send(IPC.toggleChat),
+  dismissChat: () => send(IPC.chatDismiss),
   ready: () => send(IPC.ready),
   onEvent: (cb) => subscribe(IPC.agentEvent, cb),
   onState: (cb) => subscribe(IPC.petState, cb),

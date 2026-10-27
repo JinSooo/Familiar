@@ -925,3 +925,19 @@ aside .tile {
   padding: 3px 10px;
   white-space: nowrap;
 }
+.memory-leftovers {
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.memory-leftovers p {
+  margin: 0 0 4px;
+}
+.memory-leftovers ul {
+  margin: 0 0 8px;
+  padding-left: 16px;
+  color: var(--muted);
+}
+.memory-leftovers button {
+  padding: 3px 10px;
+}

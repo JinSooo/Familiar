@@ -189,3 +189,37 @@ describe('timeline roll-up', () => {
     )
   })
 })
+
+describe('forgetting during reflection', () => {
+  test('a reflection does not write back what was just deleted', async () => {
+    const s = store()
+    const city = await s.add({
+      category: 'profile',
+      text: '用户最喜欢的城市是京都',
+    })
+    await s.remove(city.id)
+    const applied = await applyReflection(
+      s,
+      {
+        candidates: [
+          {
+            target: 'profile',
+            text: '用户最喜欢京都这座城市',
+            confidence: 0.9,
+            evidence: '',
+          },
+          {
+            target: 'habits',
+            text: '用户每天午饭后散步',
+            confidence: 0.8,
+            evidence: '',
+          },
+        ],
+        summary: '用户让助手记住最喜欢的城市是京都',
+      },
+      { id: 'c1', day: '2026-10-27', time: '22:38' },
+    )
+    expect(applied).toEqual({ pending: 1, promoted: 0, timeline: false })
+    expect((await s.list()).map((e) => e.text)).toEqual(['用户每天午饭后散步'])
+  })
+})

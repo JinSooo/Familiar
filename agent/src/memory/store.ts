@@ -143,7 +143,18 @@ function checked(text: string): string {
 export class MemoryStore {
   // Writes are read-modify-write on whole files; run them one at a time.
   private queue: Promise<unknown> = Promise.resolve()
+  /**
+   * Kept memories deleted in this process, so a reflection already under way cannot write them
+   * back. Held in memory only: writing down what the user asked to forget would defeat it.
+   */
+  private forgotten: { text: string; at: number }[] = []
   constructor(readonly dir: string) {}
+
+  /** Texts of kept memories deleted in the last 24 hours. */
+  recentlyForgotten(now = Date.now()): string[] {
+    this.forgotten = this.forgotten.filter((f) => now - f.at < 86400000)
+    return this.forgotten.map((f) => f.text)
+  }
 
   file(category: MemoryCategory, key?: string): string {
     if (category === 'topic')
@@ -396,7 +407,12 @@ export class MemoryStore {
 
   /** Deletes a memory for good (the git snapshot still has it). */
   remove(id: string): Promise<MemoryEntry> {
-    return this.serial(() => this.rewrite(id, () => null))
+    return this.serial(async () => {
+      const entry = await this.rewrite(id, () => null)
+      if (entry.status === 'confirmed' && entry.category !== 'timeline')
+        this.forgotten.push({ text: entry.text, at: Date.now() })
+      return entry
+    })
   }
 
   appendTimeline(day: string, text: string): Promise<MemoryEntry> {
@@ -491,4 +507,38 @@ export async function memoryContext(
   if (topics.length) sections.push(`已有主题：${topics.join('、')}`)
   if (dropped) sections.push(`（还有 ${dropped} 条未列出）`)
   return sections.join('\n')
+}
+
+/**
+ * Timeline lines that restate a memory, so deleting the memory can offer to delete them too:
+ * at least 60% of the memory's two-character pieces (ignoring 用户 and filler) appear in the line.
+ */
+export function mentions(
+  entries: MemoryEntry[],
+  removed: Pick<MemoryEntry, 'id' | 'text'>,
+): MemoryEntry[] {
+  return entries.filter(
+    (e) =>
+      e.id !== removed.id &&
+      e.category === 'timeline' &&
+      e.status === 'confirmed' &&
+      restates(e.text, removed.text),
+  )
+}
+
+/** Whether `text` repeats `memory`: at least half of its two-character pieces appear in it. */
+export function restates(text: string, memory: string): boolean {
+  const pieces = (value: string) => {
+    const chars = [...value.toLowerCase().replace(/用户|[\s\p{P}\p{S}]/gu, '')]
+    const set = new Set<string>()
+    for (let i = 0; i + 2 <= chars.length; i++)
+      set.add(chars.slice(i, i + 2).join(''))
+    return set
+  }
+  const wanted = pieces(memory)
+  if (wanted.size < 2) return false
+  const have = pieces(text)
+  let hit = 0
+  for (const p of wanted) if (have.has(p)) hit++
+  return hit / wanted.size >= 0.5
 }

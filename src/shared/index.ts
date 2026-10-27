@@ -222,7 +222,8 @@ export interface FamiliarAPI {
   confirmMemory(id: string, text?: string): Promise<void>
   /** Rewrites a kept memory; the old text stays in the file, struck through. */
   correctMemory(id: string, text: string): Promise<void>
-  deleteMemory(id: string): Promise<void>
+  /** Returns timeline lines that still restate the deleted memory. */
+  deleteMemory(id: string): Promise<MemoryItem[]>
   /** Starts reflecting on recent conversations now; the result arrives with onMemoryChanged. */
   reflectMemory(): void
   revealMemory(): void

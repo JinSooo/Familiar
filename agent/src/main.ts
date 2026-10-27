@@ -39,7 +39,7 @@ import {
   saveConversation,
 } from './conversations'
 import { petDimensions, resolveState } from './pet-logic'
-import { openMemory } from './memory'
+import { mentions, openMemory } from './memory'
 import { recordFeedback } from './memory/feedback'
 import { reflectDue } from './memory/jobs'
 import { ensureWorkspace, snapshot } from './workspace'
@@ -597,12 +597,21 @@ async function request(
     case IPC.memoryDelete: {
       requireSender(window, ['settings'])
       const id = z.string().parse(input)
+      let also: MemoryItem[] = []
       await memoryEdit(async ({ store }) => {
         const entry = await store.remove(id)
         if (entry.status === 'pending') await recordFeedback('reject', entry)
+        // A deleted fact may still be restated in the timeline; the page offers to delete those too.
+        else if (entry.category !== 'timeline')
+          also = mentions(await store.list(), entry).map(
+            ({ seen, ...e }): MemoryItem => ({
+              ...e,
+              ...(seen ? { seen: seen.length } : {}),
+            }),
+          )
         return 'delete memory'
       })
-      return
+      return also
     }
     case IPC.memoryReflect:
       requireSender(window, ['settings'])

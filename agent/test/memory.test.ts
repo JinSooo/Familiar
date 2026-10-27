@@ -7,6 +7,7 @@ import {
   MemoryIndex,
   MemoryStore,
   memoryContext,
+  mentions,
   sensitiveReason,
 } from '../src/memory'
 
@@ -144,4 +145,36 @@ describe('search index', () => {
     expect((await index.search('小黑'))[0]?.text).toBe('养了一只叫小黑的猫')
     expect(await index.search('杭州')).toEqual([])
   })
+})
+
+describe('forgetting', () => {
+  test('finds timeline lines that restate a deleted memory', async () => {
+    const s = store()
+    const fruit = await s.add({
+      category: 'profile',
+      text: '用户最喜欢的水果是山竹。',
+    })
+    await s.appendTimeline(
+      '2026-10-27',
+      '22:34 用户让助手记住最喜欢的水果是山竹，并提到午饭后散步。',
+    )
+    await s.appendTimeline('2026-10-27', '23:00 聊了 Rust 的所有权')
+    await s.remove(fruit.id)
+    expect(mentions(await s.list(), fruit).map((e) => e.text)).toEqual([
+      '22:34 用户让助手记住最喜欢的水果是山竹，并提到午饭后散步。',
+    ])
+    expect(
+      mentions(await s.list(), { id: 'x', text: '用户喜欢喝咖啡' }),
+    ).toEqual([])
+  })
+})
+
+test('restating needs more than the same sentence shape', async () => {
+  const { restates } = await import('../src/memory/store')
+  expect(restates('用户最喜欢京都这座城市', '用户最喜欢的城市是京都')).toBe(
+    true,
+  )
+  expect(restates('用户最喜欢的水果是山竹', '用户最喜欢的城市是京都')).toBe(
+    false,
+  )
 })

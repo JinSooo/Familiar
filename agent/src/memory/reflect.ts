@@ -1,7 +1,7 @@
 import { generateText, type LanguageModel } from 'ai'
 import { z } from 'zod'
 import type { Session } from '../../../src/shared'
-import type { MemoryStore } from './store'
+import { restates, type MemoryStore } from './store'
 
 /**
  * After a conversation goes quiet, one model call reads what was new in it and returns
@@ -116,8 +116,12 @@ export async function applyReflection(
 ): Promise<{ pending: number; promoted: number; timeline: boolean }> {
   let pending = 0
   let promoted = 0
+  // The conversation may still mention something the user has since told us to forget.
+  const forgotten = store.recentlyForgotten()
+  const stale = (text: string) => forgotten.some((f) => restates(text, f))
   for (const c of reflection.candidates) {
     if (c.target === 'topic' && !c.topic) continue
+    if (stale(c.text)) continue
     try {
       const result = await store.infer({
         target: c.target,
@@ -135,7 +139,7 @@ export async function applyReflection(
     }
   }
   let timeline = false
-  if (reflection.summary)
+  if (reflection.summary && !stale(reflection.summary))
     try {
       await store.appendTimeline(
         conversation.day,

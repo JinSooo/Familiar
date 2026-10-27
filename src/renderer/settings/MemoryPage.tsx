@@ -12,6 +12,8 @@ export function MemoryPage() {
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState<{ id: string; text: string }>()
+  /** Timeline lines that still restate a memory the user just deleted. */
+  const [leftovers, setLeftovers] = useState<MemoryItem[]>([])
   const load = useCallback(() => {
     api
       .listMemory()
@@ -39,9 +41,17 @@ export function MemoryPage() {
     }
   }, [load])
   if (!items) return <p role="status">{notice || '读取记忆…'}</p>
-  const act = (work: Promise<void>) => {
+  const act = (work: Promise<unknown>) => {
     setEditing(undefined)
+    setLeftovers([])
     work.catch((e: unknown) => setNotice(failure(e)))
+  }
+  const remove = (item: MemoryItem) => {
+    setEditing(undefined)
+    api
+      .deleteMemory(item.id)
+      .then(setLeftovers)
+      .catch((e: unknown) => setNotice(failure(e)))
   }
   const live = items.filter((i) => i.status !== 'superseded')
   const pending = live.filter((i) => i.status === 'pending')
@@ -147,7 +157,7 @@ export function MemoryPage() {
           <button
             type="button"
             title={actions === 'pending' ? '这条判断不对，删掉' : '删除这条'}
-            onClick={() => act(api.deleteMemory(item.id))}
+            onClick={() => remove(item)}
           >
             {actions === 'pending' ? '不对' : '删除'}
           </button>
@@ -207,6 +217,39 @@ export function MemoryPage() {
         {notice ||
           '对话安静 30 分钟或换到别的对话后，会自动整理一次。推测出的判断先放在「它对我的判断」，你点「对」才记下；同一判断在 3 个不同对话里出现，也会自动记下。'}
       </p>
+      {leftovers.length > 0 && (
+        <div className="group memory-leftovers" role="alert">
+          <p>
+            时间线里还有 {leftovers.length} 条提到它，不删的话它仍可能想起来：
+          </p>
+          <ul>
+            {leftovers.map((i) => (
+              <li key={i.id}>
+                {i.key} {i.text}
+              </li>
+            ))}
+          </ul>
+          <span className="row-actions">
+            <button
+              type="button"
+              onClick={() =>
+                // One at a time: each delete commits a workspace snapshot.
+                act(
+                  leftovers.reduce<Promise<unknown>>(
+                    (done, i) => done.then(() => api.deleteMemory(i.id)),
+                    Promise.resolve(),
+                  ),
+                )
+              }
+            >
+              一并删除
+            </button>
+            <button type="button" onClick={() => setLeftovers([])}>
+              保留
+            </button>
+          </span>
+        </div>
+      )}
       {group('它对我的判断', pending, 'pending', '暂时没有待确认的判断。')}
       {group('画像', kept('profile'), 'kept', '还没有。可以对它说「记住……」。')}
       {group('习惯', kept('habits'), 'kept')}

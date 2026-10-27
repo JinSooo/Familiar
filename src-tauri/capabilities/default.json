@@ -8,6 +8,7 @@
     "allow-familiar-invoke",
     "allow-pet-hit",
     "allow-pet-drag-start",
+    "allow-pet-menu",
     {
       "identifier": "opener:allow-open-url",
       "allow": [

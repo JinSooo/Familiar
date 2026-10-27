@@ -2,7 +2,8 @@ import { Markdown, PlainText } from './Markdown'
 import { needsTimeDivider, formatMessageTime } from './content'
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { Icon } from '../shared-ui/Icon'
-import type { PetState } from '../../shared'
+import type { ChatView, PetState } from '../../shared'
+import { History, errorText } from './History'
 import { api } from '../api'
 import { Pet } from '../pet/Pet'
 import { PetAvatar } from '../pet/PetAvatar'
@@ -12,6 +13,17 @@ export function Chat() {
   const session = useSession()
   const [state, setState] = useState<PetState>('idle')
   useEffect(() => api.onState(setState), [])
+  const [view, setView] = useState<ChatView>('chat')
+  const [openError, setOpenError] = useState('')
+  useEffect(() => api.onView(setView), [])
+  useEffect(() => {
+    if (view !== 'history') return
+    const back = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setView('chat')
+    }
+    window.addEventListener('keydown', back)
+    return () => window.removeEventListener('keydown', back)
+  }, [view])
   const [name, setName] = useState('小黑')
   const [mode, setMode] = useState('自动')
   const bottom = useRef<HTMLDivElement>(null)
@@ -57,9 +69,20 @@ export function Chat() {
           <small className="muted">{mode}</small>
           <div className="header-actions">
             <button
+              className={`icon ${view === 'history' ? 'active' : ''}`}
+              aria-label="历史对话"
+              aria-pressed={view === 'history'}
+              onClick={() => setView(view === 'history' ? 'chat' : 'history')}
+            >
+              <Icon name="history" />
+            </button>
+            <button
               className="icon"
               aria-label="新对话"
-              onClick={() => api.newSession()}
+              onClick={() => {
+                api.newSession()
+                setView('chat')
+              }}
             >
               <Icon name="new" />
             </button>
@@ -79,100 +102,127 @@ export function Chat() {
             </button>
           </div>
         </header>
-        <section
-          className="messages"
-          aria-label="聊天消息"
-          aria-live="polite"
-          ref={list}
-          onScroll={(e) => {
-            const el = e.currentTarget
-            pinned.current =
-              el.scrollHeight - el.scrollTop - el.clientHeight < 48
-          }}
-        >
-          {!session.messages.length && (
-            <p className="empty muted">和{name}说句话…</p>
-          )}
-          {session.messages.map((m, i) => (
-            <Fragment key={i}>
-              {m.content &&
-                needsTimeDivider(
-                  session.messages[i - 1]?.createdAt,
-                  m.createdAt,
-                ) && (
-                  <div className="time-divider">
-                    {formatMessageTime(m.createdAt, Date.now())}
-                  </div>
-                )}
-              {session.tools
-                .filter((t) => t.turn === i)
-                .map((t) => (
-                  <details className="tool muted" key={t.id}>
-                    <summary>
-                      {t.done ? '✓ 已' : '正在'}
-                      {t.name}
-                    </summary>
-                    <p>调用编号：{t.id}</p>
+        {view === 'history' ? (
+          <History currentId={session.id} onOpened={() => setView('chat')} />
+        ) : (
+          <>
+            <section
+              className="messages"
+              aria-label="聊天消息"
+              aria-live="polite"
+              ref={list}
+              onScroll={(e) => {
+                const el = e.currentTarget
+                pinned.current =
+                  el.scrollHeight - el.scrollTop - el.clientHeight < 48
+              }}
+            >
+              {!session.messages.length && (
+                <div className="empty muted">
+                  <p>和{name}说句话…</p>
+                  {session.previous && (
+                    <button
+                      className="link"
+                      onClick={() => {
+                        if (!session.previous) return
+                        setOpenError('')
+                        api
+                          .openConversation(session.previous.id)
+                          .catch((e) =>
+                            setOpenError(errorText(e, '打不开上次的对话')),
+                          )
+                      }}
+                    >
+                      继续上次：{session.previous.title}
+                    </button>
+                  )}
+                  {openError && <p className="error">{openError}</p>}
+                </div>
+              )}
+              {session.messages.map((m, i) => (
+                <Fragment key={i}>
+                  {m.content &&
+                    needsTimeDivider(
+                      session.messages[i - 1]?.createdAt,
+                      m.createdAt,
+                    ) && (
+                      <div className="time-divider">
+                        {formatMessageTime(m.createdAt, Date.now())}
+                      </div>
+                    )}
+                  {session.tools
+                    .filter((t) => t.turn === i)
+                    .map((t) => (
+                      <details className="tool muted" key={t.id}>
+                        <summary>
+                          {t.done ? '✓ 已' : '正在'}
+                          {t.name}
+                        </summary>
+                        <p>调用编号：{t.id}</p>
+                      </details>
+                    ))}
+                  {m.content && (
+                    <article
+                      className={`message ${m.role}`}
+                      title={new Date(m.createdAt).toLocaleString('zh-CN', {
+                        hour12: false,
+                      })}
+                    >
+                      {m.role === 'assistant' ? (
+                        <Markdown content={m.content} />
+                      ) : (
+                        <PlainText content={m.content} />
+                      )}
+                    </article>
+                  )}
+                  {m.error && (
+                    <p className="error" role="alert">
+                      {m.error}
+                    </p>
+                  )}
+                </Fragment>
+              ))}
+              {session.approvals.map((a) => (
+                <article className="approval" key={a.id}>
+                  <strong>需要你的允许</strong>
+                  <p>{a.reason}</p>
+                  <details>
+                    <summary>{a.toolName}</summary>
+                    <pre>{JSON.stringify(a.input, null, 2)}</pre>
                   </details>
-                ))}
-              {m.content && (
-                <article
-                  className={`message ${m.role}`}
-                  title={new Date(m.createdAt).toLocaleString('zh-CN', {
-                    hour12: false,
-                  })}
-                >
-                  {m.role === 'assistant' ? (
-                    <Markdown content={m.content} />
-                  ) : (
-                    <PlainText content={m.content} />
+                  <div className="approval-actions">
+                    <button
+                      className="primary"
+                      onClick={() => api.approve(a.id, 'approve')}
+                    >
+                      允许
+                    </button>
+                    <button onClick={() => api.approve(a.id, 'deny')}>
+                      拒绝
+                    </button>
+                  </div>
+                  {a.dir && (
+                    <button
+                      className="link"
+                      title={a.dir}
+                      onClick={() => api.approve(a.id, 'always')}
+                    >
+                      总是允许{' '}
+                      {a.dir.split('/').filter(Boolean).at(-1) ?? a.dir} 目录
+                    </button>
                   )}
                 </article>
-              )}
-              {m.error && (
-                <p className="error" role="alert">
-                  {m.error}
+              ))}
+              {session.running && (
+                <p className="muted status">
+                  {session.approvals.length ? '等你允许…' : `${name}正在思考…`}
                 </p>
               )}
-            </Fragment>
-          ))}
-          {session.approvals.map((a) => (
-            <article className="approval" key={a.id}>
-              <strong>需要你的允许</strong>
-              <p>{a.reason}</p>
-              <details>
-                <summary>{a.toolName}</summary>
-                <pre>{JSON.stringify(a.input, null, 2)}</pre>
-              </details>
-              <div className="approval-actions">
-                <button
-                  className="primary"
-                  onClick={() => api.approve(a.id, 'approve')}
-                >
-                  允许
-                </button>
-                <button onClick={() => api.approve(a.id, 'deny')}>拒绝</button>
-              </div>
-              {a.dir && (
-                <button
-                  className="link"
-                  title={a.dir}
-                  onClick={() => api.approve(a.id, 'always')}
-                >
-                  总是允许 {a.dir.split('/').filter(Boolean).at(-1) ?? a.dir}{' '}
-                  目录
-                </button>
-              )}
-            </article>
-          ))}
-          {session.running && (
-            <p className="muted status">
-              {session.approvals.length ? '等你允许…' : `${name}正在思考…`}
-            </p>
-          )}
-          <div ref={bottom} />
-        </section>
-        <Composer running={session.running} name={name} />
+              <div ref={bottom} />
+            </section>
+            <Composer running={session.running} name={name} />
+          </>
+        )}
       </div>
     </main>
   )

@@ -134,6 +134,15 @@ export const IPC = {
   petsSelect: 'pets:select',
   petSizeSet: 'pet:size-set',
   appQuit: 'app:quit',
+  // Conversation history (Markdown files in ~/Familiar/conversations).
+  conversationsList: 'conversations:list',
+  conversationsOpen: 'conversations:open',
+  conversationsDelete: 'conversations:delete',
+  conversationsClear: 'conversations:clear',
+  conversationsReveal: 'conversations:reveal',
+  // Pet context menu / tray → agent.
+  chatOpen: 'chat:open',
+  chatHistory: 'chat:history',
 } as const
 export type DragAction = 'start' | 'move' | 'end'
 export interface FamiliarAPI {
@@ -155,7 +164,16 @@ export interface FamiliarAPI {
   ready(): void
   onEvent(callback: (event: AgentEvent) => void): () => void
   onState(callback: (state: PetState) => void): () => void
-  onView(callback: (view: 'chat' | 'settings') => void): () => void
+  onView(callback: (view: ChatView) => void): () => void
+  listConversations(query?: string): Promise<ConversationSummary[]>
+  /** Makes a saved conversation the current one. */
+  openConversation(id: string): Promise<void>
+  /** Moves the conversation's file to the Trash. */
+  deleteConversation(id: string): Promise<void>
+  clearConversations(): Promise<void>
+  revealConversations(): void
+  /** Native pet context menu, opened at window-local CSS pixels clear of the pet. */
+  petMenu(x: number, y: number): void
   typing(hasText: boolean): void
   animationFinished(): void
   onSize(callback: (size: Settings['pet']['size']) => void): () => void
@@ -168,7 +186,21 @@ export interface FamiliarAPI {
 }
 
 export type Approval = Extract<AgentEvent, { type: 'tool-approval-request' }>
+export type ChatView = 'chat' | 'history'
+export interface ConversationSummary {
+  id: string
+  title: string
+  /** Last reply as one plain line. */
+  preview: string
+  updatedAt: number
+  messages: number
+}
 export interface Session {
+  /** Conversation file id; empty until the first message. */
+  id: string
+  updatedAt: number
+  /** Set when the capsule started fresh after a long pause, so it can offer to go back. */
+  previous?: { id: string; title: string }
   /** `error` marks a reply that failed, so the transcript keeps the failure where it happened. */
   messages: (Message & { createdAt: number; error?: string })[]
   running: boolean

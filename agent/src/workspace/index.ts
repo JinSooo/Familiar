@@ -8,6 +8,7 @@ import type { Settings } from '../../../src/shared'
 import { decideToolCall } from '../permissions'
 import { normalizePath } from '../permissions/paths'
 import { sandboxProfile } from './sandbox'
+import { moveToTrash } from '../system'
 
 const exec = promisify(execFile)
 async function git(path: string, args: string[]): Promise<string> {
@@ -150,11 +151,7 @@ export function createWorkspaceTools(settings: Settings): ToolSet {
       '把文件或目录移到废纸篓（可恢复）。',
       pathSchema,
       async (_, path) => {
-        await exec('/usr/bin/osascript', [
-          '-e',
-          'on run argv\n tell application "Finder" to delete POSIX file (item 1 of argv)\nend run',
-          path,
-        ])
+        await moveToTrash(path)
         return { ok: true }
       },
     ),

@@ -7,3 +7,6 @@ commands.allow = ["pet_hit"]
 [[permission]]
 identifier = "allow-pet-drag-start"
 commands.allow = ["pet_drag_start"]
+[[permission]]
+identifier = "allow-pet-menu"
+commands.allow = ["pet_menu"]

@@ -1,10 +1,28 @@
 import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
+import { homedir } from 'node:os'
 const exec = promisify(execFile)
 if (!process.env.FAMILIAR_DATA_DIR)
   throw new Error('FAMILIAR_DATA_DIR is required')
 export const dataDir = resolve(process.env.FAMILIAR_DATA_DIR)
+/** User-readable conversation transcripts, next to the planned ~/Familiar/memory. */
+export const conversationsDir = resolve(
+  process.env.FAMILIAR_CONVERSATIONS_DIR ??
+    join(homedir(), 'Familiar', 'conversations'),
+)
+/** Finder's delete, so the item lands in the Trash and can be put back. */
+export async function moveToTrash(path: string): Promise<void> {
+  await exec('/usr/bin/osascript', [
+    '-e',
+    // Without `as alias` Finder cannot resolve the POSIX path (-1728) and nothing moves.
+    'on run argv\n tell application "Finder" to delete (POSIX file (item 1 of argv) as alias)\nend run',
+    path,
+  ])
+}
+export async function reveal(path: string): Promise<void> {
+  await exec('/usr/bin/open', [path])
+}
 export const resourcesDir = resolve(
   process.env.FAMILIAR_RESOURCES_DIR ?? 'resources',
 )

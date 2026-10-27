@@ -61,4 +61,12 @@ export const api: FamiliarAPI = {
   onEvent: (cb) => subscribe(IPC.agentEvent, cb),
   onState: (cb) => subscribe(IPC.petState, cb),
   onView: (cb) => subscribe(IPC.view, cb),
+  listConversations: (query) => request(IPC.conversationsList, query),
+  openConversation: (id) => request(IPC.conversationsOpen, id),
+  deleteConversation: (id) => request(IPC.conversationsDelete, id),
+  clearConversations: () => request(IPC.conversationsClear),
+  revealConversations: () => send(IPC.conversationsReveal),
+  petMenu: (x, y) => {
+    void invoke('pet_menu', { x, y }).catch(console.error)
+  },
 }

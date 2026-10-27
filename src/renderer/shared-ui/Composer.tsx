@@ -7,6 +7,7 @@ export function Composer({
   name = '小黑',
   status = '',
   failed = '',
+  continuing = false,
 }: {
   running: boolean
   mini?: boolean
@@ -15,13 +16,14 @@ export function Composer({
   status?: string
   /** Mini only: the last turn's error; the failed message comes back for a resend. */
   failed?: string
+  /** The current conversation already has messages. */
+  continuing?: boolean
 }) {
   const [input, setInput] = useState('')
   const [error, setError] = useState('')
   const field = useRef<HTMLInputElement>(null)
   const busy = useRef(false)
   const lastSent = useRef('')
-  const [asked, setAsked] = useState(false)
   // The capsule cannot take a second message mid-turn, so it shows progress instead of an idle field.
   const working = mini && running
   useEffect(() => {
@@ -56,7 +58,6 @@ export function Composer({
           setError('')
           busy.current = true
           lastSent.current = text
-          setAsked(true)
           api.typing(false)
           try {
             await api.run(text)
@@ -98,7 +99,7 @@ export function Composer({
           <input
             ref={field}
             aria-label="消息"
-            placeholder={mini && asked ? `继续问${name}…` : `问${name}…`}
+            placeholder={continuing ? `继续问${name}…` : `问${name}…`}
             value={input}
             onChange={(e) => {
               setInput(e.target.value)

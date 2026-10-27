@@ -34,6 +34,7 @@ export function SettingsView() {
   const [settings, setSettings] = useState<PublicSettings>()
   const [key, setKey] = useState('')
   const [notice, setNotice] = useState('')
+  const [clearing, setClearing] = useState(false)
   useEffect(() => {
     void api.listPets().then(setPets).catch(console.error)
     api
@@ -311,7 +312,56 @@ export function SettingsView() {
             </p>
           </section>
           <section hidden={tab !== '隐私'}>
-            <p className="muted">即将到来</p>
+            <div className="group">
+              <div className="setting-row">
+                <span>对话记录</span>
+                <button
+                  type="button"
+                  className="link"
+                  onClick={() => api.revealConversations()}
+                >
+                  ~/Familiar/conversations
+                </button>
+              </div>
+              <div className="setting-row">
+                <span>清空全部对话</span>
+                {clearing ? (
+                  <span className="row-actions">
+                    <button
+                      type="button"
+                      className="danger"
+                      onClick={() => {
+                        setClearing(false)
+                        api
+                          .clearConversations()
+                          .then(() => setNotice('对话已移到废纸篓'))
+                          .catch((e: unknown) =>
+                            setNotice(
+                              typeof e === 'string' ? e : '清空失败，请重试',
+                            ),
+                          )
+                      }}
+                    >
+                      移到废纸篓
+                    </button>
+                    <button type="button" onClick={() => setClearing(false)}>
+                      取消
+                    </button>
+                  </span>
+                ) : (
+                  <button type="button" onClick={() => setClearing(true)}>
+                    清空…
+                  </button>
+                )}
+              </div>
+            </div>
+            <p className="caption">
+              每个对话是一个 Markdown
+              文件，可以直接打开阅读。删除和清空都会移到废纸篓，可以恢复。
+            </p>
+            <p role="status" className="caption">
+              {notice}
+            </p>
           </section>
           <div className="form-actions" hidden={tab === '隐私'}>
             <p role="status">{notice}</p>

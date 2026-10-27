@@ -222,12 +222,27 @@ export function Pet({
       down = undefined
       stroking.reversals = []
     }
+    // Right-click on the pet itself opens the native menu; text fields keep their own menu.
+    const menu = (event: MouseEvent) => {
+      if (
+        event.target !== canvas.current ||
+        !hit.current(event.clientX, event.clientY)
+      )
+        return
+      event.preventDefault()
+      // Left of the body (menus are ~150px wide); the pet panel would cover one at the cursor.
+      const left = (event.target as HTMLCanvasElement).getBoundingClientRect()
+        .left
+      api.petMenu(left - 160, event.clientY - 12)
+    }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerdown', start)
     window.addEventListener('pointerup', end)
     window.addEventListener('pointercancel', cancel)
     window.addEventListener('blur', cancel)
+    window.addEventListener('contextmenu', menu)
     return () => {
+      window.removeEventListener('contextmenu', menu)
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerdown', start)
       window.removeEventListener('pointerup', end)

@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import type { Session } from '../../shared'
 import { api } from '../api'
 const initial: Session = {
+  id: '',
+  updatedAt: 0,
   messages: [],
   running: false,
   approvals: [],

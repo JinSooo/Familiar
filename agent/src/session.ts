@@ -1,5 +1,8 @@
 import type { AgentEvent, Session } from '../../src/shared'
+import { newConversationId } from './conversations'
 export const emptySession = (): Session => ({
+  id: '',
+  updatedAt: 0,
   messages: [],
   running: false,
   approvals: [],
@@ -13,13 +16,17 @@ export function beginTurn(
   text: string,
   origin: Session['origin'],
 ): Session {
+  const now = Date.now()
   return {
     ...session,
+    previous: undefined,
+    id: session.id || newConversationId(new Date(now)),
+    updatedAt: now,
     messages: [
       // Empty replies stay (stopped or failed turns): tool rows and errors point at them by index.
       ...session.messages,
-      { role: 'user', content: text, createdAt: Date.now() },
-      { role: 'assistant', content: '', createdAt: Date.now() },
+      { role: 'user', content: text, createdAt: now },
+      { role: 'assistant', content: '', createdAt: now },
     ],
     running: true,
     approvals: [],

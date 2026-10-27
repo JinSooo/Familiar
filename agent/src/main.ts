@@ -24,8 +24,23 @@ import {
 } from './session'
 import { runAgent, resolveApproval } from './agent'
 import { listPets, currentSkin, importCodexPets } from './pets'
+import {
+  clearConversations,
+  conversationTitle,
+  deleteConversation,
+  listConversations,
+  loadConversation,
+  saveConversation,
+} from './conversations'
 import { petDimensions, resolveState } from './pet-logic'
-import { dataDir, refreshProxy, accent, idleSeconds } from './system'
+import {
+  dataDir,
+  conversationsDir,
+  refreshProxy,
+  accent,
+  idleSeconds,
+  reveal,
+} from './system'
 
 // Keep stdout exclusively for the wire protocol, including dependency diagnostics.
 console.log =
@@ -65,6 +80,50 @@ let closing = false
 const pendingApprovals = new Set<string>()
 function publishSession() {
   broadcast(IPC.session, session)
+}
+/** Write the transcript; a failed save must never break the conversation itself. */
+function persist(snapshot = session) {
+  void saveConversation(
+    { ...snapshot, running: false },
+    getSettings().pet.name,
+  ).catch((error) => console.error('Saving conversation failed', error))
+}
+/** After this long without a message, the capsule starts a fresh conversation. */
+const idleRestart = 2 * 60 * 60 * 1000
+/** Opening a conversation counts as activity without rewriting its saved time. */
+let openedAt = 0
+function startFresh() {
+  const previous = session.messages.length
+    ? { id: session.id, title: conversationTitle(session.messages) }
+    : session.previous
+  // An idle conversation is already on disk; only a run being cut off has unsaved output.
+  if (controller && session.messages.length) persist()
+  clearTimeout(bubbleTimer)
+  session = { ...emptySession(), ...(previous ? { previous } : {}) }
+  publishSession()
+}
+function restartIfIdle() {
+  if (
+    !controller &&
+    session.messages.length &&
+    Date.now() - Math.max(session.updatedAt, openedAt) > idleRestart
+  )
+    startFresh()
+}
+async function openConversation(id: string) {
+  if (controller) throw new Error('先停止正在进行的对话')
+  const stored = await loadConversation(id)
+  clearTimeout(bubbleTimer)
+  session = {
+    ...emptySession(),
+    id: stored.id,
+    updatedAt: stored.updatedAt,
+    messages: stored.messages,
+    tools: stored.tools,
+  }
+  // The idle restart must not set it aside again on the next message.
+  openedAt = Date.now()
+  publishSession()
 }
 function refreshState() {
   const next = resolveState(activity) as PetState
@@ -122,8 +181,10 @@ async function run(window: WindowLabel | 'tray', input: unknown) {
   const text = z.string().trim().min(1).max(100000).parse(input)
   if (session.messages.length >= 498) throw new Error('请开启新对话')
   clearTimeout(bubbleTimer)
+  if (window === 'pet') restartIfIdle()
   expandedTurn = window === 'chat'
   session = beginTurn(session, text, window === 'pet' ? 'capsule' : 'chat')
+  persist()
   const messages = session.messages
     .filter((m) => m.content)
     .map(({ role, content }) => ({ role, content }))
@@ -179,9 +240,15 @@ async function run(window: WindowLabel | 'tray', input: unknown) {
       message: error instanceof Error ? error.message : '运行失败，请重试。',
     })
   } finally {
-    session = resetRequested
-      ? emptySession()
-      : { ...session, running: false, approvals: [] }
+    if (!resetRequested) {
+      session = {
+        ...session,
+        running: false,
+        approvals: [],
+        updatedAt: Date.now(),
+      }
+      persist()
+    }
     publishSession()
     bubbleTimer = setTimeout(() => {
       session = { ...session, bubble: '' }
@@ -222,12 +289,16 @@ async function request(
     case IPC.sessionGet:
       return session
     case IPC.sessionNew:
-      requireSender(window, ['chat', 'pet'])
+      requireSender(window, ['chat', 'pet', 'tray'])
       resetRequested = Boolean(controller)
       controller?.abort()
       pendingApprovals.clear()
-      clearTimeout(bubbleTimer)
-      session = emptySession()
+      startFresh()
+      // From the tray or pet menu: put the user somewhere they can type.
+      if (window === 'tray') {
+        if (chatVisible) emit(IPC.view, 'chat', 'chat')
+        else setCapsule(true)
+      }
       Object.assign(activity, {
         done: false,
         failed: false,
@@ -237,6 +308,48 @@ async function request(
       })
       refreshState()
       publishSession()
+      return
+    case IPC.conversationsList:
+      requireSender(window, ['chat', 'settings'])
+      return listConversations(z.string().max(200).optional().parse(input))
+    case IPC.conversationsOpen:
+      requireSender(window, ['chat', 'pet'])
+      return openConversation(z.string().parse(input))
+    case IPC.conversationsDelete: {
+      requireSender(window, ['chat'])
+      const id = z.string().parse(input)
+      if (id === session.id && controller)
+        throw new Error('正在进行的对话不能删除，先停止它')
+      await deleteConversation(id)
+      if (id === session.id) {
+        clearTimeout(bubbleTimer)
+        session = emptySession()
+      } else if (session.previous?.id === id)
+        session = { ...session, previous: undefined }
+      publishSession()
+      return
+    }
+    case IPC.conversationsClear:
+      requireSender(window, ['settings'])
+      if (controller) throw new Error('先停止正在进行的对话')
+      await clearConversations()
+      clearTimeout(bubbleTimer)
+      session = emptySession()
+      publishSession()
+      return
+    case IPC.conversationsReveal:
+      requireSender(window, ['chat', 'settings'])
+      await mkdir(conversationsDir, { recursive: true })
+      await reveal(conversationsDir)
+      return
+    case IPC.chatOpen:
+      requireSender(window, ['tray'])
+      showChat()
+      return
+    case IPC.chatHistory:
+      requireSender(window, ['tray'])
+      showChat()
+      emit(IPC.view, 'history', 'chat')
       return
     case IPC.agentRun:
       requireSender(window, ['chat', 'pet'])
@@ -291,10 +404,13 @@ async function request(
     case IPC.settingsOpen:
       ui({ type: 'show-settings' })
       return
-    case IPC.capsule:
+    case IPC.capsule: {
       requireSender(window, ['pet'])
-      setCapsule(z.boolean().parse(input))
+      const open = z.boolean().parse(input)
+      if (open) restartIfIdle()
+      setCapsule(open)
       return
+    }
     case IPC.petSkin:
       return currentSkin(getSettings().pet.id)
     case IPC.petsList:
@@ -426,6 +542,19 @@ async function handle(line: string) {
     console.error('Invalid sidecar message')
   }
 }
+/** Pick up where the last run left off, or offer it as "previous" when it is old. */
+async function restoreLatest() {
+  try {
+    const [latest] = await listConversations()
+    if (!latest) return
+    if (Date.now() - latest.updatedAt <= idleRestart)
+      await openConversation(latest.id)
+    else
+      session = { ...session, previous: { id: latest.id, title: latest.title } }
+  } catch (error) {
+    console.error('Restoring conversation failed', error)
+  }
+}
 async function start() {
   await mkdir(dataDir, { recursive: true })
   await loadSettings()
@@ -436,6 +565,7 @@ async function start() {
   } catch {
     /* First launch. */
   }
+  await restoreLatest()
   updatePet()
   rebuildTray()
   const proxyTimer = setInterval(() => {

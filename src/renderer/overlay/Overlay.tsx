@@ -1,5 +1,6 @@
 import { bubblePlainText } from '../chat/content'
 import { useEffect, useState, type CSSProperties } from 'react'
+import type { Session } from '../../shared'
 import { api } from '../api'
 import { Pet } from '../pet/Pet'
 import { scales } from '../pet/logic'
@@ -26,6 +27,54 @@ export function Bubble({
       {text}
       <span className="tail" />
     </button>
+  )
+}
+/**
+ * Above the reopened capsule: where the conversation stands, so hiding the capsule never
+ * loses the thread. Continues the current one, or offers the one set aside after a long pause.
+ */
+function ContextStrip({ session }: { session: Session }) {
+  const [error, setError] = useState('')
+  if (session.running || session.bubble) return null
+  const reply = session.messages.findLast(
+    (m) => m.role === 'assistant' && (m.content || m.error),
+  )
+  if (session.messages.length)
+    return (
+      <div className="context-strip" data-hit>
+        <button
+          className="context-main"
+          title="展开完整对话"
+          onClick={() => api.toggleChat()}
+        >
+          <span className="muted">上次聊到</span>
+          <span>
+            {reply
+              ? bubblePlainText(reply.content || reply.error || '', 36)
+              : '…'}
+          </span>
+        </button>
+        <button className="context-action" onClick={() => api.newSession()}>
+          新对话
+        </button>
+      </div>
+    )
+  if (!session.previous) return null
+  const { id, title } = session.previous
+  return (
+    <div className="context-strip" data-hit>
+      <span className="context-main muted">{error || '已开始新对话'}</span>
+      <button
+        className="context-action"
+        title={title}
+        onClick={() => {
+          setError('')
+          api.openConversation(id).catch(() => setError('上次的对话打不开了'))
+        }}
+      >
+        继续上次
+      </button>
+    </div>
   )
 }
 export function Overlay() {
@@ -85,12 +134,14 @@ export function Overlay() {
       )}
       {open && (
         <div className="capsule">
+          <ContextStrip session={session} />
           <Composer
             running={session.running}
             mini
             name={name}
             status={status}
             failed={session.error}
+            continuing={session.messages.length > 0}
           />
         </div>
       )}

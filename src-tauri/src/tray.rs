@@ -57,7 +57,13 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
             crate::agent::menu_request(app, "pet:size-set", &[Value::String(size.to_owned())]);
         } else if matches!(
             id,
-            "chat:toggle" | "settings:open" | "pets:import" | "app:quit"
+            "chat:toggle"
+                | "chat:open"
+                | "chat:history"
+                | "session:new"
+                | "settings:open"
+                | "pets:import"
+                | "app:quit"
         ) {
             crate::agent::menu_request(app, id, &[]);
         }
@@ -111,7 +117,10 @@ pub fn rebuild(
     let menu = Menu::with_items(
         app,
         &[
-            &MenuItem::with_id(app, "chat:toggle", "显示/隐藏聊天", true, None::<&str>)?,
+            &MenuItem::with_id(app, "chat:open", "打开对话", true, None::<&str>)?,
+            &MenuItem::with_id(app, "session:new", "新对话", true, None::<&str>)?,
+            &MenuItem::with_id(app, "chat:history", "历史对话…", true, None::<&str>)?,
+            &PredefinedMenuItem::separator(app)?,
             &MenuItem::with_id(app, "settings:open", "设置…", true, None::<&str>)?,
             &PredefinedMenuItem::separator(app)?,
             &pet_menu,
@@ -131,4 +140,37 @@ pub fn rebuild(
         tray.set_menu(Some(menu))?;
     }
     Ok(())
+}
+
+/// Right-click on the pet: the conversation entry points. `x`/`y` are window-local logical
+/// coordinates left of the pet's body: the pet panel sits above menus, so a menu at the cursor
+/// would open underneath it.
+#[tauri::command]
+pub fn pet_menu(
+    window: tauri::WebviewWindow,
+    app: AppHandle,
+    x: f64,
+    y: f64,
+) -> Result<(), String> {
+    if window.label() != "pet" {
+        return Err("Pet window required".into());
+    }
+    let menu = Menu::with_items(
+        &app,
+        &[
+            &MenuItem::with_id(&app, "chat:open", "打开对话", true, None::<&str>)
+                .map_err(|e| e.to_string())?,
+            &MenuItem::with_id(&app, "session:new", "新对话", true, None::<&str>)
+                .map_err(|e| e.to_string())?,
+            &MenuItem::with_id(&app, "chat:history", "历史对话…", true, None::<&str>)
+                .map_err(|e| e.to_string())?,
+            &PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?,
+            &MenuItem::with_id(&app, "settings:open", "设置…", true, None::<&str>)
+                .map_err(|e| e.to_string())?,
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    window
+        .popup_menu_at(&menu, tauri::LogicalPosition::new(x.max(0.), y.max(0.)))
+        .map_err(|e| e.to_string())
 }

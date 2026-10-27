@@ -14,7 +14,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             agent::familiar_invoke,
             hit::pet_hit,
-            hit::pet_drag_start
+            hit::pet_drag_start,
+            tray::pet_menu
         ])
         .register_uri_scheme_protocol("familiar-pet", |ctx, request| {
             let paths = ctx.app_handle().state::<windows::Paths>();

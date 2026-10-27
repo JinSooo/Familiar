@@ -71,6 +71,13 @@ export const api: FamiliarAPI = {
   listModels: (draft) => request(IPC.modelsList, draft),
   removeDirRule: (path) => request(IPC.dirRuleRemove, path),
   testModel: (draft) => request(IPC.modelTest, draft),
+  listMemory: () => request(IPC.memoryList),
+  confirmMemory: (id, text) => request(IPC.memoryConfirm, id, text),
+  correctMemory: (id, text) => request(IPC.memoryCorrect, id, text),
+  deleteMemory: (id) => request(IPC.memoryDelete, id),
+  reflectMemory: () => send(IPC.memoryReflect),
+  revealMemory: () => send(IPC.memoryReveal),
+  onMemoryChanged: (cb) => subscribe(IPC.memoryChanged, cb),
   petMenu: (x, y) => {
     void invoke('pet_menu', { x, y }).catch(console.error)
   },

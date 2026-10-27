@@ -39,6 +39,11 @@ import {
   saveConversation,
 } from './conversations'
 import { petDimensions, resolveState } from './pet-logic'
+import { openMemory } from './memory'
+import { recordFeedback } from './memory/feedback'
+import { reflectDue } from './memory/jobs'
+import { ensureWorkspace, snapshot } from './workspace'
+import type { MemoryChange, MemoryItem } from '../../src/shared'
 import {
   dataDir,
   conversationsDir,
@@ -102,6 +107,41 @@ const modelDraft = settingsSchema.shape.model
 const idleRestart = 2 * 60 * 60 * 1000
 /** Opening a conversation counts as activity without rewriting its saved time. */
 let openedAt = 0
+async function memory() {
+  const workspace = await ensureWorkspace(getSettings())
+  return { workspace, ...openMemory(workspace) }
+}
+function memoryChanged(change: MemoryChange = {}) {
+  broadcast(IPC.memoryChanged, change)
+}
+/** Reflect in the background; failures (no model set, relay down) only reach the log or the memory page. */
+function reflect(force = false) {
+  void reflectDue(session.id, force)
+    .then((result) => {
+      if (force || result.conversations) memoryChanged({ reflect: result })
+    })
+    .catch((error) => {
+      console.error('Reflection failed', error)
+      if (force)
+        memoryChanged({
+          reflect: {
+            error: error instanceof Error ? error.message : '整理失败',
+          },
+        })
+    })
+}
+/** Run after the user leaves a conversation, once the new one has been published. */
+function reflectSoon() {
+  setTimeout(() => reflect(), 3000)
+}
+async function memoryEdit(
+  work: (m: Awaited<ReturnType<typeof memory>>) => Promise<string>,
+) {
+  const m = await memory()
+  const message = await work(m)
+  await snapshot(m.workspace, `familiar: ${message}`)
+  memoryChanged()
+}
 function startFresh() {
   const previous = session.messages.length
     ? { id: session.id, title: conversationTitle(session.messages) }
@@ -111,6 +151,7 @@ function startFresh() {
   clearTimeout(bubbleTimer)
   session = { ...emptySession(), ...(previous ? { previous } : {}) }
   publishSession()
+  reflectSoon()
 }
 function restartIfIdle() {
   if (
@@ -134,6 +175,7 @@ async function openConversation(id: string) {
   // The idle restart must not set it aside again on the next message.
   openedAt = Date.now()
   publishSession()
+  reflectSoon()
 }
 function refreshState() {
   const next = resolveState(activity) as PetState
@@ -276,6 +318,7 @@ async function run(window: WindowLabel | 'tray', input: unknown) {
       publishSession()
     }, bubbleTimeout(session.bubble))
     controller = undefined
+    memoryChanged()
     pendingApprovals.clear()
     activity.thinking = false
     activity.talking = false
@@ -513,6 +556,65 @@ async function request(
         emit(IPC.petSkin, currentSkin(getSettings().pet.id), 'chat')
       }
       return
+    case IPC.memoryList: {
+      requireSender(window, ['settings'])
+      const { store } = await memory()
+      return (await store.list()).map(({ seen, ...entry }): MemoryItem => ({
+        ...entry,
+        ...(seen ? { seen: seen.length } : {}),
+      }))
+    }
+    case IPC.memoryConfirm: {
+      requireSender(window, ['settings'])
+      const id = z.string().parse(input)
+      const text = z.string().trim().min(1).max(300).optional().parse(args[1])
+      await memoryEdit(async ({ store }) => {
+        const entry = await store.get(id)
+        await store.confirm(id, text)
+        if (entry)
+          await recordFeedback(
+            text && text !== entry.text ? 'correct' : 'confirm',
+            entry,
+            text,
+          )
+        return 'confirm memory'
+      })
+      return
+    }
+    case IPC.memoryCorrect: {
+      requireSender(window, ['settings'])
+      const id = z.string().parse(input)
+      const text = z.string().trim().min(1).max(300).parse(args[1])
+      await memoryEdit(async ({ store }) => {
+        const entry = await store.get(id)
+        await store.correct(id, text)
+        if (entry?.source === 'reflection')
+          await recordFeedback('correct', entry, text)
+        return 'correct memory'
+      })
+      return
+    }
+    case IPC.memoryDelete: {
+      requireSender(window, ['settings'])
+      const id = z.string().parse(input)
+      await memoryEdit(async ({ store }) => {
+        const entry = await store.remove(id)
+        if (entry.status === 'pending') await recordFeedback('reject', entry)
+        return 'delete memory'
+      })
+      return
+    }
+    case IPC.memoryReflect:
+      requireSender(window, ['settings'])
+      reflect(true)
+      return
+    case IPC.memoryReveal: {
+      requireSender(window, ['settings'])
+      const { store } = await memory()
+      await mkdir(store.dir, { recursive: true })
+      await reveal(store.dir)
+      return
+    }
     case IPC.appQuit:
       requireSender(window, ['tray'])
       ui({ type: 'quit' })
@@ -627,6 +729,9 @@ async function start() {
       })
       .catch(console.error)
   }, 30000)
+  // Conversations that went quiet; the first pass also picks up what the last run left.
+  const reflectTimer = setInterval(() => reflect(), 5 * 60000)
+  reflectSoon()
   const stateTimer = setInterval(() => {
     activity.listening = typingAt > 0 && Date.now() - typingAt < 2000
     refreshState()
@@ -641,7 +746,7 @@ async function start() {
     closing = true
     controller?.abort()
     clearTimeout(bubbleTimer)
-    for (const timer of [proxyTimer, idleTimer, stateTimer])
+    for (const timer of [proxyTimer, idleTimer, stateTimer, reflectTimer])
       clearInterval(timer)
     input.close()
     process.exit(0)

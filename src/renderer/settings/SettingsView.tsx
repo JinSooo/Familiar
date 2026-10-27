@@ -6,6 +6,7 @@ import type {
   SettingsUpdate,
 } from '../../shared'
 import { api } from '../api'
+import { MemoryPage } from './MemoryPage'
 
 // Icon tiles mirror the System Settings sidebar.
 const tabs = [
@@ -23,6 +24,11 @@ const tabs = [
     name: '宠物',
     tile: '#34A853',
     icon: 'M12 21c-4 0-7-2-7-5s3-6 7-6 7 3 7 6-3 5-7 5zM7 4v3M17 4v3',
+  },
+  {
+    name: '记忆',
+    tile: '#FF9F0A',
+    icon: 'M4 5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-2zM4 17a2 2 0 0 1 2-2h12M8 7h6',
   },
   {
     name: '隐私',
@@ -177,7 +183,12 @@ export function SettingsView() {
         <header className="settings-title" data-tauri-drag-region="deep">
           <h2>{tab}</h2>
         </header>
-        <form className="settings" onSubmit={save}>
+        {tab === '记忆' && (
+          <div className="settings">
+            <MemoryPage />
+          </div>
+        )}
+        <form className="settings" hidden={tab === '记忆'} onSubmit={save}>
           <section hidden={tab !== '模型'} className="group">
             <label>
               模型协议
@@ -210,6 +221,15 @@ export function SettingsView() {
                 value={settings.model.model}
                 placeholder={models ? '输入筛选或选择' : '例如 gpt-6.1-sol'}
                 onChange={(e) => model('model', e.target.value)}
+              />
+            </label>
+            <label>
+              后台小模型
+              <input
+                list="model-options"
+                value={settings.model.smallModel}
+                placeholder="留空则用上面的模型"
+                onChange={(e) => model('smallModel', e.target.value)}
               />
             </label>
             <datalist id="model-options">
@@ -271,6 +291,12 @@ export function SettingsView() {
             <p className="caption probe warn">
               模型列表里没有「{settings.model.model.trim()}
               」，你的账号可能用不了它。
+            </p>
+          )}
+          {tab === '模型' && (
+            <p className="caption">
+              「后台小模型」用来整理记忆，走同一个地址和
+              Key；可以填更便宜的模型。
             </p>
           )}
           {tab === '模型' && probe && (

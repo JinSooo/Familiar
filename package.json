@@ -14,6 +14,7 @@
     "agent:build": "bun build --compile agent/src/main.ts --outfile src-tauri/binaries/familiar-agent-$(rustc -vV | sed -n 's/^host: //p')",
     "typecheck": "tsc --noEmit && tsc -p agent",
     "test": "bun test --preload ./agent/test/setup.ts agent/test",
+    "eval": "PROMPTFOO_DISABLE_TELEMETRY=1 pnpm dlx promptfoo@0.124.1 eval -c agent/eval/promptfooconfig.yaml --no-cache",
     "lint": "eslint .",
     "format": "prettier --write .",
     "tauri": "tauri"

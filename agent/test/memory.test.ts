@@ -3,7 +3,12 @@ import { mkdtempSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { MemoryStore, memoryContext, sensitiveReason } from '../src/memory'
+import {
+  MemoryIndex,
+  MemoryStore,
+  memoryContext,
+  sensitiveReason,
+} from '../src/memory'
 
 const store = () =>
   new MemoryStore(mkdtempSync(join(tmpdir(), 'familiar-mem-')))
@@ -93,5 +98,50 @@ describe('store', () => {
     await expect(
       s.add({ category: 'topic', topic: '../..', text: 'x' }),
     ).rejects.toThrow('主题名无效')
+  })
+})
+
+describe('search index', () => {
+  const setup = async () => {
+    const s = store()
+    const index = new MemoryIndex(
+      s,
+      join(s.dir, '..', `${Math.random()}.sqlite`),
+    )
+    await s.add({ category: 'habits', text: '用户早上喝美式咖啡，不加糖' })
+    await s.add({
+      category: 'topic',
+      topic: 'Familiar',
+      text: '壳用 Tauri 2.12，大脑是 Bun 进程',
+    })
+    await s.add({ category: 'profile', text: '住在杭州' })
+    return { s, index }
+  }
+
+  test('finds Chinese by two- and three-character overlap, and English words', async () => {
+    const { index } = await setup()
+    expect((await index.search('我早上一般喝什么'))[0]?.text).toContain('美式')
+    expect((await index.search('tauri'))[0]?.text).toContain('Tauri')
+    expect((await index.search('杭'))[0]?.text).toBe('住在杭州')
+    expect(await index.search('量子力学')).toEqual([])
+  })
+
+  test('follows file edits and hides superseded memories', async () => {
+    const { s, index } = await setup()
+    const [coffee] = await index.search('美式')
+    await s.add({
+      category: 'habits',
+      text: '早上改喝拿铁',
+      replaces: coffee!.id,
+    })
+    expect((await index.search('早上 喝')).map((h) => h.text)).toEqual([
+      '早上改喝拿铁',
+    ])
+    await writeFile(
+      join(s.dir, 'profile.md'),
+      '# 画像\n\n- 养了一只叫小黑的猫\n',
+    )
+    expect((await index.search('小黑'))[0]?.text).toBe('养了一只叫小黑的猫')
+    expect(await index.search('杭州')).toEqual([])
   })
 })

@@ -97,6 +97,7 @@ function toolDescription(name: string, input: unknown): string {
     run_shell: '执行命令',
     remember: '记住',
     forget: '忘掉',
+    recall: '回想',
   }
   const field = (key: string): string =>
     input && typeof input === 'object' && key in input
@@ -110,7 +111,9 @@ function toolDescription(name: string, input: unknown): string {
         ? field('text')
         : name === 'forget'
           ? field('id')
-          : (field('path').split('/').filter(Boolean).at(-1) ?? '')
+          : name === 'recall'
+            ? field('query') || field('topic')
+            : (field('path').split('/').filter(Boolean).at(-1) ?? '')
   const short = target.length > 40 ? `${target.slice(0, 39)}…` : target
   return `${labels[name] ?? name}${short ? ` ${short}` : ''}`
 }

@@ -13,26 +13,31 @@ FAMILIAR_KEYCHAIN_SERVICE 可覆盖钥匙串服务名，默认 com.allinpet.fami
 - src/agent/{index,core,provider,fetch,approvals,persona,errors}.ts：模型、流式循环、权限审批、重试、中转参数。
 - src/permissions/{index,paths}.ts、src/workspace/{index,sandbox}.ts：权限、工具、沙箱和工作区快照。
 - src/pets/index.ts、src/pet-logic.ts：宠物库、PNG/WebP 尺寸、图集校验和状态优先级。
+- src/memory/：记忆。store（Markdown 读写、待确认、替换）、sensitive（敏感信息过滤）、search（FTS5 trigram 索引，`<数据目录>/memory-index.sqlite`，文件一变就整体重建）、reflect（反思）、timeline（周记/月记压缩）、jobs（后台调度，台账 `<数据目录>/reflected.json`）、feedback（用户对推测的确认/纠正/否定，`<数据目录>/evals/memory-feedback.jsonl`）、index（remember / forget / recall 工具）。
+- eval/：promptfoo 评测集，`pnpm eval` 运行；反思用例会用设置里的后台模型发真实请求。
 - tsconfig.json：agent 独立类型检查。
 
 ## 请求与 UI 动作
 
 所有请求都有 response；agent:run 等到运行收尾才回复。未知渠道返回 ok:false。
 
-| 渠道                               | UI 动作 / 结果                                                                    |
-| ---------------------------------- | --------------------------------------------------------------------------------- |
-| settings:get / settings:save       | 脱敏设置；save 发 pet-size、tray，刷新皮肤与会话                                  |
-| session:get / session:new          | 读取/重置会话；new 中止当前运行                                                   |
-| agent:run                          | 流式事件；长回复或审批触发 show-chat                                              |
-| agent:stop / agent:approval        | 中止/处理审批                                                                     |
-| chat:toggle                        | pet 打开 show-chat；chat 发 hide-chat 并开胶囊；tray 按可见状态切换               |
-| settings:open                      | show-settings                                                                     |
-| overlay:capsule                    | 胶囊状态 emit 到 pet                                                              |
-| pet:skin / pets:list / pets:import | 皮肤/列表；列表刷新发 tray；导入另发 pet-size                                     |
-| pets:select / pet:size-set         | 更新设置，发 pet-size、tray、皮肤和大小                                           |
-| pet:finished / pet:typing          | 更新失败/输入状态                                                                 |
-| window:ready                       | 向发送窗口推强调色、会话；pet 另收状态、胶囊、皮肤、大小和每日 wave；chat 收 view |
-| app:quit                           | quit                                                                              |
+| 渠道                                     | UI 动作 / 结果                                                                    |
+| ---------------------------------------- | --------------------------------------------------------------------------------- |
+| settings:get / settings:save             | 脱敏设置；save 发 pet-size、tray，刷新皮肤与会话                                  |
+| session:get / session:new                | 读取/重置会话；new 中止当前运行                                                   |
+| agent:run                                | 流式事件；长回复或审批触发 show-chat                                              |
+| agent:stop / agent:approval              | 中止/处理审批                                                                     |
+| chat:toggle                              | pet 打开 show-chat；chat 发 hide-chat 并开胶囊；tray 按可见状态切换               |
+| settings:open                            | show-settings                                                                     |
+| overlay:capsule                          | 胶囊状态 emit 到 pet                                                              |
+| pet:skin / pets:list / pets:import       | 皮肤/列表；列表刷新发 tray；导入另发 pet-size                                     |
+| pets:select / pet:size-set               | 更新设置，发 pet-size、tray、皮肤和大小                                           |
+| pet:finished / pet:typing                | 更新失败/输入状态                                                                 |
+| window:ready                             | 向发送窗口推强调色、会话；pet 另收状态、胶囊、皮肤、大小和每日 wave；chat 收 view |
+| memory:list / confirm / correct / delete | 只接受 settings；改动后提交 git 快照并广播 memory:changed                         |
+| memory:reflect                           | 立即整理（不等 30 分钟），结果随 memory:changed 的 reflect 字段送达               |
+| memory:reveal                            | 在 Finder 打开记忆目录                                                            |
+| app:quit                                 | quit                                                                              |
 
 session:changed、agent:event 发 all；宠物状态/手势/大小/皮肤/拖动和胶囊发 pet；
 chat:view 发 chat。app-activated 广播 appearance:changed。

@@ -8,6 +8,8 @@ export const settingsSchema = z.object({
       baseURL: z.string().default(''),
       apiKey: z.string().default(''),
       model: z.string().default(''),
+      /** Optional cheaper model on the same endpoint for background work (reflection); empty = model. */
+      smallModel: z.string().default(''),
       // Relay (中转站) options. authStyle only applies to the Anthropic protocol.
       authStyle: z.enum(['x-api-key', 'bearer']).default('x-api-key'),
       headers: z
@@ -159,6 +161,13 @@ export const IPC = {
   /** Chat panel → agent: close the panel and the capsule together (Esc). */
   chatDismiss: 'chat:dismiss',
   chatHistory: 'chat:history',
+  memoryList: 'memory:list',
+  memoryConfirm: 'memory:confirm',
+  memoryCorrect: 'memory:correct',
+  memoryDelete: 'memory:delete',
+  memoryReflect: 'memory:reflect',
+  memoryReveal: 'memory:reveal',
+  memoryChanged: 'memory:changed',
 } as const
 export type DragAction = 'start' | 'move' | 'end'
 export interface FamiliarAPI {
@@ -208,6 +217,44 @@ export interface FamiliarAPI {
   importCodexPets(): Promise<PetSkin[]>
   onGesture(callback: (gesture: PetGesture) => void): () => void
   onSkin(callback: (skin: PetSkin) => void): () => void
+  listMemory(): Promise<MemoryItem[]>
+  /** Keeps a pending inference, optionally reworded. */
+  confirmMemory(id: string, text?: string): Promise<void>
+  /** Rewrites a kept memory; the old text stays in the file, struck through. */
+  correctMemory(id: string, text: string): Promise<void>
+  deleteMemory(id: string): Promise<void>
+  /** Starts reflecting on recent conversations now; the result arrives with onMemoryChanged. */
+  reflectMemory(): void
+  revealMemory(): void
+  onMemoryChanged(callback: (change: MemoryChange) => void): () => void
+}
+
+/** One line of ~/Familiar/memory as the memory page shows it; see agent/src/memory/store.ts. */
+export interface MemoryItem {
+  id: string
+  category: 'profile' | 'habits' | 'topic' | 'pending' | 'timeline'
+  /** Topic name, or timeline period (2026-10-27, 2026-W44, 2026-10). */
+  key?: string
+  text: string
+  at: string
+  source: 'user' | 'reflection'
+  status: 'confirmed' | 'superseded' | 'pending'
+  target?: 'profile' | 'habits' | 'topic'
+  targetTopic?: string
+  confidence?: number
+  evidence?: string
+  /** Pending: how many conversations showed it. */
+  seen?: number
+}
+export interface ReflectResult {
+  conversations: number
+  pending: number
+  promoted: number
+  timeline: number
+  failed: number
+}
+export interface MemoryChange {
+  reflect?: ReflectResult | { error: string }
 }
 
 export type Approval = Extract<AgentEvent, { type: 'tool-approval-request' }>

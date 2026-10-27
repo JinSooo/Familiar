@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { sensitiveReason } from './sensitive'
 
 /**
@@ -9,31 +9,48 @@ import { sensitiveReason } from './sensitive'
  * trailing `<!-- familiar {...} -->` comment carries metadata. Every other line (headings,
  * the user's own notes) is kept as is. A list item without the comment counts as written by
  * the user and confirmed; its id is derived from its text so it stays stable until rewritten.
+ *
+ * Files: profile.md, habits.md, topics/<topic>.md, pending.md (inferred, waiting for the user)
+ * and timeline/<period>.md, where a period is a day (2026-10-27), ISO week (2026-W44) or
+ * month (2026-10).
  */
-export type MemoryCategory = 'profile' | 'habits' | 'topic'
-export type MemoryStatus = 'confirmed' | 'superseded'
+export type MemoryCategory =
+  'profile' | 'habits' | 'topic' | 'pending' | 'timeline'
+/** Where a confirmed memory can live. */
+export type KeptCategory = 'profile' | 'habits' | 'topic'
+export type MemoryStatus = 'confirmed' | 'superseded' | 'pending'
 
 export interface MemoryMeta {
   id: string
   /** YYYY-MM-DD the memory was written. */
   at: string
-  /** user: the user asked to remember it, or wrote it into the file. */
-  source: 'user'
+  /** user: asked for or written by the user; reflection: inferred from conversations. */
+  source: 'user' | 'reflection'
   status: MemoryStatus
   /** For a superseded memory: the id that replaced it. */
   by?: string
+  /** Pending only: where it goes once confirmed, how sure, why, and which conversations saw it. */
+  target?: KeptCategory
+  targetTopic?: string
+  confidence?: number
+  evidence?: string
+  seen?: string[]
 }
 export interface MemoryEntry extends MemoryMeta {
   text: string
   category: MemoryCategory
-  topic?: string
+  /** The topic name for topics, the period for timeline entries. */
+  key?: string
 }
 
 const marker = / <!-- familiar (\{.*\}) -->$/
-const titles: Record<Exclude<MemoryCategory, 'topic'>, string> = {
+const titles = {
   profile: '画像',
   habits: '习惯',
-}
+  pending: '待确认（它对我的判断）',
+} as const
+/** Distinct conversations that must show the same inference before it is kept unasked. */
+export const promoteAfter = 3
 
 export function newMemoryId(): string {
   return `m-${randomBytes(3).toString('hex')}`
@@ -63,10 +80,11 @@ export function topicFileName(topic: string): string {
   if (!name) throw new Error('主题名无效')
   return name
 }
+const period = /^\d{4}-(\d{2}-\d{2}|W\d{2}|\d{2})$/
 
 interface Item {
   line: number
-  entry: Omit<MemoryEntry, 'category' | 'topic'>
+  entry: Omit<MemoryEntry, 'category' | 'key'>
 }
 export function parseLines(lines: string[]): Item[] {
   const items: Item[] = []
@@ -84,17 +102,21 @@ export function parseLines(lines: string[]): Item[] {
     const struck = /^~~(.*)~~$/.exec(body)
     if (struck) body = struck[1]!.trim()
     if (!body) return
+    const status: MemoryStatus =
+      meta.status === 'superseded' || meta.status === 'pending'
+        ? meta.status
+        : 'confirmed'
     items.push({
       line,
       entry: {
+        ...meta,
         id:
           typeof meta.id === 'string'
             ? meta.id
             : `m-${createHash('sha1').update(body).digest('hex').slice(0, 6)}`,
         at: typeof meta.at === 'string' ? meta.at : '',
-        source: 'user',
-        status: meta.status === 'superseded' ? 'superseded' : 'confirmed',
-        ...(typeof meta.by === 'string' ? { by: meta.by } : {}),
+        source: meta.source === 'reflection' ? 'reflection' : 'user',
+        status,
         text: body,
       },
     })
@@ -102,11 +124,20 @@ export function parseLines(lines: string[]): Item[] {
   return items
 }
 export function formatLine(
-  entry: Omit<MemoryEntry, 'category' | 'topic'>,
+  entry: Omit<MemoryEntry, 'category' | 'key'> &
+    Partial<Pick<MemoryEntry, 'category' | 'key'>>,
 ): string {
-  const { text, ...meta } = entry
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { text, category, key, ...meta } = entry
   const body = entry.status === 'superseded' ? `~~${text}~~` : text
   return `- ${body} <!-- familiar ${JSON.stringify(meta)} -->`
+}
+function checked(text: string): string {
+  const clean = cleanText(text)
+  if (!clean) throw new Error('记忆内容为空')
+  const reason = sensitiveReason(clean)
+  if (reason) throw new Error(`${reason}，不能写入记忆`)
+  return clean
 }
 
 export class MemoryStore {
@@ -114,16 +145,22 @@ export class MemoryStore {
   private queue: Promise<unknown> = Promise.resolve()
   constructor(readonly dir: string) {}
 
-  private file(category: MemoryCategory, topic?: string): string {
-    return category === 'topic'
-      ? join(this.dir, 'topics', `${topicFileName(topic ?? '')}.md`)
-      : join(this.dir, `${category}.md`)
+  file(category: MemoryCategory, key?: string): string {
+    if (category === 'topic')
+      return join(this.dir, 'topics', `${topicFileName(key ?? '')}.md`)
+    if (category === 'timeline') {
+      if (!key || !period.test(key)) throw new Error('时间线时段无效')
+      return join(this.dir, 'timeline', `${key}.md`)
+    }
+    return join(this.dir, `${category}.md`)
   }
-  private header(category: MemoryCategory, topic?: string): string {
+  private header(category: MemoryCategory, key?: string): string {
     const title =
       category === 'topic'
-        ? `主题：${topicFileName(topic ?? '')}`
-        : titles[category]
+        ? `主题：${topicFileName(key ?? '')}`
+        : category === 'timeline'
+          ? `时间线：${key}`
+          : titles[category]
     return `# ${title}\n\n<!-- 由 Familiar 维护，可以直接编辑。每行末尾的注释是元数据；没有注释的条目算作你写的、已确认的记忆。 -->\n`
   }
   private async lines(path: string): Promise<string[] | null> {
@@ -139,10 +176,9 @@ export class MemoryStore {
     this.queue = next.catch(() => {})
     return next
   }
-
-  async topics(): Promise<string[]> {
+  private async names(sub: string): Promise<string[]> {
     try {
-      return (await readdir(join(this.dir, 'topics')))
+      return (await readdir(join(this.dir, sub)))
         .filter((name) => name.endsWith('.md'))
         .map((name) => name.slice(0, -3))
         .sort()
@@ -151,91 +187,278 @@ export class MemoryStore {
     }
   }
 
-  async list(): Promise<MemoryEntry[]> {
-    const files: { category: MemoryCategory; topic?: string }[] = [
-      { category: 'profile' },
-      { category: 'habits' },
-      ...(await this.topics()).map((topic) => ({
+  topics(): Promise<string[]> {
+    return this.names('topics')
+  }
+  async periods(): Promise<string[]> {
+    return (await this.names('timeline')).filter((p) => period.test(p))
+  }
+
+  /** Every memory file and its current lines; also the index's change fingerprint source. */
+  async files(): Promise<
+    { category: MemoryCategory; key?: string; path: string }[]
+  > {
+    return [
+      ...(['profile', 'habits', 'pending'] as const).map((category) => ({
+        category,
+        path: this.file(category),
+      })),
+      ...(await this.topics()).map((key) => ({
         category: 'topic' as const,
-        topic,
+        key,
+        path: this.file('topic', key),
+      })),
+      ...(await this.periods()).map((key) => ({
+        category: 'timeline' as const,
+        key,
+        path: this.file('timeline', key),
       })),
     ]
+  }
+
+  async list(): Promise<MemoryEntry[]> {
     const entries: MemoryEntry[] = []
-    for (const { category, topic } of files) {
-      const lines = await this.lines(this.file(category, topic))
+    for (const { category, key, path } of await this.files()) {
+      const lines = await this.lines(path)
       if (lines)
         for (const { entry } of parseLines(lines))
-          entries.push({ ...entry, category, ...(topic ? { topic } : {}) })
+          entries.push({ ...entry, category, ...(key ? { key } : {}) })
     }
     return entries
   }
 
+  private async append(entry: MemoryEntry): Promise<void> {
+    const path = this.file(entry.category, entry.key)
+    await mkdir(dirname(path), { recursive: true })
+    const lines =
+      (await this.lines(path)) ??
+      this.header(entry.category, entry.key).split('\n')
+    while (lines.length && lines.at(-1) === '') lines.pop()
+    const last = parseLines(lines).at(-1)?.line
+    // Keep the list together: append after the last item, or after the header block.
+    if (last === undefined) lines.push('', formatLine(entry))
+    else lines.splice(last + 1, 0, formatLine(entry))
+    await writeFile(path, `${lines.join('\n')}\n`)
+  }
+  private async rewrite(
+    id: string,
+    change: (entry: MemoryEntry) => MemoryEntry | null,
+  ): Promise<MemoryEntry> {
+    const found = await this.locate(id)
+    if (!found) throw new Error(`没有找到记忆 ${id}`)
+    const next = change(found.entry)
+    if (next) found.lines[found.line] = formatLine(next)
+    else found.lines.splice(found.line, 1)
+    await writeFile(found.path, found.lines.join('\n'))
+    return found.entry
+  }
+
   /** Adds a confirmed memory; with `replaces`, marks that one superseded instead of deleting it. */
   add(input: {
-    category: MemoryCategory
+    category: KeptCategory
     topic?: string
     text: string
     replaces?: string
+    source?: MemoryMeta['source']
   }): Promise<MemoryEntry> {
+    return this.serial(() => this.addNow(input))
+  }
+  private async addNow(input: {
+    category: KeptCategory
+    topic?: string
+    text: string
+    replaces?: string
+    source?: MemoryMeta['source']
+  }): Promise<MemoryEntry> {
+    const entry: MemoryEntry = {
+      id: newMemoryId(),
+      at: today(),
+      source: input.source ?? 'user',
+      status: 'confirmed',
+      text: checked(input.text),
+      category: input.category,
+      ...(input.category === 'topic'
+        ? { key: topicFileName(input.topic ?? '') }
+        : {}),
+    }
+    if (input.replaces) {
+      const old = (await this.locate(input.replaces))?.entry
+      if (!old || old.status !== 'confirmed')
+        throw new Error(`没有找到可替换的记忆 ${input.replaces}`)
+      await this.rewrite(input.replaces, (e) => ({
+        ...e,
+        status: 'superseded',
+        by: entry.id,
+      }))
+    }
+    await this.append(entry)
+    return entry
+  }
+
+  /**
+   * Records an inference from a conversation. `sameAs` names an existing pending item that says
+   * the same thing; once `promoteAfter` conversations have seen it, it is kept without asking.
+   */
+  infer(input: {
+    target: KeptCategory
+    topic?: string
+    text: string
+    confidence: number
+    evidence: string
+    conversation: string
+    sameAs?: string
+  }): Promise<{ entry: MemoryEntry; promoted: boolean }> {
     return this.serial(async () => {
-      const text = cleanText(input.text)
-      if (!text) throw new Error('记忆内容为空')
-      const reason = sensitiveReason(text)
-      if (reason) throw new Error(`${reason}，不能写入记忆`)
+      const text = checked(input.text)
+      const evidence = cleanText(input.evidence).slice(0, 120)
+      if (sensitiveReason(evidence)) throw new Error('依据包含敏感信息')
+      const existing = input.sameAs
+        ? (await this.locate(input.sameAs))?.entry
+        : undefined
+      if (existing?.status === 'pending') {
+        const seen = [
+          ...new Set([...(existing.seen ?? []), input.conversation]),
+        ]
+        if (seen.length >= promoteAfter) {
+          await this.rewrite(existing.id, () => null)
+          return { entry: await this.keep(existing), promoted: true }
+        }
+        const updated = await this.rewrite(existing.id, (e) => ({
+          ...e,
+          seen,
+          confidence: Math.max(e.confidence ?? 0, input.confidence),
+          evidence: evidence || e.evidence,
+        }))
+        return { entry: { ...updated, seen }, promoted: false }
+      }
       const entry: MemoryEntry = {
         id: newMemoryId(),
         at: today(),
-        source: 'user',
-        status: 'confirmed',
+        source: 'reflection',
+        status: 'pending',
         text,
-        category: input.category,
-        ...(input.category === 'topic'
-          ? { topic: topicFileName(input.topic ?? '') }
+        category: 'pending',
+        target: input.target,
+        ...(input.target === 'topic'
+          ? { targetTopic: topicFileName(input.topic ?? '') }
           : {}),
+        confidence: Math.min(1, Math.max(0, input.confidence)),
+        evidence,
+        seen: [input.conversation],
       }
-      if (input.replaces) {
-        const found = await this.locate(input.replaces)
-        if (!found) throw new Error(`没有找到记忆 ${input.replaces}`)
-        found.lines[found.line] = formatLine({
-          ...found.entry,
-          status: 'superseded',
-          by: entry.id,
-        })
-        await writeFile(found.path, found.lines.join('\n'))
-      }
-      const path = this.file(entry.category, entry.topic)
-      await mkdir(join(path, '..'), { recursive: true })
-      const lines =
-        (await this.lines(path)) ??
-        this.header(entry.category, entry.topic).split('\n')
-      while (lines.length && lines.at(-1) === '') lines.pop()
-      const last = parseLines(lines).at(-1)?.line
-      // Keep the list together: append after the last item, or after the header block.
-      if (last === undefined) lines.push('', formatLine(entry))
-      else lines.splice(last + 1, 0, formatLine(entry))
-      await writeFile(path, `${lines.join('\n')}\n`)
-      return entry
+      await this.append(entry)
+      return { entry, promoted: false }
+    })
+  }
+  private keep(
+    pending: MemoryEntry,
+    text = pending.text,
+  ): Promise<MemoryEntry> {
+    return this.addNow({
+      category: pending.target ?? 'profile',
+      ...(pending.targetTopic ? { topic: pending.targetTopic } : {}),
+      text,
+      source: pending.source,
+    })
+  }
+
+  /** The user agrees with a pending inference (optionally reworded): it becomes a kept memory. */
+  confirm(id: string, text?: string): Promise<MemoryEntry> {
+    return this.serial(async () => {
+      const found = (await this.locate(id))?.entry
+      if (found?.status !== 'pending')
+        throw new Error(`没有找到待确认的记忆 ${id}`)
+      const kept = await this.keep(found, text ?? found.text)
+      await this.rewrite(id, () => null)
+      return kept
+    })
+  }
+
+  /** A corrected kept memory: the new text replaces it, the old line stays struck through. */
+  correct(id: string, text: string): Promise<MemoryEntry> {
+    return this.serial(async () => {
+      const old = (await this.locate(id))?.entry
+      if (
+        !old ||
+        old.status !== 'confirmed' ||
+        old.category === 'pending' ||
+        old.category === 'timeline'
+      )
+        throw new Error(`没有找到可修改的记忆 ${id}`)
+      return this.addNow({
+        category: old.category,
+        ...(old.key ? { topic: old.key } : {}),
+        text,
+        replaces: id,
+      })
     })
   }
 
   /** Deletes a memory for good (the git snapshot still has it). */
   remove(id: string): Promise<MemoryEntry> {
+    return this.serial(() => this.rewrite(id, () => null))
+  }
+
+  appendTimeline(day: string, text: string): Promise<MemoryEntry> {
     return this.serial(async () => {
-      const found = await this.locate(id)
-      if (!found) throw new Error(`没有找到记忆 ${id}`)
-      found.lines.splice(found.line, 1)
-      await writeFile(found.path, found.lines.join('\n'))
-      return found.entry
+      const entry: MemoryEntry = {
+        id: newMemoryId(),
+        at: today(),
+        source: 'reflection',
+        status: 'confirmed',
+        text: checked(text),
+        category: 'timeline',
+        key: day,
+      }
+      await this.append(entry)
+      return entry
     })
   }
 
+  /** Replaces finer timeline files with one coarser summary (the old files stay in git history). */
+  rollUp(into: string, from: string[], lines: string[]): Promise<void> {
+    return this.serial(async () => {
+      // Check everything before removing anything; `from` may include `into` itself.
+      const texts = lines.map(checked)
+      if (
+        !from.includes(into) &&
+        (await this.lines(this.file('timeline', into)))
+      )
+        throw new Error(`时间线 ${into} 已存在`)
+      for (const key of from)
+        await rm(this.file('timeline', key), { force: true })
+      for (const text of texts)
+        await this.append({
+          id: newMemoryId(),
+          at: today(),
+          source: 'reflection',
+          status: 'confirmed',
+          text,
+          category: 'timeline',
+          key: into,
+        })
+    })
+  }
+
+  async get(id: string): Promise<MemoryEntry | undefined> {
+    return (await this.locate(id))?.entry
+  }
   private async locate(id: string) {
-    for (const entry of await this.list()) {
-      if (entry.id !== id) continue
-      const path = this.file(entry.category, entry.topic)
-      const lines = (await this.lines(path)) ?? []
+    for (const { category, key, path } of await this.files()) {
+      const lines = await this.lines(path)
+      if (!lines) continue
       const item = parseLines(lines).find((i) => i.entry.id === id)
-      if (item) return { path, lines, line: item.line, entry }
+      if (item)
+        return {
+          path,
+          lines,
+          line: item.line,
+          entry: {
+            ...item.entry,
+            category,
+            ...(key ? { key } : {}),
+          } as MemoryEntry,
+        }
     }
     return null
   }

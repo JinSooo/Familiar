@@ -24,7 +24,7 @@ const names = new Set([
 ])
 
 // Familiar's own memory files, in every mode; they never take a path from the model.
-const memoryTools = new Set(['remember', 'forget'])
+const memoryTools = new Set(['remember', 'forget', 'recall'])
 
 export async function decideToolCall(
   call: ToolCall,

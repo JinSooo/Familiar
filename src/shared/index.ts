@@ -41,6 +41,12 @@ export type PublicSettings = Omit<Settings, 'model'> & {
 export type SettingsUpdate = Omit<Settings, 'model'> & {
   model: Omit<Settings['model'], 'apiKey'> & { apiKey?: string }
 }
+/** Model settings as edited in the settings window; no apiKey means the saved one. */
+export type ModelDraft = SettingsUpdate['model']
+export interface ModelTestResult {
+  ms: number
+  reply: string
+}
 export type ApprovalDecision = 'approve' | 'deny'
 /** What the approval card can send: "always" also saves an allow rule for the request's directory. */
 export type ApprovalChoice = ApprovalDecision | 'always'
@@ -144,6 +150,8 @@ export const IPC = {
   conversationsClear: 'conversations:clear',
   conversationsReveal: 'conversations:reveal',
   // Pet context menu / tray → agent.
+  modelsList: 'models:list',
+  modelTest: 'model:test',
   chatOpen: 'chat:open',
   chatHistory: 'chat:history',
 } as const
@@ -175,6 +183,10 @@ export interface FamiliarAPI {
   deleteConversation(id: string): Promise<void>
   clearConversations(): Promise<void>
   revealConversations(): void
+  /** Model ids the relay reports for these (unsaved) settings. */
+  listModels(draft: ModelDraft): Promise<string[]>
+  /** One tiny request with these (unsaved) settings. */
+  testModel(draft: ModelDraft): Promise<ModelTestResult>
   /** Native pet context menu, opened at window-local CSS pixels clear of the pet. */
   petMenu(x: number, y: number): void
   typing(hasText: boolean): void

@@ -32,8 +32,9 @@ async function withResponseTimeout(
     () => timer.abort(new ResponseTimeoutError()),
     responseTimeoutMs,
   )
+  let response: Response
   try {
-    return await send(
+    response = await send(
       new Request(request, {
         signal: AbortSignal.any([request.signal, timer.signal]),
       }),
@@ -41,6 +42,22 @@ async function withResponseTimeout(
   } finally {
     clearTimeout(id)
   }
+  return permanentModelError(response)
+}
+
+/**
+ * Some relays answer "this model has no channel for your account" with a 503, which the SDK
+ * retries as if the service were busy. Report it as 404 so it fails once with its real reason.
+ */
+async function permanentModelError(response: Response): Promise<Response> {
+  if (response.status < 500) return response
+  const body = await response.clone().text()
+  if (!/model_not_found|no available channel/i.test(body)) return response
+  return new Response(body, {
+    status: 404,
+    statusText: 'Not Found',
+    headers: response.headers,
+  })
 }
 
 export function createRelayFetch(

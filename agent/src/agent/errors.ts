@@ -7,16 +7,33 @@ export function agentError(error: unknown): Error {
     const item = current as {
       statusCode?: number
       cause?: unknown
+      lastError?: unknown
       code?: string
+      responseBody?: unknown
     }
-    chain.push(String(item.statusCode ?? ''), item.code ?? '')
-    current = item.cause
+    chain.push(
+      String(item.statusCode ?? ''),
+      item.code ?? '',
+      // Relays explain themselves in the body (e.g. model_not_found), not in the status line.
+      typeof item.responseBody === 'string'
+        ? item.responseBody.slice(0, 500)
+        : '',
+    )
+    // RetryError keeps the final attempt in lastError rather than cause.
+    current = item.cause ?? item.lastError
   }
   const text = chain.join(' ')
   let message: string
   if (/ResponseTimeoutError|sent no response within/.test(text))
     message =
       '模型服务 45 秒没有回应（中转站拥堵或这个模型暂时不可用），请稍后再试或换个模型。'
+  else if (
+    /model_not_found|no available channel|model .*does not exist|unknown model|模型不存在|无可用渠道/i.test(
+      text,
+    )
+  )
+    message =
+      '这个模型在你的账号里用不了（中转站没有它的可用渠道），请在设置里换一个模型，可以先「获取模型列表」看看有哪些。'
   else if (/401|403|unauthorized|invalid.*key/i.test(text))
     message = '模型服务拒绝访问，请检查 API Key 和账号权限。'
   else if (/404|model.*not.*found|unknown model/i.test(text))

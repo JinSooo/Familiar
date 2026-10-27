@@ -838,3 +838,19 @@ aside .tile {
 .setting-row button:not(.link) {
   padding: 3px 12px;
 }
+.settings .caption.probe {
+  margin-top: -8px;
+}
+.settings .caption.probe.failed {
+  color: #d94b47;
+}
+.settings .caption.probe.warn {
+  color: #c27c0e;
+}
+.settings button[aria-disabled='true'] {
+  opacity: 0.4;
+  cursor: default;
+}
+.settings .caption.probe.passed {
+  color: #2e9b55;
+}

@@ -1,5 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import type { PetSkin, PublicSettings, SettingsUpdate } from '../../shared'
+import type {
+  ModelDraft,
+  PetSkin,
+  PublicSettings,
+  SettingsUpdate,
+} from '../../shared'
 import { api } from '../api'
 
 // Icon tiles mirror the System Settings sidebar.
@@ -35,6 +40,11 @@ export function SettingsView() {
   const [key, setKey] = useState('')
   const [notice, setNotice] = useState('')
   const [clearing, setClearing] = useState(false)
+  const [models, setModels] = useState<string[]>()
+  const [probe, setProbe] = useState<{
+    kind: 'busy' | 'ok' | 'error'
+    text: string
+  }>()
   useEffect(() => {
     void api.listPets().then(setPets).catch(console.error)
     api
@@ -64,8 +74,57 @@ export function SettingsView() {
   const model = <K extends keyof PublicSettings['model']>(
     field: K,
     value: PublicSettings['model'][K],
-  ) =>
+  ) => {
     setSettings({ ...settings, model: { ...settings.model, [field]: value } })
+    // A result for different settings would mislead; the list stays useful while picking.
+    setProbe(undefined)
+    if (field !== 'model') setModels(undefined)
+  }
+  // What is on screen, unsaved; no key typed means the saved one.
+  const draft = (): ModelDraft => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { apiKeySet, ...rest } = settings.model
+    return { ...rest, ...(key ? { apiKey: key } : {}) }
+  }
+  const failure = (e: unknown) =>
+    typeof e === 'string' ? e : e instanceof Error ? e.message : '请求失败'
+  // Busy buttons stay focusable (aria-disabled) so keyboard focus is not dropped mid-request.
+  const fetchModels = () => {
+    if (probe?.kind === 'busy') return
+    setProbe({ kind: 'busy', text: '正在获取模型列表…' })
+    api
+      .listModels(draft())
+      .then((ids) => {
+        setModels(ids)
+        setProbe({
+          kind: 'ok',
+          text: ids.length
+            ? `已获取 ${ids.length} 个模型，在「模型名称」里输入可以筛选。`
+            : '中转站返回的模型列表是空的。',
+        })
+      })
+      .catch((e: unknown) => setProbe({ kind: 'error', text: failure(e) }))
+  }
+  const testConnection = () => {
+    if (probe?.kind === 'busy') return
+    setProbe({
+      kind: 'busy',
+      text: `正在用 ${settings.model.model || '…'} 发一条测试消息…`,
+    })
+    api
+      .testModel(draft())
+      .then(({ ms, reply }) =>
+        setProbe({
+          kind: 'ok',
+          text: `已连通：${(ms / 1000).toFixed(1)} 秒收到回复${reply ? `「${reply}」` : ''}。`,
+        }),
+      )
+      .catch((e: unknown) => setProbe({ kind: 'error', text: failure(e) }))
+  }
+  const missingModel =
+    models?.length && settings.model.model.trim()
+      ? !models.includes(settings.model.model.trim())
+      : false
   async function save(event: FormEvent) {
     event.preventDefault()
     if (!settings) return
@@ -147,10 +206,17 @@ export function SettingsView() {
             <label>
               模型名称
               <input
+                list="model-options"
                 value={settings.model.model}
+                placeholder={models ? '输入筛选或选择' : '例如 gpt-6.1-sol'}
                 onChange={(e) => model('model', e.target.value)}
               />
             </label>
+            <datalist id="model-options">
+              {models?.map((id) => (
+                <option key={id} value={id} />
+              ))}
+            </datalist>
             <label>
               API Key
               <input
@@ -180,7 +246,41 @@ export function SettingsView() {
                 </select>
               </label>
             )}
+            <div className="setting-row">
+              <span>连接</span>
+              <span className="row-actions">
+                <button
+                  type="button"
+                  aria-disabled={probe?.kind === 'busy'}
+                  onClick={fetchModels}
+                >
+                  获取模型列表
+                </button>
+                <button
+                  type="button"
+                  aria-disabled={probe?.kind === 'busy'}
+                  disabled={!settings.model.model.trim()}
+                  onClick={testConnection}
+                >
+                  测试连接
+                </button>
+              </span>
+            </div>
           </section>
+          {tab === '模型' && missingModel && (
+            <p className="caption probe warn">
+              模型列表里没有「{settings.model.model.trim()}
+              」，你的账号可能用不了它。
+            </p>
+          )}
+          {tab === '模型' && probe && (
+            <p
+              className={`caption probe ${probe.kind === 'error' ? 'failed' : probe.kind === 'ok' ? 'passed' : ''}`}
+              role="status"
+            >
+              {probe.text}
+            </p>
+          )}
           <section hidden={tab !== '权限'} className="group">
             <label>
               权限模式

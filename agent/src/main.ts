@@ -2,7 +2,12 @@ import { createInterface } from 'node:readline'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { IPC, type AgentEvent, type PetState } from '../../src/shared'
+import {
+  IPC,
+  settingsSchema,
+  type AgentEvent,
+  type PetState,
+} from '../../src/shared'
 import type {
   AgentToShell,
   ShellToAgent,
@@ -23,6 +28,7 @@ import {
   bubbleTimeout,
 } from './session'
 import { runAgent, resolveApproval } from './agent'
+import { listModels, testModel } from './agent/probe'
 import { listPets, currentSkin, importCodexPets } from './pets'
 import {
   clearConversations,
@@ -88,6 +94,8 @@ function persist(snapshot = session) {
     getSettings().pet.name,
   ).catch((error) => console.error('Saving conversation failed', error))
 }
+// Unsaved model settings from the settings window; an empty key falls back to the saved one.
+const modelDraft = settingsSchema.shape.model
 /** After this long without a message, the capsule starts a fresh conversation. */
 const idleRestart = 2 * 60 * 60 * 1000
 /** Opening a conversation counts as activity without rewriting its saved time. */
@@ -344,6 +352,12 @@ async function request(
       await mkdir(conversationsDir, { recursive: true })
       await reveal(conversationsDir)
       return
+    case IPC.modelsList:
+      requireSender(window, ['settings'])
+      return listModels(modelDraft.parse(input))
+    case IPC.modelTest:
+      requireSender(window, ['settings'])
+      return testModel(modelDraft.parse(input))
     case IPC.chatOpen:
       requireSender(window, ['tray'])
       showChat()

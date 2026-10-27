@@ -70,7 +70,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     });
 
     TrayIconBuilder::with_id(TRAY_ID)
-        // Template icon drawn in icons/tray.svg, rendered at 2x so it stays sharp on Retina.
+        // Template icon from icons/tray.svg (36px grid), shown at 18pt so it is pixel-exact on Retina.
         .icon(Image::from_bytes(include_bytes!("../icons/tray.png"))?)
         .icon_as_template(true)
         .tooltip("Familiar")

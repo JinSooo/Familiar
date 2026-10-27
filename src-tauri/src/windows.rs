@@ -8,7 +8,8 @@ use tauri_nspanel::{tauri_panel, CollectionBehavior, ManagerExt, PanelLevel, Sty
 tauri_panel! {
     panel!(PetPanel { config: { can_become_key_window: true, is_floating_panel: true } })
     // Borderless NSWindows refuse key status, which swallowed first clicks and blocked typing.
-    panel!(ChatPanel { config: { can_become_key_window: true, can_become_main_window: true } })
+    // Not main-capable: a non-activating panel that may become main spends a click on that.
+    panel!(ChatPanel { config: { can_become_key_window: true } })
 }
 
 pub struct Paths {

@@ -37,8 +37,9 @@ export function Bubble({
 function ContextStrip({ session }: { session: Session }) {
   const [error, setError] = useState('')
   if (session.running || session.bubble) return null
+  // A failed or stopped turn has no reply worth recalling; show the last real one.
   const reply = session.messages.findLast(
-    (m) => m.role === 'assistant' && (m.content || m.error),
+    (m) => m.role === 'assistant' && m.content,
   )
   if (session.messages.length)
     return (
@@ -49,11 +50,7 @@ function ContextStrip({ session }: { session: Session }) {
           onClick={() => api.toggleChat()}
         >
           <span className="muted">上次聊到</span>
-          <span>
-            {reply
-              ? bubblePlainText(reply.content || reply.error || '', 36)
-              : '…'}
-          </span>
+          <span>{reply ? bubblePlainText(reply.content, 36) : '…'}</span>
         </button>
         <button className="context-action" onClick={() => api.newSession()}>
           新对话

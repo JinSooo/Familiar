@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from 'react'
 import ReactMarkdown from 'react-markdown'
+import remarkCjkFriendly from 'remark-cjk-friendly'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
@@ -70,7 +71,8 @@ export function Markdown({ content }: { content: string }) {
   return (
     <div className="markdown">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
+        // CommonMark won't close ** after Chinese punctuation when Chinese text follows.
+        remarkPlugins={[remarkGfm, remarkCjkFriendly, remarkMath]}
         rehypePlugins={[rehypeKatex, rehypeHighlight]}
         skipHtml
         components={{

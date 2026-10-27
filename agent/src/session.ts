@@ -110,9 +110,9 @@ function toolDescription(name: string, input: unknown): string {
       : name === 'remember'
         ? field('text')
         : name === 'forget'
-          ? field('id')
+          ? '一条记忆'
           : name === 'recall'
-            ? field('query') || field('topic')
+            ? field('query') || field('topic') || '全部记忆'
             : (field('path').split('/').filter(Boolean).at(-1) ?? '')
   const short = target.length > 40 ? `${target.slice(0, 39)}…` : target
   return `${labels[name] ?? name}${short ? ` ${short}` : ''}`

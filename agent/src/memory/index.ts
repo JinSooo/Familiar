@@ -3,7 +3,7 @@ import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
 import { dataDir } from '../system'
 import { MemoryIndex } from './search'
-import { MemoryStore, memoryContext, mentions } from './store'
+import { MemoryStore, memoryContext, mentions, type MemoryEntry } from './store'
 export { MemoryStore, memoryContext, mentions } from './store'
 export { MemoryIndex } from './search'
 export { sensitiveReason } from './sensitive'
@@ -25,6 +25,16 @@ export function openMemory(workspacePath: string): Memory {
     }
   }
   return current
+}
+
+/** Everything worth listing when the user asks what Familiar remembers. */
+function overview(entries: MemoryEntry[]): MemoryEntry[] {
+  const live = entries.filter((e) => e.status !== 'superseded')
+  const timeline = live
+    .filter((e) => e.category === 'timeline')
+    .sort((a, b) => (b.key ?? '').localeCompare(a.key ?? ''))
+    .slice(0, 10)
+  return [...live.filter((e) => e.category !== 'timeline'), ...timeline]
 }
 
 const run = async (work: () => Promise<unknown>) => {
@@ -79,7 +89,7 @@ export function createMemoryTools({ store, index }: Memory): ToolSet {
     }),
     recall: tool({
       description:
-        '检索长期记忆：主题、时间线（每天做了什么）、待确认的判断，以及画像和习惯。用户问起过去的事、某个项目、或你不确定自己知不知道时使用。query 用几个关键词（空格分隔）；给 topic 时列出该主题的全部记忆。',
+        '检索长期记忆：主题、时间线（每天做了什么）、待确认的判断，以及画像和习惯。用户问起过去的事、某个项目、或你不确定自己知不知道时使用。query 用几个关键词（空格分隔）；给 topic 时列出该主题的全部记忆；两个都不给时返回记忆概览（全部画像、习惯、主题、待确认和最近的时间线）。',
       inputSchema: z.object({
         query: z.string().max(200).optional(),
         topic: z.string().max(40).optional(),
@@ -93,7 +103,9 @@ export function createMemoryTools({ store, index }: Memory): ToolSet {
                   e.key === input.topic &&
                   e.status === 'confirmed',
               )
-            : await index.search(input.query ?? '')
+            : input.query?.trim()
+              ? await index.search(input.query)
+              : overview(await store.list())
           return {
             memories: hits.map((e) => ({
               id: e.id,

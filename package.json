@@ -13,6 +13,7 @@
     "agent": "bun agent/src/main.ts",
     "agent:build": "bun build --compile agent/src/main.ts --outfile src-tauri/binaries/familiar-agent-$(rustc -vV | sed -n 's/^host: //p')",
     "typecheck": "tsc --noEmit && tsc -p agent",
+    "test": "bun test --preload ./agent/test/setup.ts agent/test",
     "lint": "eslint .",
     "format": "prettier --write .",
     "tauri": "tauri"

@@ -324,6 +324,22 @@ export function SettingsView() {
                     <li key={i}>
                       <span>{rule.path}</span>
                       <span className="muted">{accessLabel[rule.access]}</span>
+                      <button
+                        type="button"
+                        className="icon rule-remove"
+                        aria-label={`删除规则 ${rule.path}`}
+                        title="删除这条规则（立即生效）"
+                        onClick={() => {
+                          api
+                            .removeDirRule(rule.path)
+                            .then((dirRules) =>
+                              setSettings((s) => s && { ...s, dirRules }),
+                            )
+                            .catch(() => setNotice('删除规则失败'))
+                        }}
+                      >
+                        ×
+                      </button>
                     </li>
                   ))}
                 </ul>

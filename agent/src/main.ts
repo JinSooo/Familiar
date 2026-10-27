@@ -352,6 +352,17 @@ async function request(
       await mkdir(conversationsDir, { recursive: true })
       await reveal(conversationsDir)
       return
+    case IPC.dirRuleRemove: {
+      requireSender(window, ['settings'])
+      const path = z.string().parse(input)
+      const settings = publicSettings()
+      const saved = await saveSettings({
+        ...settings,
+        model: { ...settings.model, apiKey: undefined },
+        dirRules: settings.dirRules.filter((r) => r.path !== path),
+      })
+      return saved.dirRules
+    }
     case IPC.modelsList:
       requireSender(window, ['settings'])
       return listModels(modelDraft.parse(input))

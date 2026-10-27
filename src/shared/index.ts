@@ -151,6 +151,7 @@ export const IPC = {
   conversationsReveal: 'conversations:reveal',
   // Pet context menu / tray → agent.
   modelsList: 'models:list',
+  dirRuleRemove: 'rules:remove',
   modelTest: 'model:test',
   chatOpen: 'chat:open',
   chatHistory: 'chat:history',
@@ -183,6 +184,8 @@ export interface FamiliarAPI {
   deleteConversation(id: string): Promise<void>
   clearConversations(): Promise<void>
   revealConversations(): void
+  /** Deletes a directory rule right away; returns the remaining rules. */
+  removeDirRule(path: string): Promise<Settings['dirRules']>
   /** Model ids the relay reports for these (unsaved) settings. */
   listModels(draft: ModelDraft): Promise<string[]>
   /** One tiny request with these (unsaved) settings. */

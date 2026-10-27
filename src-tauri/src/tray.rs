@@ -69,16 +69,9 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         }
     });
 
-    // A monochrome alpha mask lets macOS adapt the tray icon to its appearance.
-    let mut rgba = vec![0; 18 * 18 * 4];
-    for y in 0..18 {
-        for x in 0..18 {
-            let distance = (x as f32 - 8.5).hypot(y as f32 - 8.5);
-            rgba[(y * 18 + x) * 4 + 3] = ((7.0 - distance).clamp(0.0, 1.0) * 255.0) as u8;
-        }
-    }
     TrayIconBuilder::with_id(TRAY_ID)
-        .icon(Image::new_owned(rgba, 18, 18))
+        // Template icon drawn in icons/tray.svg, rendered at 2x so it stays sharp on Retina.
+        .icon(Image::from_bytes(include_bytes!("../icons/tray.png"))?)
         .icon_as_template(true)
         .tooltip("Familiar")
         .show_menu_on_left_click(true)

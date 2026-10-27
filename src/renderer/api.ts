@@ -68,6 +68,7 @@ export const api: FamiliarAPI = {
   clearConversations: () => request(IPC.conversationsClear),
   revealConversations: () => send(IPC.conversationsReveal),
   listModels: (draft) => request(IPC.modelsList, draft),
+  removeDirRule: (path) => request(IPC.dirRuleRemove, path),
   testModel: (draft) => request(IPC.modelTest, draft),
   petMenu: (x, y) => {
     void invoke('pet_menu', { x, y }).catch(console.error)

@@ -107,7 +107,7 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
     panel.set_has_shadow(false);
     pet.set_ignore_cursor_events(true)?;
     panel.show();
-    WebviewWindowBuilder::new(app, "chat", url("chat"))
+    let chat = WebviewWindowBuilder::new(app, "chat", url("chat"))
         .title("Familiar")
         .inner_size(380., 620.)
         .min_inner_size(360., 420.)
@@ -123,13 +123,24 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
                 .build(),
         )
         .build()?
-        .to_panel::<ChatPanel>()?
-        .set_collection_behavior(
-            CollectionBehavior::new()
-                .move_to_active_space()
-                .full_screen_auxiliary()
-                .value(),
-        );
+        .to_panel::<ChatPanel>()?;
+    chat.set_collection_behavior(
+        CollectionBehavior::new()
+            .move_to_active_space()
+            .full_screen_auxiliary()
+            .value(),
+    );
+    // Like the pet panel: an activating panel spends the first click after the user was in
+    // another app on activating Familiar, so buttons needed two clicks. Non-activating panels
+    // become key without activating the app and take the click directly.
+    chat.set_style_mask(
+        StyleMask::empty()
+            .borderless()
+            .resizable()
+            .nonactivating_panel()
+            .value(),
+    )
+    .map_err(|e| std::io::Error::other(format!("Chat style mask: {e:?}")))?;
     WebviewWindowBuilder::new(app, "settings", url("settings"))
         .title("设置")
         .inner_size(760., 600.)
@@ -158,6 +169,7 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
                 }
             }
             tauri::WindowEvent::CloseRequested { .. } => h.exit(0),
+            tauri::WindowEvent::Moved(_) if label == "chat" => settle_chat(&h),
             tauri::WindowEvent::Focused(focused) => {
                 if *focused {
                     crate::agent::signal(&h, serde_json::json!({"name":"app-activated"}));
@@ -170,6 +182,39 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
         });
     }
     Ok(())
+}
+
+/// Pull the chat panel back on screen once a drag has stopped. Moved fires all through a drag,
+/// so only the last event in a 400ms quiet window acts; clamping mid-drag would fight the hand.
+fn settle_chat(app: &tauri::AppHandle) {
+    static MOVES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seen = MOVES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        if MOVES.load(std::sync::atomic::Ordering::Relaxed) != seen {
+            return;
+        }
+        let main = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            let Some(chat) = main.get_webview_window("chat") else {
+                return;
+            };
+            let place = || -> tauri::Result<()> {
+                let scale = chat.scale_factor()?;
+                let p = chat.outer_position()?.to_logical::<f64>(scale);
+                let s = chat.outer_size()?.to_logical::<f64>(scale);
+                let to = clamp(&chat, p.x, p.y, s.width, s.height)?;
+                if (to.x - p.x).abs() > 0.5 || (to.y - p.y).abs() > 0.5 {
+                    chat.set_position(to)?;
+                }
+                Ok(())
+            };
+            if let Err(e) = place() {
+                eprintln!("Keep chat on screen: {e}");
+            }
+        });
+    });
 }
 
 pub fn chat_signal(app: &tauri::AppHandle) {

@@ -854,3 +854,15 @@ aside .tile {
 .settings .caption.probe.passed {
   color: #2e9b55;
 }
+.rules li {
+  align-items: center;
+}
+.rules li > span:first-child {
+  flex: 1;
+  min-width: 0;
+}
+.rule-remove {
+  width: 20px;
+  height: 20px;
+  font-size: 15px;
+}

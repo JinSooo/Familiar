@@ -14,7 +14,10 @@ export function agentError(error: unknown): Error {
   }
   const text = chain.join(' ')
   let message: string
-  if (/401|403|unauthorized|invalid.*key/i.test(text))
+  if (/ResponseTimeoutError|sent no response within/.test(text))
+    message =
+      '模型服务 45 秒没有回应（中转站拥堵或这个模型暂时不可用），请稍后再试或换个模型。'
+  else if (/401|403|unauthorized|invalid.*key/i.test(text))
     message = '模型服务拒绝访问，请检查 API Key 和账号权限。'
   else if (/404|model.*not.*found|unknown model/i.test(text))
     message = '模型或接口不存在，请检查模型名称、协议和 Base URL。'

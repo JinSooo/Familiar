@@ -9,6 +9,7 @@ import { Pet } from '../pet/Pet'
 import { PetAvatar } from '../pet/PetAvatar'
 import { Composer } from '../shared-ui/Composer'
 import { useSession } from '../shared-ui/session'
+import { useTurnStatus } from '../shared-ui/status'
 export function Chat() {
   const session = useSession()
   const [state, setState] = useState<PetState>('idle')
@@ -43,6 +44,7 @@ export function Chat() {
     window.addEventListener('focus', update)
     return () => window.removeEventListener('focus', update)
   }, [])
+  const status = useTurnStatus(session, name)
   const last = session.messages.at(-1)
   const contentKey = `${session.messages.length}:${last?.content.length ?? 0}:${session.approvals.length}:${session.tools.length}`
   useEffect(() => {
@@ -213,11 +215,7 @@ export function Chat() {
                   )}
                 </article>
               ))}
-              {session.running && (
-                <p className="muted status">
-                  {session.approvals.length ? '等你允许…' : `${name}正在思考…`}
-                </p>
-              )}
+              {session.running && <p className="muted status">{status}</p>}
               <div ref={bottom} />
             </section>
             <Composer running={session.running} name={name} />

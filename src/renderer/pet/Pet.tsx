@@ -7,6 +7,7 @@ import {
   animation,
   clickSequence,
   scales,
+  speeds,
   sweep,
   type Action,
   type Sweep,
@@ -33,6 +34,7 @@ export function Pet({
   const canvas = useRef<HTMLCanvasElement>(null)
   const [skin, setSkin] = useState<PetSkin>()
   const [size, setSize] = useState<Settings['pet']['size']>('medium')
+  const [speed, setSpeed] = useState<Settings['pet']['speed']>('normal')
   const [state, setState] = useState<PetState>('idle')
   const [gesture, setGesture] = useState<PetGesture>()
   const [direction, setDirection] = useState<'running-left' | 'running-right'>()
@@ -47,6 +49,7 @@ export function Pet({
       api.onState(setState),
       api.onSkin(setSkin),
       api.onSize(setSize),
+      api.onSpeed(setSpeed),
       api.onGesture((g) => {
         setGesture(g)
         setGestureKey(++sequence.current)
@@ -55,7 +58,10 @@ export function Pet({
     void api.getPetSkin().then(setSkin).catch(console.error)
     void api
       .getSettings()
-      .then((s) => setSize(s.pet.size))
+      .then((s) => {
+        setSize(s.pet.size)
+        setSpeed(s.pet.speed)
+      })
       .catch(console.error)
     const media = matchMedia('(prefers-reduced-motion: reduce)')
     const change = () => setReduced(media.matches)
@@ -105,16 +111,19 @@ export function Pet({
         }
       }
       draw()
-      timer = setInterval(() => {
-        if (reduced || (++frame >= spec.frames && !spec.loop)) {
-          clearInterval(timer)
-          if (gesture) setGesture(undefined)
-          if (state === 'failed') api.animationFinished()
-          return
-        }
-        frame %= spec.frames
-        draw()
-      }, 1000 / spec.fps)
+      timer = setInterval(
+        () => {
+          if (reduced || (++frame >= spec.frames && !spec.loop)) {
+            clearInterval(timer)
+            if (gesture) setGesture(undefined)
+            if (state === 'failed') api.animationFinished()
+            return
+          }
+          frame %= spec.frames
+          draw()
+        },
+        1000 / (direction ? spec.fps : spec.fps * speeds[speed]),
+      )
     }
     image.onerror = () => {
       if (!disposed) {
@@ -130,7 +139,7 @@ export function Pet({
       disposed = true
       clearInterval(timer)
     }
-  }, [skin, state, gesture, gestureKey, direction, reduced, forceState])
+  }, [skin, state, gesture, gestureKey, direction, reduced, forceState, speed])
   useEffect(() => {
     if (embedded) return
     let down: { x: number; y: number; moved: boolean } | undefined

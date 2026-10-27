@@ -306,6 +306,26 @@ export function SettingsView() {
                   ))}
                 </div>
               </div>
+              <div className="setting-row">
+                <span>动作快慢</span>
+                <div className="segmented">
+                  {(['slow', 'normal', 'fast'] as const).map((speed, i) => (
+                    <button
+                      type="button"
+                      key={speed}
+                      className={settings.pet.speed === speed ? 'selected' : ''}
+                      onClick={() =>
+                        setSettings({
+                          ...settings,
+                          pet: { ...settings.pet, speed },
+                        })
+                      }
+                    >
+                      {['慢', '正常', '快'][i]}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
             <p className="caption">
               跟随系统的「减少动态效果」，开启后宠物保持静止，气泡和胶囊不播放动效。

@@ -1,6 +1,7 @@
 import type { PetGesture, PetSkin, PetState, Settings } from '../../shared'
 
 export const scales = { small: 0.5, medium: 0.73, large: 0.95 }
+export const speeds = { slow: 0.6, normal: 1, fast: 1.5 }
 export function petDimensions(size: Settings['pet']['size']) {
   return {
     width: Math.ceil((460 * scales[size]) / 0.73),

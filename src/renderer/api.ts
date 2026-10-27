@@ -40,6 +40,7 @@ export const api: FamiliarAPI = {
   typing: (hasText) => send(IPC.typing, hasText),
   animationFinished: () => send(IPC.petFinished),
   onSize: (cb) => subscribe(IPC.petSize, cb),
+  onSpeed: (cb) => subscribe(IPC.petSpeed, cb),
   getPetSkin: () => request(IPC.petSkin),
   listPets: () => request(IPC.petsList),
   importCodexPets: () => request(IPC.petsImport),

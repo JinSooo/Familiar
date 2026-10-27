@@ -175,6 +175,8 @@ function updatePet() {
   // Every window shows the pet (the chat header avatar too), so skin changes go to all.
   emit(IPC.petSkin, currentSkin(settings.pet.id), 'all')
   emit(IPC.petSize, settings.pet.size, 'pet')
+  // The chat panel's perched pet animates too.
+  emit(IPC.petSpeed, settings.pet.speed, 'all')
 }
 async function run(window: WindowLabel | 'tray', input: unknown) {
   if (controller) throw new Error('已有对话正在运行')
@@ -461,6 +463,7 @@ async function request(
         emit(IPC.capsule, capsuleOpen, 'pet')
         emit(IPC.petSkin, currentSkin(getSettings().pet.id), 'pet')
         emit(IPC.petSize, getSettings().pet.size, 'pet')
+        emit(IPC.petSpeed, getSettings().pet.speed, 'pet')
         petReady = true
         await greet()
       }

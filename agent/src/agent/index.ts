@@ -21,7 +21,11 @@ export async function runAgent(
     await runAgentCore(messages, onEvent, signal, {
       model,
       tools: createWorkspaceTools(settings),
-      instructions: createPersona(workspacePath, settings.permissionMode),
+      instructions: createPersona(
+        workspacePath,
+        settings.permissionMode,
+        settings.pet.name,
+      ),
       workspacePath,
       decide: (call) => decideToolCall(call, settings),
       snapshot,

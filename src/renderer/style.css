@@ -459,7 +459,8 @@ aside .tile {
   padding: 8px 0;
   border-bottom: 0.5px solid var(--line);
 }
-.group > label:last-child {
+.group > label:last-child,
+.group > .setting-row:last-child {
   border: 0;
 }
 .settings input,

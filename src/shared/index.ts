@@ -22,6 +22,8 @@ export const settingsSchema = z.object({
       id: z.string().default('xiaohei-q'),
       name: z.string().trim().min(1).max(40).default('小黑'),
       size: z.enum(['small', 'medium', 'large']).default('medium'),
+      /** Playback rate of the pet's own animations (drag running follows the hand instead). */
+      speed: z.enum(['slow', 'normal', 'fast']).default('normal'),
     })
     .prefault({}),
   permissionMode: z.enum(['ask', 'auto', 'full']).default('auto'),
@@ -109,6 +111,7 @@ export const IPC = {
   approval: 'agent:approval',
   petState: 'pet:state',
   petSize: 'pet:size',
+  petSpeed: 'pet:speed',
   petFinished: 'pet:finished',
   typing: 'pet:typing',
   petHit: 'pet:hit',
@@ -177,6 +180,7 @@ export interface FamiliarAPI {
   typing(hasText: boolean): void
   animationFinished(): void
   onSize(callback: (size: Settings['pet']['size']) => void): () => void
+  onSpeed(callback: (speed: Settings['pet']['speed']) => void): () => void
   getPetSkin(): Promise<PetSkin>
   listPets(): Promise<PetSkin[]>
   /** Copies pets from ~/.codex/pets into Familiar's own pet library. */

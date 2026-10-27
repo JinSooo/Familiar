@@ -16,6 +16,8 @@ const mutations = new Set([
   'delete_path',
   'make_dir',
   'run_shell',
+  'remember',
+  'forget',
 ])
 
 export interface AgentDependencies {

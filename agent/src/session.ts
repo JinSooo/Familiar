@@ -95,6 +95,8 @@ function toolDescription(name: string, input: unknown): string {
     make_dir: '新建目录',
     delete_path: '移到废纸篓',
     run_shell: '执行命令',
+    remember: '记住',
+    forget: '忘掉',
   }
   const field = (key: string): string =>
     input && typeof input === 'object' && key in input
@@ -104,7 +106,11 @@ function toolDescription(name: string, input: unknown): string {
   const target =
     name === 'run_shell'
       ? field('command')
-      : (field('path').split('/').filter(Boolean).at(-1) ?? '')
+      : name === 'remember'
+        ? field('text')
+        : name === 'forget'
+          ? field('id')
+          : (field('path').split('/').filter(Boolean).at(-1) ?? '')
   const short = target.length > 40 ? `${target.slice(0, 39)}…` : target
   return `${labels[name] ?? name}${short ? ` ${short}` : ''}`
 }

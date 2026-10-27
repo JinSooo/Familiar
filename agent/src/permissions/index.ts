@@ -23,6 +23,9 @@ const names = new Set([
   'run_shell',
 ])
 
+// Familiar's own memory files, in every mode; they never take a path from the model.
+const memoryTools = new Set(['remember', 'forget'])
+
 export async function decideToolCall(
   call: ToolCall,
   settings: Settings,
@@ -32,6 +35,8 @@ export async function decideToolCall(
     reason: string,
   ): ToolDecision => ({ decision, reason })
   try {
+    if (memoryTools.has(call.toolName))
+      return result('allow', '记忆由 Familiar 自己维护')
     if (!names.has(call.toolName)) return result('deny', '未知工具')
     const input = call.input as {
       path?: string

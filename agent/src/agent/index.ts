@@ -2,6 +2,7 @@ import type { AgentEvent, Message } from '../../../src/shared'
 import { getSettings } from '../settings'
 import { decideToolCall } from '../permissions'
 import { createWorkspaceTools, ensureWorkspace, snapshot } from '../workspace'
+import { createMemoryTools, memoryInstructions, memoryStore } from '../memory'
 import { runAgentCore } from './core'
 import { createModel } from './provider'
 import { createPersona } from './persona'
@@ -18,14 +19,18 @@ export async function runAgent(
     const settings = getSettings()
     const model = createModel(settings.model)
     const workspacePath = await ensureWorkspace(settings)
+    const memory = memoryStore(workspacePath)
     await runAgentCore(messages, onEvent, signal, {
       model,
-      tools: createWorkspaceTools(settings),
-      instructions: createPersona(
+      tools: {
+        ...createWorkspaceTools(settings),
+        ...createMemoryTools(memory),
+      },
+      instructions: `${createPersona(
         workspacePath,
         settings.permissionMode,
         settings.pet.name,
-      ),
+      )}\n\n${await memoryInstructions(memory)}`,
       workspacePath,
       decide: (call) => decideToolCall(call, settings),
       snapshot,

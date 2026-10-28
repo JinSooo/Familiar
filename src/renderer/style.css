@@ -349,8 +349,42 @@ summary:focus-visible {
 .status {
   font-size: 12px;
 }
-.tool summary {
+.tool {
+  margin: 0;
+}
+.tool-group summary {
   cursor: pointer;
+  list-style: none;
+}
+.tool-group summary::-webkit-details-marker {
+  display: none;
+}
+.tool-group summary::after {
+  content: ' ›';
+}
+.tool-group[open] summary::after {
+  content: ' ⌄';
+}
+.tool-group p {
+  margin: 4px 0 0 12px;
+}
+.approval-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: 12px;
+}
+.approval-detail code {
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 160px;
+  overflow: auto;
 }
 .approval {
   padding: 12px;
@@ -361,11 +395,6 @@ summary:focus-visible {
 }
 .approval p {
   line-height: 1.5;
-}
-.approval pre {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font-size: 11px;
 }
 .approval-actions {
   display: flex;
@@ -1075,4 +1104,67 @@ summary:focus-visible {
 }
 .big-window .md-image img {
   max-height: 440px;
+}
+/* Big window sidebar: a quiet list of titles, the open conversation highlighted. */
+.sidebar-new {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 10px 8px;
+  padding: 7px 10px;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 8px;
+  font-weight: 500;
+  text-align: left;
+}
+.sidebar-new:hover {
+  filter: none;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+}
+.history.compact {
+  padding: 0 10px 10px;
+}
+.history.compact .history-search {
+  height: 28px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  box-shadow: none;
+}
+.history.compact h4 {
+  margin: 16px 10px 4px;
+  font-size: 11px;
+  font-weight: 500;
+}
+.history.compact ul {
+  margin-top: 2px;
+}
+.history.compact .history-item {
+  border-radius: 7px;
+  padding-right: 4px;
+}
+.history.compact .history-item:hover {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+.history.compact .history-item.is-current {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.history.compact .history-open {
+  padding: 6px 4px 6px 10px;
+}
+.history.compact .history-title {
+  font-size: 13px;
+}
+.history.compact .history-item.confirming {
+  justify-content: space-between;
+  padding: 4px 6px 4px 10px;
+}
+.history.compact .history-item.confirming button {
+  padding: 2px 8px;
+}
+.history.compact > .link {
+  align-self: flex-start;
+  margin: auto 10px 0;
+  padding-top: 12px;
+  font-size: 11px;
+  color: var(--muted);
 }

@@ -26,12 +26,15 @@ export const errorText = (error: unknown, fallback: string): string =>
       ? error.message
       : fallback
 
+/** `compact`: the big window's sidebar — one line per conversation, the current one highlighted. */
 export function History({
   currentId,
   onOpened,
+  compact = false,
 }: {
   currentId: string
   onOpened: () => void
+  compact?: boolean
 }) {
   const [query, setQuery] = useState('')
   const [items, setItems] = useState<ConversationSummary[]>()
@@ -56,13 +59,16 @@ export function History({
   const now = Date.now()
   let lastGroup = ''
   return (
-    <section className="history" aria-label="历史对话">
+    <section
+      className={`history ${compact ? 'compact' : ''}`}
+      aria-label="历史对话"
+    >
       <input
         className="history-search"
         type="search"
         placeholder="搜索对话…"
         value={query}
-        autoFocus
+        autoFocus={!compact}
         onChange={(e) => setQuery(e.target.value)}
       />
       {error && (
@@ -80,7 +86,11 @@ export function History({
               {showHeading && <h4>{heading}</h4>}
               {confirming === item.id ? (
                 <div className="history-item confirming">
-                  <span>把「{item.title}」移到废纸篓？</span>
+                  <span>
+                    {compact
+                      ? '移到废纸篓？'
+                      : `把「${item.title}」移到废纸篓？`}
+                  </span>
                   <button
                     className="danger"
                     onClick={() => {
@@ -96,7 +106,9 @@ export function History({
                   <button onClick={() => setConfirming('')}>取消</button>
                 </div>
               ) : (
-                <div className="history-item">
+                <div
+                  className={`history-item ${item.id === currentId ? 'is-current' : ''}`}
+                >
                   <button
                     className="history-open"
                     onClick={() => {
@@ -109,15 +121,19 @@ export function History({
                   >
                     <span className="history-title">
                       {item.title}
-                      {item.id === currentId && (
+                      {!compact && item.id === currentId && (
                         <small className="current">当前</small>
                       )}
                     </span>
-                    <span className="muted history-preview">
-                      {item.preview || '（没有回复）'}
-                    </span>
+                    {!compact && (
+                      <span className="muted history-preview">
+                        {item.preview || '（没有回复）'}
+                      </span>
+                    )}
                   </button>
-                  <time className="muted">{when(item.updatedAt, now)}</time>
+                  {!compact && (
+                    <time className="muted">{when(item.updatedAt, now)}</time>
+                  )}
                   <button
                     className="icon history-delete"
                     aria-label={`删除 ${item.title}`}

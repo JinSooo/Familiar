@@ -3,7 +3,7 @@ import { ImageViewer, SourceCards } from './Visual'
 import { needsTimeDivider, formatMessageTime } from './content'
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { Icon } from '../shared-ui/Icon'
-import type { ChatView, PetState } from '../../shared'
+import type { ChatView, PetState, Session } from '../../shared'
 import { History, errorText } from './History'
 import { api } from '../api'
 import { Pet } from '../pet/Pet'
@@ -86,16 +86,18 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
                 <Icon name="history" />
               </button>
             )}
-            <button
-              className="icon"
-              aria-label="新对话"
-              onClick={() => {
-                api.newSession()
-                setView('chat')
-              }}
-            >
-              <Icon name="new" />
-            </button>
+            {!big && (
+              <button
+                className="icon"
+                aria-label="新对话"
+                onClick={() => {
+                  api.newSession()
+                  setView('chat')
+                }}
+              >
+                <Icon name="new" />
+              </button>
+            )}
             {!big && (
               <button
                 className="icon"
@@ -172,17 +174,9 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
                         {formatMessageTime(m.createdAt, Date.now())}
                       </div>
                     )}
-                  {session.tools
-                    .filter((t) => t.turn === i)
-                    .map((t) => (
-                      <details className="tool muted" key={t.id}>
-                        <summary>
-                          {t.done ? '✓ 已' : '正在'}
-                          {t.name}
-                        </summary>
-                        <p>调用编号：{t.id}</p>
-                      </details>
-                    ))}
+                  <ToolSteps
+                    tools={session.tools.filter((t) => t.turn === i)}
+                  />
                   {m.content && (
                     <article
                       className={`message ${m.role}`}
@@ -211,10 +205,7 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
                 <article className="approval" key={a.id}>
                   <strong>需要你的允许</strong>
                   <p>{a.reason}</p>
-                  <details>
-                    <summary>{a.toolName}</summary>
-                    <pre>{JSON.stringify(a.input, null, 2)}</pre>
-                  </details>
+                  <ApprovalDetail toolName={a.toolName} input={a.input} />
                   <div className="approval-actions">
                     <button
                       className="primary"
@@ -252,9 +243,93 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
     <div className="big-window">
       <aside className="chat-sidebar">
         <div className="sidebar-titlebar" data-tauri-drag-region="deep" />
-        <History currentId={session.id} onOpened={() => setView('chat')} />
+        <button
+          className="sidebar-new"
+          onClick={() => {
+            api.newSession()
+            setView('chat')
+          }}
+        >
+          <Icon name="new" />
+          新对话
+        </button>
+        <History
+          compact
+          currentId={session.id}
+          onOpened={() => setView('chat')}
+        />
       </aside>
       {surface}
     </div>
+  )
+}
+
+const actions: Record<string, string> = {
+  write_file: '写入文件',
+  edit_file: '修改文件',
+  read_file: '读取文件',
+  list_dir: '查看目录',
+  make_dir: '新建目录',
+  delete_path: '移到废纸篓',
+  run_shell: '执行命令',
+  web_search: '联网搜索',
+  fetch_page: '读取网页',
+}
+/** What an approval would do, in words plus the one detail that matters (path, command, URL). */
+function ApprovalDetail({
+  toolName,
+  input,
+}: {
+  toolName: string
+  input: unknown
+}) {
+  const field = (key: string) =>
+    input && typeof input === 'object' && key in input
+      ? String((input as Record<string, unknown>)[key] ?? '')
+      : ''
+  const detail =
+    field('command') || field('path') || field('url') || field('query')
+  const extra = [
+    field('cwd') && `目录：${field('cwd')}`,
+    toolName === 'run_shell' && field('network') === 'true' && '需要联网',
+  ].filter(Boolean)
+  return (
+    <div className="approval-detail">
+      <span className="muted">{actions[toolName] ?? '使用工具'}</span>
+      {detail && <code>{detail}</code>}
+      {extra.length > 0 && <span className="muted">{extra.join(' · ')}</span>}
+    </div>
+  )
+}
+
+/** One line per tool step; more than three fold into a summary like 「搜索 4 次 · 读网页 9 次」. */
+function ToolSteps({ tools }: { tools: Session['tools'] }) {
+  const row = (t: Session['tools'][number]) => (
+    <p className="tool muted" key={t.id}>
+      {t.done ? '✓ 已' : '正在'}
+      {t.name}
+    </p>
+  )
+  if (tools.length <= 3) return <>{tools.map(row)}</>
+  const running = tools.filter((t) => !t.done)
+  const counts = new Map<string, number>()
+  for (const t of tools) {
+    const verb = t.name.split(' ')[0] ?? t.name
+    counts.set(verb, (counts.get(verb) ?? 0) + 1)
+  }
+  const summary = [...counts]
+    .map(([verb, n]) => (n > 1 ? `${verb} ${n} 次` : verb))
+    .join(' · ')
+  return (
+    <>
+      <details className="tool tool-group muted">
+        <summary>
+          {running.length ? '' : '✓ '}
+          {summary}
+        </summary>
+        {tools.filter((t) => t.done).map(row)}
+      </details>
+      {running.map(row)}
+    </>
   )
 }

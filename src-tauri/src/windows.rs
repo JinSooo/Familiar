@@ -156,7 +156,21 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
                 .build(),
         )
         .build()?;
-    for label in ["pet", "chat", "settings"] {
+    WebviewWindowBuilder::new(app, "main", url("main"))
+        .title("Familiar")
+        .inner_size(1040., 760.)
+        .min_inner_size(720., 520.)
+        .visible(false)
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true)
+        .effects(
+            EffectsBuilder::new()
+                .effect(Effect::Sidebar)
+                .state(EffectState::Active)
+                .build(),
+        )
+        .build()?;
+    for label in ["pet", "chat", "settings", "main"] {
         let w = app.get_webview_window(label).unwrap();
         let h = app.clone();
         w.on_window_event(move |event| match event {
@@ -167,6 +181,10 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
                 }
                 if label == "chat" {
                     chat_signal(&h);
+                }
+                if label == "main" {
+                    leave_dock(&h);
+                    main_signal(&h);
                 }
             }
             tauri::WindowEvent::CloseRequested { .. } => h.exit(0),
@@ -179,6 +197,9 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
                 }
                 if label == "chat" {
                     chat_signal(&h);
+                }
+                if label == "main" {
+                    main_signal(&h);
                 }
             }
             _ => {}
@@ -196,7 +217,7 @@ fn report_blur(app: &tauri::AppHandle) {
         std::thread::sleep(std::time::Duration::from_millis(250));
         let main = app.clone();
         let _ = app.run_on_main_thread(move || {
-            let ours = ["pet", "chat", "settings"].iter().any(|label| {
+            let ours = ["pet", "chat", "settings", "main"].iter().any(|label| {
                 main.get_webview_window(label)
                     .and_then(|w| w.is_focused().ok())
                     .unwrap_or(false)
@@ -250,6 +271,22 @@ pub fn chat_signal(app: &tauri::AppHandle) {
     }
 }
 
+pub fn main_signal(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        crate::agent::signal(
+            app,
+            serde_json::json!({"name":"main-window","visible":w.is_visible().unwrap_or(false),"focused":w.is_focused().unwrap_or(false)}),
+        );
+    }
+}
+
+/// Back to a Dock-less accessory app once the conversation window is closed.
+fn leave_dock(app: &tauri::AppHandle) {
+    if std::env::var_os("FAMILIAR_SHOW_DOCK").is_none() {
+        let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+    }
+}
+
 pub fn action(app: &tauri::AppHandle, action: crate::protocol::UiAction) -> tauri::Result<()> {
     use crate::protocol::UiAction;
     match action {
@@ -287,6 +324,15 @@ pub fn action(app: &tauri::AppHandle, action: crate::protocol::UiAction) -> taur
             if let Ok(panel) = app.get_webview_panel("pet") {
                 panel.make_key_window();
             }
+        }
+        UiAction::ShowMain => {
+            // A regular app while the window is open: it gets a Dock icon and a place in ⌘Tab.
+            app.set_activation_policy(tauri::ActivationPolicy::Regular)?;
+            let w = app.get_webview_window("main").unwrap();
+            w.unminimize()?;
+            w.show()?;
+            w.set_focus()?;
+            main_signal(app);
         }
         UiAction::ShowSettings => {
             let w = app.get_webview_window("settings").unwrap();

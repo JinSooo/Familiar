@@ -3,6 +3,7 @@ import { getSettings } from '../settings'
 import { decideToolCall } from '../permissions'
 import { createWorkspaceTools, ensureWorkspace, snapshot } from '../workspace'
 import { createMemoryTools, memoryInstructions, openMemory } from '../memory'
+import { createWebTools, sourcesOf, webInstructions } from '../web'
 import { runAgentCore } from './core'
 import { createModel } from './provider'
 import { createPersona } from './persona'
@@ -25,12 +26,14 @@ export async function runAgent(
       tools: {
         ...createWorkspaceTools(settings),
         ...createMemoryTools(memory),
+        ...createWebTools(settings),
       },
+      sources: sourcesOf,
       instructions: `${createPersona(
         workspacePath,
         settings.permissionMode,
         settings.pet.name,
-      )}\n\n${await memoryInstructions(memory.store)}`,
+      )}\n\n${await memoryInstructions(memory.store)}\n\n${webInstructions}`,
       workspacePath,
       decide: (call) => decideToolCall(call, settings),
       snapshot,

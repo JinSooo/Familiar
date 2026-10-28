@@ -1,6 +1,6 @@
 {
   "identifier": "familiar-windows",
-  "windows": ["pet", "chat", "settings"],
+  "windows": ["pet", "chat", "settings", "main"],
   "permissions": [
     "core:event:allow-listen",
     "core:event:allow-unlisten",

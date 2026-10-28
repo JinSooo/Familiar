@@ -14,6 +14,8 @@ createRoot(document.getElementById('root')!).render(
     <Overlay />
   ) : kind === 'settings' ? (
     <SettingsView />
+  ) : kind === 'main' ? (
+    <Chat variant="window" />
   ) : (
     <Chat />
   ),

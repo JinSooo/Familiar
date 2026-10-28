@@ -1,6 +1,6 @@
 import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { ConversationSummary, Session } from '../../src/shared'
+import type { ConversationSummary, Session, Source } from '../../src/shared'
 import { conversationsDir, moveToTrash } from './system'
 
 /**
@@ -17,6 +17,7 @@ interface MessageMeta {
   at: number
   tools?: { name: string; done: boolean }[]
   error?: string
+  sources?: Source[]
 }
 export interface StoredConversation {
   id: string
@@ -77,6 +78,7 @@ export function serialize(
       at: m.createdAt,
       ...(tools.length ? { tools } : {}),
       ...(m.error ? { error: m.error } : {}),
+      ...(m.sources?.length ? { sources: m.sources } : {}),
     }
     // The header line is regenerated from the metadata on every save, so readers can edit the body freely.
     const header = [
@@ -123,6 +125,13 @@ export function parse(id: string, text: string): StoredConversation {
       content,
       createdAt: Number(meta.at) || 0,
       ...(meta.error ? { error: String(meta.error) } : {}),
+      ...(Array.isArray(meta.sources)
+        ? {
+            sources: meta.sources.filter(
+              (s) => typeof s?.url === 'string' && typeof s?.title === 'string',
+            ),
+          }
+        : {}),
     })
     for (const [k, t] of (meta.tools ?? []).entries())
       tools.push({

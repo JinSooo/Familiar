@@ -1,4 +1,5 @@
 import { Markdown, PlainText } from './Markdown'
+import { ImageViewer, SourceCards } from './Visual'
 import { needsTimeDivider, formatMessageTime } from './content'
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { Icon } from '../shared-ui/Icon'
@@ -10,7 +11,9 @@ import { PetAvatar } from '../pet/PetAvatar'
 import { Composer } from '../shared-ui/Composer'
 import { useSession } from '../shared-ui/session'
 import { useTurnStatus } from '../shared-ui/status'
-export function Chat() {
+/** `panel`: the small floating panel by the pet. `window`: the big resizable window with history beside it. */
+export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
+  const big = variant === 'window'
   const session = useSession()
   const [state, setState] = useState<PetState>('idle')
   useEffect(() => api.onState(setState), [])
@@ -20,13 +23,13 @@ export function Chat() {
   // Esc steps out: history → chat, then the whole panel and capsule close at once.
   useEffect(() => {
     const escape = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.isComposing) return
+      if (big || e.key !== 'Escape' || e.isComposing) return
       if (view === 'history') setView('chat')
       else api.dismissChat()
     }
     window.addEventListener('keydown', escape)
     return () => window.removeEventListener('keydown', escape)
-  }, [view])
+  }, [view, big])
   const [name, setName] = useState('小黑')
   const [mode, setMode] = useState('自动')
   const bottom = useRef<HTMLDivElement>(null)
@@ -59,8 +62,9 @@ export function Chat() {
       bottom.current?.scrollIntoView()
     }
   }, [session.messages.length])
-  return (
+  const surface = (
     <main className="chat-shell">
+      <ImageViewer />
       {session.running && state === 'thinking' && (
         <div className="perched">
           <Pet embedded scale={0.38} forceState="thinking" />
@@ -72,14 +76,16 @@ export function Chat() {
           <strong>{name}</strong>
           <small className="muted">{mode}</small>
           <div className="header-actions">
-            <button
-              className={`icon ${view === 'history' ? 'active' : ''}`}
-              aria-label="历史对话"
-              aria-pressed={view === 'history'}
-              onClick={() => setView(view === 'history' ? 'chat' : 'history')}
-            >
-              <Icon name="history" />
-            </button>
+            {!big && (
+              <button
+                className={`icon ${view === 'history' ? 'active' : ''}`}
+                aria-label="历史对话"
+                aria-pressed={view === 'history'}
+                onClick={() => setView(view === 'history' ? 'chat' : 'history')}
+              >
+                <Icon name="history" />
+              </button>
+            )}
             <button
               className="icon"
               aria-label="新对话"
@@ -90,6 +96,16 @@ export function Chat() {
             >
               <Icon name="new" />
             </button>
+            {!big && (
+              <button
+                className="icon"
+                aria-label="在大窗口打开"
+                title="在大窗口打开"
+                onClick={() => api.openMainWindow()}
+              >
+                <Icon name="window" />
+              </button>
+            )}
             <button
               className="icon"
               aria-label="设置"
@@ -97,16 +113,18 @@ export function Chat() {
             >
               <Icon name="settings" />
             </button>
-            <button
-              className="icon"
-              aria-label="收起成胶囊"
-              onClick={() => api.toggleChat()}
-            >
-              <Icon name="collapse" />
-            </button>
+            {!big && (
+              <button
+                className="icon"
+                aria-label="收起成胶囊"
+                onClick={() => api.toggleChat()}
+              >
+                <Icon name="collapse" />
+              </button>
+            )}
           </div>
         </header>
-        {view === 'history' ? (
+        {view === 'history' && !big ? (
           <History currentId={session.id} onOpened={() => setView('chat')} />
         ) : (
           <>
@@ -179,6 +197,9 @@ export function Chat() {
                       )}
                     </article>
                   )}
+                  {m.role === 'assistant' && m.sources?.length ? (
+                    <SourceCards sources={m.sources} />
+                  ) : null}
                   {m.error && (
                     <p className="error" role="alert">
                       {m.error}
@@ -225,5 +246,15 @@ export function Chat() {
         )}
       </div>
     </main>
+  )
+  if (!big) return surface
+  return (
+    <div className="big-window">
+      <aside className="chat-sidebar">
+        <div className="sidebar-titlebar" data-tauri-drag-region="deep" />
+        <History currentId={session.id} onOpened={() => setView('chat')} />
+      </aside>
+      {surface}
+    </div>
   )
 }

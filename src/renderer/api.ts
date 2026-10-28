@@ -59,6 +59,7 @@ export const api: FamiliarAPI = {
   },
   toggleChat: () => send(IPC.toggleChat),
   dismissChat: () => send(IPC.chatDismiss),
+  openMainWindow: () => send(IPC.mainOpen),
   ready: () => send(IPC.ready),
   onEvent: (cb) => subscribe(IPC.agentEvent, cb),
   onState: (cb) => subscribe(IPC.petState, cb),

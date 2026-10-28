@@ -1,7 +1,8 @@
 import type { Settings } from '../../../src/shared'
 
 import { proxyFor } from '../system'
-const systemFetch: typeof globalThis.fetch = async (input, init) => {
+/** fetch through the system proxy (Bun reads no proxy settings on its own). */
+export const systemFetch: typeof globalThis.fetch = async (input, init) => {
   const url = input instanceof Request ? input.url : String(input)
   const options: RequestInit & { proxy?: string } = {
     ...init,

@@ -58,6 +58,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         } else if matches!(
             id,
             "chat:toggle"
+                | "main:open"
                 | "chat:open"
                 | "chat:history"
                 | "session:new"
@@ -111,6 +112,7 @@ pub fn rebuild(
         app,
         &[
             &MenuItem::with_id(app, "chat:open", "打开对话", true, None::<&str>)?,
+            &MenuItem::with_id(app, "main:open", "在大窗口打开", true, None::<&str>)?,
             &MenuItem::with_id(app, "session:new", "新对话", true, None::<&str>)?,
             &MenuItem::with_id(app, "chat:history", "历史对话…", true, None::<&str>)?,
             &PredefinedMenuItem::separator(app)?,
@@ -152,6 +154,8 @@ pub fn pet_menu(
         &app,
         &[
             &MenuItem::with_id(&app, "chat:open", "打开对话", true, None::<&str>)
+                .map_err(|e| e.to_string())?,
+            &MenuItem::with_id(&app, "main:open", "在大窗口打开", true, None::<&str>)
                 .map_err(|e| e.to_string())?,
             &MenuItem::with_id(&app, "session:new", "新对话", true, None::<&str>)
                 .map_err(|e| e.to_string())?,

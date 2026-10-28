@@ -13,7 +13,7 @@
     "macOSPrivateApi": true,
     "windows": [],
     "security": {
-      "csp": "default-src 'self' ipc: http://ipc.localhost; img-src 'self' asset: familiar-pet: http://familiar-pet.localhost data: blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost http://localhost:5173 ws://localhost:5173 familiar-pet: http://familiar-pet.localhost"
+      "csp": "default-src 'self' ipc: http://ipc.localhost; img-src 'self' asset: familiar-pet: http://familiar-pet.localhost data: blob: https: http:; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost http://localhost:5173 ws://localhost:5173 familiar-pet: http://familiar-pet.localhost"
     }
   },
   "bundle": {

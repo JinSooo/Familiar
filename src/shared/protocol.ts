@@ -10,7 +10,7 @@
  * - Sidecar → webviews: `emit` messages; Rust re-emits them as Tauri events named `channel`.
  */
 
-export type WindowLabel = 'pet' | 'chat' | 'settings'
+export type WindowLabel = 'pet' | 'chat' | 'settings' | 'main'
 
 /** Rust → sidecar */
 export type ShellToAgent =
@@ -25,6 +25,7 @@ export type ShellToAgent =
 
 export type ShellSignal =
   | { name: 'chat-window'; visible: boolean; focused: boolean }
+  | { name: 'main-window'; visible: boolean; focused: boolean }
   /** The app became active; refresh things like the accent colour. */
   | { name: 'app-activated' }
   /** The user went to another app: the pet or chat lost focus and no Familiar window has it. */
@@ -50,6 +51,8 @@ export type UiAction =
   /** Make the pet panel key so the capsule gets typing and notices when the user leaves. */
   | { type: 'focus-pet' }
   | { type: 'show-settings' }
+  /** The standalone conversation window (Familiar appears in the Dock while it is open). */
+  | { type: 'show-main' }
   /** Resize the pet overlay, keeping its bottom-right corner fixed. */
   | { type: 'pet-size'; width: number; height: number }
   /** Rebuild the tray menu. */

@@ -145,3 +145,52 @@
   color: var(--muted);
   margin: 2px 0;
 }
+/* Web images: click opens the viewer. */
+.md-image {
+  display: block;
+  max-width: 100%;
+  margin: 6px 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+  text-align: left;
+}
+.md-image img {
+  display: block;
+  max-height: 320px;
+  object-fit: contain;
+}
+.md-image .caption {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--muted);
+}
+/* Diagrams and charts */
+.visual {
+  margin: 8px 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--group);
+  box-shadow: 0 0 0 0.5px var(--line);
+  overflow-x: auto;
+}
+.visual.mermaid svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+.visual.chart {
+  width: 100%;
+  box-sizing: border-box;
+}
+.visual.loading {
+  font-size: 12px;
+}
+.visual-error pre {
+  max-height: 160px;
+  overflow: auto;
+  font-size: 11px;
+}

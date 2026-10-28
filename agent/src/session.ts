@@ -59,6 +59,17 @@ export function reduceSession(session: Session, event: AgentEvent): Session {
     next.tools = session.tools.map((t) =>
       t.id === event.id ? { ...t, done: true } : t,
     )
+  if (event.type === 'sources') {
+    const last = session.messages.length - 1
+    next.messages = session.messages.map((m, i) => {
+      if (i !== last || m.role !== 'assistant') return m
+      const known = new Set((m.sources ?? []).map((s) => s.url))
+      const added = event.sources.filter(
+        (s) => !known.has(s.url) && known.add(s.url),
+      )
+      return { ...m, sources: [...(m.sources ?? []), ...added].slice(0, 20) }
+    })
+  }
   if (event.type === 'tool-approval-request')
     next.approvals = [...session.approvals, event]
   if (event.type === 'error') {
@@ -98,6 +109,8 @@ function toolDescription(name: string, input: unknown): string {
     remember: '记住',
     forget: '忘掉',
     recall: '回想',
+    web_search: '搜索',
+    fetch_page: '读网页',
   }
   const field = (key: string): string =>
     input && typeof input === 'object' && key in input
@@ -113,7 +126,13 @@ function toolDescription(name: string, input: unknown): string {
           ? '一条记忆'
           : name === 'recall'
             ? field('query') || field('topic') || '全部记忆'
-            : (field('path').split('/').filter(Boolean).at(-1) ?? '')
+            : name === 'web_search'
+              ? field('query')
+              : name === 'fetch_page'
+                ? (field('url')
+                    .replace(/^https?:\/\/(www\.)?/, '')
+                    .split('/')[0] ?? '')
+                : (field('path').split('/').filter(Boolean).at(-1) ?? '')
   const short = target.length > 40 ? `${target.slice(0, 39)}…` : target
   return `${labels[name] ?? name}${short ? ` ${short}` : ''}`
 }

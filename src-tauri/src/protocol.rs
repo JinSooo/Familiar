@@ -30,6 +30,8 @@ pub enum UiAction {
     /// Make the pet panel key so the capsule receives typing and its own blur.
     FocusPet,
     ShowSettings,
+    /// The standalone conversation window; Familiar shows in the Dock while it is open.
+    ShowMain,
     PetSize {
         width: f64,
         height: f64,
@@ -92,7 +94,7 @@ impl<'de> Deserialize<'de> for AgentToShell {
                 payload,
                 target,
             } => {
-                if !matches!(target.as_str(), "pet" | "chat" | "settings" | "all") {
+                if !matches!(target.as_str(), "pet" | "chat" | "settings" | "main" | "all") {
                     return Err(serde::de::Error::custom("invalid event target"));
                 }
                 Ok(Self::Emit {

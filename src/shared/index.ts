@@ -98,6 +98,12 @@ export const messageSchema = z.object({
   content: z.string().max(100000),
 })
 export type Message = z.infer<typeof messageSchema>
+export interface Source {
+  url: string
+  title: string
+  /** A picture from the page (og:image or first large image), when it was read. */
+  image?: string
+}
 export type AgentEvent =
   | { type: 'text-delta'; text: string }
   | { type: 'tool-call'; id: string; toolName: string; input: unknown }
@@ -110,6 +116,8 @@ export type AgentEvent =
       dir?: string
     }
   | { type: 'tool-result'; id: string; output: unknown }
+  /** Web pages the reply drew on (search results, pages read), for its source cards. */
+  | { type: 'sources'; sources: Source[] }
   | { type: 'finish'; stopped?: boolean }
   | { type: 'error'; message: string }
 export const IPC = {
@@ -161,6 +169,7 @@ export const IPC = {
   /** Chat panel → agent: close the panel and the capsule together (Esc). */
   chatDismiss: 'chat:dismiss',
   chatHistory: 'chat:history',
+  mainOpen: 'main:open',
   memoryList: 'memory:list',
   memoryConfirm: 'memory:confirm',
   memoryCorrect: 'memory:correct',
@@ -188,6 +197,8 @@ export interface FamiliarAPI {
   toggleChat(): void
   /** Close the chat panel and the capsule, leaving only the pet. */
   dismissChat(): void
+  /** Move the conversation into the large, resizable window. */
+  openMainWindow(): void
   ready(): void
   onEvent(callback: (event: AgentEvent) => void): () => void
   onState(callback: (state: PetState) => void): () => void
@@ -275,7 +286,11 @@ export interface Session {
   /** Set when the capsule started fresh after a long pause, so it can offer to go back. */
   previous?: { id: string; title: string }
   /** `error` marks a reply that failed, so the transcript keeps the failure where it happened. */
-  messages: (Message & { createdAt: number; error?: string })[]
+  messages: (Message & {
+    createdAt: number
+    error?: string
+    sources?: Source[]
+  })[]
   running: boolean
   approvals: Approval[]
   /** `turn` is the index of the assistant message the call belongs to. */

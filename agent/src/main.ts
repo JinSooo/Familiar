@@ -89,6 +89,10 @@ let greetedDay = ''
 let petReady = false
 let chatVisible = false
 let chatFocused = false
+let mainVisible = false
+let mainFocused = false
+/** Where the running turn was sent from; the big window shows its own approvals and replies. */
+let turnWindow: WindowLabel | 'tray' = 'chat'
 let closing = false
 const pendingApprovals = new Set<string>()
 function publishSession() {
@@ -244,7 +248,8 @@ async function run(window: WindowLabel | 'tray', input: unknown) {
   if (session.messages.length >= 498) throw new Error('请开启新对话')
   clearTimeout(bubbleTimer)
   if (window === 'pet') restartIfIdle()
-  expandedTurn = window === 'chat'
+  expandedTurn = window === 'chat' || window === 'main'
+  turnWindow = window
   session = beginTurn(session, text, window === 'pet' ? 'capsule' : 'chat')
   persist()
   const messages = session.messages
@@ -265,9 +270,11 @@ async function run(window: WindowLabel | 'tray', input: unknown) {
     if (resetRequested) return
     session = reduceSession(session, item)
     publishSession()
+    const inMain = turnWindow === 'main' && mainVisible
     if (
-      (item.type === 'tool-approval-request' && !chatVisible) ||
-      (shouldExpand(session) && !expandedTurn)
+      !inMain &&
+      ((item.type === 'tool-approval-request' && !chatVisible) ||
+        (shouldExpand(session) && !expandedTurn))
     )
       showChat()
 
@@ -284,7 +291,10 @@ async function run(window: WindowLabel | 'tray', input: unknown) {
       activity.done = false
     }
     if (item.type === 'finish')
-      activity.done = !item.stopped && (!chatVisible || !chatFocused)
+      activity.done =
+        !item.stopped &&
+        !(chatVisible && chatFocused) &&
+        !(mainVisible && mainFocused)
     if (item.type === 'tool-approval-request') {
       pendingApprovals.add(item.id)
       activity['needs-you'] = true
@@ -352,7 +362,7 @@ async function request(
     case IPC.sessionGet:
       return session
     case IPC.sessionNew:
-      requireSender(window, ['chat', 'pet', 'tray'])
+      requireSender(window, ['chat', 'pet', 'tray', 'main'])
       resetRequested = Boolean(controller)
       controller?.abort()
       pendingApprovals.clear()
@@ -373,13 +383,13 @@ async function request(
       publishSession()
       return
     case IPC.conversationsList:
-      requireSender(window, ['chat', 'settings'])
+      requireSender(window, ['chat', 'settings', 'main'])
       return listConversations(z.string().max(200).optional().parse(input))
     case IPC.conversationsOpen:
-      requireSender(window, ['chat', 'pet'])
+      requireSender(window, ['chat', 'pet', 'main'])
       return openConversation(z.string().parse(input))
     case IPC.conversationsDelete: {
-      requireSender(window, ['chat'])
+      requireSender(window, ['chat', 'main'])
       const id = z.string().parse(input)
       if (id === session.id && controller)
         throw new Error('正在进行的对话不能删除，先停止它')
@@ -401,7 +411,7 @@ async function request(
       publishSession()
       return
     case IPC.conversationsReveal:
-      requireSender(window, ['chat', 'settings'])
+      requireSender(window, ['chat', 'settings', 'main'])
       await mkdir(conversationsDir, { recursive: true })
       await reveal(conversationsDir)
       return
@@ -430,20 +440,27 @@ async function request(
       requireSender(window, ['tray'])
       showChat()
       return
+    case IPC.mainOpen:
+      requireSender(window, ['chat', 'pet', 'tray'])
+      // One conversation on screen at a time: the big window takes over from panel and capsule.
+      dismissChat()
+      emit(IPC.view, 'chat', 'main')
+      ui({ type: 'show-main' })
+      return
     case IPC.chatHistory:
       requireSender(window, ['tray'])
       showChat()
       emit(IPC.view, 'history', 'chat')
       return
     case IPC.agentRun:
-      requireSender(window, ['chat', 'pet'])
+      requireSender(window, ['chat', 'pet', 'main'])
       return run(window, input)
     case IPC.agentStop:
-      requireSender(window, ['chat', 'pet'])
+      requireSender(window, ['chat', 'pet', 'main'])
       controller?.abort()
       return
     case IPC.approval: {
-      requireSender(window, ['chat'])
+      requireSender(window, ['chat', 'main'])
       const id = z.string().parse(input)
       const choice = z.enum(['approve', 'deny', 'always']).parse(args[1])
       if (!pendingApprovals.has(id)) throw new Error('Unknown approval')
@@ -531,14 +548,14 @@ async function request(
       refreshState()
       return
     case IPC.typing:
-      requireSender(window, ['pet', 'chat'])
+      requireSender(window, ['pet', 'chat', 'main'])
       activity.listening = z.boolean().parse(input)
       hasDraft = activity.listening
       typingAt = activity.listening ? Date.now() : 0
       refreshState()
       return
     case IPC.ready:
-      requireSender(window, ['pet', 'chat', 'settings'])
+      requireSender(window, ['pet', 'chat', 'settings', 'main'])
       emit(IPC.appearance, await accent(), window as WindowLabel)
       emit(IPC.session, session, window as WindowLabel)
       if (window === 'pet') {
@@ -550,10 +567,10 @@ async function request(
         petReady = true
         await greet()
       }
-      if (window === 'chat') {
-        emit(IPC.view, 'chat', 'chat')
+      if (window === 'chat' || window === 'main') {
+        emit(IPC.view, 'chat', window)
         // The chat may have asked for the skin before the shell finished spawning us.
-        emit(IPC.petSkin, currentSkin(getSettings().pet.id), 'chat')
+        emit(IPC.petSkin, currentSkin(getSettings().pet.id), window)
       }
       return
     case IPC.memoryList: {
@@ -635,7 +652,7 @@ async function request(
 const requestSchema = z.object({
   kind: z.literal('request'),
   id: z.number().int(),
-  window: z.enum(['pet', 'chat', 'settings', 'tray']),
+  window: z.enum(['pet', 'chat', 'settings', 'main', 'tray']),
   channel: z.string(),
   args: z.array(z.unknown()),
 })
@@ -644,6 +661,11 @@ const signalSchema = z.object({
   signal: z.discriminatedUnion('name', [
     z.object({
       name: z.literal('chat-window'),
+      visible: z.boolean(),
+      focused: z.boolean(),
+    }),
+    z.object({
+      name: z.literal('main-window'),
       visible: z.boolean(),
       focused: z.boolean(),
     }),
@@ -681,6 +703,13 @@ async function handle(line: string) {
         chatVisible = signal.visible
         chatFocused = signal.focused
         if (chatVisible || chatFocused) {
+          activity.done = false
+          refreshState()
+        }
+      } else if (signal.name === 'main-window') {
+        mainVisible = signal.visible
+        mainFocused = signal.focused
+        if (mainVisible && mainFocused) {
           activity.done = false
           refreshState()
         }

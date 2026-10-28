@@ -5,7 +5,7 @@ import {
   type LanguageModel,
   type ToolSet,
 } from 'ai'
-import type { AgentEvent, Message } from '../../../src/shared'
+import type { AgentEvent, Message, Source } from '../../../src/shared'
 import type { ToolCall, ToolDecision } from '../permissions'
 import { waitForApproval } from './approvals'
 import { agentError } from './errors'
@@ -27,6 +27,8 @@ export interface AgentDependencies {
   workspacePath: string
   decide: (call: ToolCall) => Promise<ToolDecision>
   snapshot: (path: string, message: string) => Promise<void>
+  /** Source cards a tool result adds to the reply (web tools). */
+  sources?: (toolName: string, output: unknown) => Source[]
 }
 
 function preview(output: unknown): string {
@@ -137,13 +139,16 @@ export async function runAgentCore(
             input: part.input,
           })
           break
-        case 'tool-result':
+        case 'tool-result': {
           emit({
             type: 'tool-result',
             id: part.toolCallId,
             output: preview(part.output),
           })
+          const sources = dependencies.sources?.(part.toolName, part.output)
+          if (sources?.length) emit({ type: 'sources', sources })
           break
+        }
         case 'tool-error':
           emit({
             type: 'tool-result',

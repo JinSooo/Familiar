@@ -390,7 +390,7 @@ summary:focus-visible {
   padding: 48px 10px 12px;
   background: rgba(180, 180, 180, 0.1);
 }
-aside button {
+.settings-shell aside button {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -404,11 +404,11 @@ aside button {
   box-shadow: none;
   font-size: 13px;
 }
-aside button.selected {
+.settings-shell aside button.selected {
   background: var(--accent);
   color: white;
 }
-aside .tile {
+.settings-shell aside .tile {
   width: 20px;
   height: 20px;
   border-radius: 5px;
@@ -940,4 +940,139 @@ aside .tile {
 }
 .memory-leftovers button {
   padding: 3px 10px;
+}
+/* Source cards under a reply that used the web */
+.sources {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: -2px 0 4px;
+}
+.sources-label {
+  font-size: 11px;
+}
+.source-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 1px 1px 4px;
+}
+.source-card {
+  flex: 0 0 168px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--group);
+  box-shadow: 0 0 0 0.5px var(--line);
+  text-align: left;
+  font-size: 12px;
+  line-height: 1.35;
+  cursor: pointer;
+}
+.source-thumb {
+  width: 100%;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 5px;
+}
+.source-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.source-host {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.source-host img {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+/* Full-window image viewer */
+.image-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px 56px;
+  background: rgba(0, 0, 0, 0.82);
+  cursor: zoom-out;
+}
+.image-viewer > img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 6px;
+}
+.image-viewer-bar {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #eee;
+  font-size: 12px;
+  cursor: default;
+}
+.image-viewer-bar span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.image-viewer-bar button {
+  padding: 3px 10px;
+}
+/* The big conversation window: history beside the chat, readable line length. */
+.big-window {
+  height: 100%;
+  display: flex;
+}
+.chat-sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 0.5px solid var(--line);
+}
+/* Room for the traffic lights; doubles as the drag handle. */
+.sidebar-titlebar {
+  height: 44px;
+  flex-shrink: 0;
+}
+.big-window .chat-shell {
+  flex: 1;
+  min-width: 0;
+}
+.big-window .chat-surface {
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--settings);
+}
+.big-window .messages,
+.big-window .composer-wrap {
+  padding-left: max(24px, calc((100% - 820px) / 2));
+  padding-right: max(24px, calc((100% - 820px) / 2));
+}
+.big-window .message.assistant {
+  max-width: 100%;
+}
+.big-window .md-image img {
+  max-height: 440px;
 }

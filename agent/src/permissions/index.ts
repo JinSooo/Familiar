@@ -25,6 +25,8 @@ const names = new Set([
 
 // Familiar's own memory files, in every mode; they never take a path from the model.
 const memoryTools = new Set(['remember', 'forget', 'recall'])
+// Read-only web access: allowed in auto and full mode, asked in ask mode (shell network still asks).
+const webTools = new Set(['web_search', 'fetch_page'])
 
 export async function decideToolCall(
   call: ToolCall,
@@ -37,6 +39,10 @@ export async function decideToolCall(
   try {
     if (memoryTools.has(call.toolName))
       return result('allow', '记忆由 Familiar 自己维护')
+    if (webTools.has(call.toolName))
+      return settings.permissionMode === 'ask'
+        ? result('ask', '联网读取需要授权')
+        : result('allow', '只读联网')
     if (!names.has(call.toolName)) return result('deny', '未知工具')
     const input = call.input as {
       path?: string

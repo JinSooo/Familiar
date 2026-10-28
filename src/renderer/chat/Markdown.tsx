@@ -22,6 +22,7 @@ function openLink(event: MouseEvent<HTMLAnchorElement>) {
   if (href && /^(https?:|mailto:)/i.test(href))
     void openUrl(href).catch(console.error)
 }
+import { MermaidDiagram, VegaChart, WebImage } from './Visual'
 import './markdown.css'
 
 function codeText(node: ReactNode): string {
@@ -76,7 +77,17 @@ export function Markdown({ content }: { content: string }) {
         rehypePlugins={[rehypeKatex, rehypeHighlight]}
         skipHtml
         components={{
-          pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
+          pre: ({ children }) => {
+            const code = Children.toArray(children)[0]
+            const language = isValidElement<{ className?: string }>(code)
+              ? /language-([\w+-]+)/.exec(code.props.className ?? '')?.[1]
+              : undefined
+            const text = codeText(children).replace(/\n$/, '')
+            if (language === 'mermaid') return <MermaidDiagram code={text} />
+            if (language === 'vega-lite' || language === 'vegalite')
+              return <VegaChart code={text} />
+            return <CodeBlock>{children}</CodeBlock>
+          },
           a: ({ href, children }) => (
             <a
               href={href && /^(https?:|mailto:)/i.test(href) ? href : undefined}
@@ -89,7 +100,7 @@ export function Markdown({ content }: { content: string }) {
           ),
           img: ({ src, alt }) =>
             typeof src === 'string' && /^https?:\/\//i.test(src) ? (
-              <img src={src} alt={alt ?? ''} loading="lazy" />
+              <WebImage src={src} alt={alt ?? ''} />
             ) : null,
           table: ({ children }) => (
             <div className="markdown-table">

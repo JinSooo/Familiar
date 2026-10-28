@@ -75,7 +75,7 @@ export type UiAction =
 
 /**
  * Environment the shell passes to the sidecar:
- * - FAMILIAR_DATA_DIR       ~/Library/Application Support/Familiar (settings.json, pets/, window-state.json)
+ * - FAMILIAR_DATA_DIR       ~/.familiar (settings.json, mcp.json, skills/, pets/, window-state.json)
  * - FAMILIAR_RESOURCES_DIR  bundled resources root (contains pets/)
  * Pet assets are served to webviews as familiar-pet://<id>/<file> by Rust from
  * <FAMILIAR_RESOURCES_DIR>/pets/<id>/ or <FAMILIAR_DATA_DIR>/pets/<id>/ (data dir wins only for ids

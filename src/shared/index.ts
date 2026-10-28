@@ -35,6 +35,8 @@ export const settingsSchema = z.object({
     )
     .default([]),
   workspacePath: z.string().default('~/Familiar'),
+  /** Commit the workspace to git after every change Familiar makes, so mistakes can be undone. */
+  workspaceSnapshots: z.boolean().default(true),
   /** Close the chat panel and capsule when the user clicks another app. */
   chatAutoHide: z.boolean().default(true),
   /** Global shortcuts as Tauri accelerators ("Alt+Space"); empty means none. */
@@ -300,7 +302,7 @@ export interface McpCandidate {
 export interface SkillInfo {
   name: string
   description: string
-  /** imported: a copy under ~/Familiar/skills; shared: read in place from ~/.agents/skills. */
+  /** imported: a copy under ~/.familiar/skills; shared: read in place from ~/.agents/skills. */
   source: 'imported' | 'shared'
   path: string
 }

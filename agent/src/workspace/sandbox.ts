@@ -1,5 +1,6 @@
 import { tmpdir } from 'node:os'
 import { forbiddenRoots, normalizePath } from '../permissions/paths'
+import { importedSkillsDir } from '../extensions/skills'
 import type { Settings } from '../../../src/shared'
 
 export async function sandboxProfile(
@@ -25,6 +26,8 @@ export async function sandboxProfile(
     ...roots.map(
       (root) => `(deny file-read* file-write* (subpath ${quote(root)}))`,
     ),
+    // Later rules win: imported skills' scripts and files stay readable inside ~/.familiar.
+    `(allow file-read* (subpath ${quote(normalizePath(importedSkillsDir()))}))`,
     ...(network ? ['(allow network*)'] : []),
   ].join('\n')
 }

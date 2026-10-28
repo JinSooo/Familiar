@@ -258,7 +258,7 @@ export function ExtensionsPage() {
       )}
       <p className="caption">
         ~/.agents/skills 里的技能直接可用；从 Claude Code、Codex 导入的会复制到
-        ~/Familiar/skills。模型平时只看到名字和描述，用到时才读完整说明。
+        ~/.familiar/skills。模型平时只看到名字和描述，用到时才读完整说明。
       </p>
       <p role="status" className="caption">
         {notice}

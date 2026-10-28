@@ -27,7 +27,7 @@ export async function runAgent(
     const model = createModel(settings.model)
     const workspacePath = await ensureWorkspace(settings)
     const memory = openMemory(workspacePath)
-    const skills = (await listSkills(workspacePath)).filter(
+    const skills = (await listSkills()).filter(
       (s) => !settings.disabledSkills.includes(s.name),
     )
     // A broken MCP server shows up on the extensions page; it must not stop the conversation.

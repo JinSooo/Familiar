@@ -9,6 +9,7 @@ import { decideToolCall } from '../permissions'
 import { normalizePath } from '../permissions/paths'
 import { sandboxProfile } from './sandbox'
 import { moveToTrash } from '../system'
+import { snapshotsEnabled } from '../settings'
 
 const exec = promisify(execFile)
 async function git(path: string, args: string[]): Promise<string> {
@@ -45,6 +46,8 @@ export async function ensureWorkspace(settings: Settings): Promise<string> {
   ).catch((error) => {
     if (error.code !== 'EEXIST') throw error
   })
+  // With snapshots off, no repository is created; an existing .git is left as it is.
+  if (!settings.workspaceSnapshots) return path
   let root = ''
   try {
     root = (await git(path, ['rev-parse', '--show-toplevel'])).trim()
@@ -59,6 +62,7 @@ export async function snapshot(
   workspacePath: string,
   message: string,
 ): Promise<void> {
+  if (!snapshotsEnabled()) return
   try {
     const path = normalizePath(workspacePath)
     await git(path, ['add', '-A'])

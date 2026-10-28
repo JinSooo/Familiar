@@ -44,4 +44,4 @@ webview ──invoke pet_hit / pet_drag_start──▶ Rust  (窗口本地操作
 
 - 开发：`pnpm dev` → `tauri dev`（Vite 开发服务器 + Rust 壳；壳用 `bun agent/src/main.ts` 启动 agent）。
 - 打包：`bun build --compile` 把 agent 编成 `src-tauri/binaries/familiar-agent-<target>`，作为 `externalBin` 放进 `.app`。
-- 数据目录沿用 `~/Library/Application Support/Familiar/`；API Key 改存钥匙串，旧 Electron 加密的 key 无法迁移，需要重新填写一次。
+- 配置目录 `~/.familiar/`（2026-10-28 前是 `~/Library/Application Support/Familiar/`，壳首次启动时把 Familiar 自己的文件搬过来，Electron 时期留下的缓存不动）；API Key 存钥匙串。模型的工具和沙箱都不能读写这个目录，只有其中的 `skills/` 可读。

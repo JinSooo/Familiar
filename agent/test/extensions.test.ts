@@ -1,7 +1,5 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
-import { mkdtempSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { settingsSchema } from '../../src/shared'
 import { decideToolCall } from '../src/permissions'
@@ -16,6 +14,7 @@ import {
 import {
   createSkillTools,
   importSkill,
+  importedSkillsDir,
   listSkills,
   parseSkill,
   skillInstructions,
@@ -42,14 +41,14 @@ Steps…`)
   })
 
   test('imported skills list first; use_skill returns instructions and files', async () => {
-    const ws = mkdtempSync(join(tmpdir(), 'familiar-ws-'))
-    await mkdir(join(ws, 'skills', 'notes', 'scripts'), { recursive: true })
+    const dir = importedSkillsDir()
+    await mkdir(join(dir, 'notes', 'scripts'), { recursive: true })
     await writeFile(
-      join(ws, 'skills', 'notes', 'SKILL.md'),
+      join(dir, 'notes', 'SKILL.md'),
       '---\nname: notes\ndescription: Keep notes tidy\n---\nDo the thing.',
     )
-    await writeFile(join(ws, 'skills', 'notes', 'scripts', 'run.sh'), 'echo hi')
-    const skills = (await listSkills(ws)).filter((s) => s.source === 'imported')
+    await writeFile(join(dir, 'notes', 'scripts', 'run.sh'), 'echo hi')
+    const skills = (await listSkills()).filter((s) => s.source === 'imported')
     expect(skills.map((s) => s.name)).toEqual(['notes'])
     expect(skillInstructions(skills)).toContain('- notes：Keep notes tidy')
     const out = (await createSkillTools(skills).use_skill!.execute!(
@@ -61,8 +60,7 @@ Steps…`)
   })
 
   test('imports only from the Claude Code and Codex folders', async () => {
-    const ws = mkdtempSync(join(tmpdir(), 'familiar-ws-'))
-    await expect(importSkill(ws, '/etc')).rejects.toThrow('只能从')
+    await expect(importSkill('/etc')).rejects.toThrow('只能从')
   })
 })
 
@@ -121,5 +119,23 @@ describe('MCP', () => {
         .decision,
     ).toBe('allow')
     expect((await decide('use_skill')).decision).toBe('allow')
+  })
+})
+
+describe('the data dir', () => {
+  test('tools may read imported skills but nothing else in it', async () => {
+    const settings = settingsSchema.parse({ permissionMode: 'auto' })
+    const decide = (toolName: string, input: Record<string, unknown>) =>
+      decideToolCall({ id: '', toolName, input }, settings)
+    const skill = join(importedSkillsDir(), 'notes', 'SKILL.md')
+    expect((await decide('read_file', { path: skill })).decision).toBe('allow')
+    expect((await decide('write_file', { path: skill })).decision).toBe('deny')
+    expect((await decide('read_file', { path: mcpFile() })).decision).toBe(
+      'deny',
+    )
+    expect(
+      (await decide('run_shell', { command: 'ls', cwd: dirname(skill) }))
+        .decision,
+    ).toBe('allow')
   })
 })

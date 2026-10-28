@@ -197,11 +197,10 @@ function shortcut(action: ShortcutAction) {
   }
 }
 async function extensions(connect: boolean): Promise<Extensions> {
-  const workspace = await ensureWorkspace(getSettings())
   if (connect) await mcpTools().catch(console.error)
   return {
     mcp: await mcpStatus(),
-    skills: await listSkills(workspace),
+    skills: await listSkills(),
     mcpFile: mcpFile(),
   }
 }
@@ -762,21 +761,15 @@ async function request(
       return
     case IPC.skillCandidates:
       requireSender(window, ['settings'])
-      return skillCandidates(await ensureWorkspace(getSettings()))
-    case IPC.skillImport: {
+      return skillCandidates()
+    case IPC.skillImport:
       requireSender(window, ['settings'])
-      const workspace = await ensureWorkspace(getSettings())
-      await importSkill(workspace, z.string().parse(input))
-      await snapshot(workspace, 'familiar: import skill')
+      await importSkill(z.string().parse(input))
       return
-    }
-    case IPC.skillRemove: {
+    case IPC.skillRemove:
       requireSender(window, ['settings'])
-      const workspace = await ensureWorkspace(getSettings())
-      await removeSkill(workspace, z.string().parse(input))
-      await snapshot(workspace, 'familiar: remove skill')
+      await removeSkill(z.string().parse(input))
       return
-    }
     case IPC.appQuit:
       requireSender(window, ['tray'])
       ui({ type: 'quit' })

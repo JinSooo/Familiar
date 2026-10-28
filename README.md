@@ -30,7 +30,7 @@ pnpm format
 - `src/preload/index.ts`：白名单桥接与可取消的事件订阅。
 - `src/renderer/`：SVG 宠物、聊天与设置视图。替换宠物外形时保持 `data-pet` 命中区域及四个状态 class。
 
-默认数据位于 `app.getPath('userData')`，macOS 上为 `~/Library/Application Support/Familiar/`。设置和位置分别写入 `settings.json`、`window-state.json`。工作目录默认展开为 `~/Familiar` 的绝对路径。
+默认配置位于 `~/.familiar/`（旧版的 `~/Library/Application Support/Familiar/` 会在首次启动时自动迁移）。设置和位置分别写入 `settings.json`、`window-state.json`。工作目录默认展开为 `~/Familiar` 的绝对路径。
 
 可用 `FAMILIAR_USER_DATA="$PWD/.smoke-user-data" pnpm dev` 将冒烟启动数据放在仓库内，测试结束后删除该目录。正常使用无需设置此变量。需要用 UI 自动化工具操控开发版时，加 `FAMILIAR_SHOW_DOCK=1` 让应用显示 Dock 图标（默认隐藏，自动化工具找不到它）。
 

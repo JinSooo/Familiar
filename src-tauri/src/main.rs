@@ -28,14 +28,21 @@ fn main() {
             if std::env::var_os("FAMILIAR_SHOW_DOCK").is_none() {
                 app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             }
-            let data = std::env::var_os("FAMILIAR_DATA_DIR")
-                .map(std::path::PathBuf::from)
-                .unwrap_or(
-                    app.path()
-                        .home_dir()?
-                        .join("Library/Application Support/Familiar"),
-                );
+            let data = match std::env::var_os("FAMILIAR_DATA_DIR") {
+                Some(dir) => std::path::PathBuf::from(dir),
+                None => {
+                    let home = app.path().home_dir()?;
+                    let data = home.join(".familiar");
+                    migrate(&home.join("Library/Application Support/Familiar"), &data);
+                    data
+                }
+            };
             std::fs::create_dir_all(&data)?;
+            // Owner-only, like ~/.ssh: mcp.json may hold tokens.
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(&data, std::fs::Permissions::from_mode(0o700));
+            }
             let resources = if cfg!(debug_assertions) {
                 std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../resources")
             } else {
@@ -56,3 +63,36 @@ fn main() {
         _ => {}
     });
 }
+
+/// One-time move of Familiar's own files from the old Application Support folder to
+/// ~/.familiar (like ~/.codex). Leftovers from the Electron prototype (caches, cookies) stay
+/// behind. Runs only while ~/.familiar does not exist yet.
+fn migrate(old: &std::path::Path, new: &std::path::Path) {
+    if new.exists() || !old.is_dir() {
+        return;
+    }
+    if let Err(e) = std::fs::create_dir_all(new) {
+        eprintln!("Create {}: {e}", new.display());
+        return;
+    }
+    let ours = [
+        "settings.json",
+        "mcp.json",
+        "window-state.json",
+        "pet-greeting.txt",
+        "reflected.json",
+        "pets",
+        "evals",
+        "skills",
+    ];
+    for name in ours {
+        let from = old.join(name);
+        if from.exists() {
+            if let Err(e) = std::fs::rename(&from, new.join(name)) {
+                eprintln!("Move {}: {e}", from.display());
+            }
+        }
+    }
+    // The search index is a cache; the agent rebuilds it in the new place.
+}
+

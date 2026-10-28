@@ -4,15 +4,17 @@ import { join, relative } from 'node:path'
 import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
 import type { SkillInfo } from '../../../src/shared'
-import { moveToTrash } from '../system'
+import { dataDir, moveToTrash } from '../system'
 
 /**
  * Skills in the SKILL.md format Claude Code and Codex use: a folder with YAML front matter
  * (name, description) and instructions, plus any files they mention. The model only sees names
- * and descriptions until it calls use_skill. Sources: `<workspace>/skills/` (imported, owned
+ * and descriptions until it calls use_skill. Sources: `~/.familiar/skills/` (imported, owned
  * by Familiar) and `~/.agents/skills/` (the shared folder, read in place).
  */
 export const sharedSkillsDir = () => join(homedir(), '.agents', 'skills')
+/** Imported copies live with Familiar's other config, like ~/.codex/skills. */
+export const importedSkillsDir = () => join(dataDir, 'skills')
 export const importSources = () => [
   { label: 'Claude Code', dir: join(homedir(), '.claude', 'skills') },
   { label: 'Codex', dir: join(homedir(), '.codex', 'skills') },
@@ -77,14 +79,14 @@ async function scan(
 }
 
 /** Imported skills first; a shared skill with the same name is hidden behind the imported one. */
-export async function listSkills(workspace: string): Promise<SkillInfo[]> {
-  const own = await scan(join(workspace, 'skills'), 'imported')
+export async function listSkills(): Promise<SkillInfo[]> {
+  const own = await scan(importedSkillsDir(), 'imported')
   const shared = await scan(sharedSkillsDir(), 'shared')
   return [...own, ...shared.filter((s) => !own.some((o) => o.name === s.name))]
 }
 
-export async function skillCandidates(workspace: string) {
-  const have = new Set((await listSkills(workspace)).map((s) => s.name))
+export async function skillCandidates() {
+  const have = new Set((await listSkills()).map((s) => s.name))
   const out: (SkillInfo & { from: string; exists: boolean })[] = []
   for (const { label, dir } of importSources())
     for (const s of await scan(dir, 'imported'))
@@ -92,10 +94,7 @@ export async function skillCandidates(workspace: string) {
   return out
 }
 
-export async function importSkill(
-  workspace: string,
-  path: string,
-): Promise<void> {
+export async function importSkill(path: string): Promise<void> {
   if (!importSources().some(({ dir }) => !relative(dir, path).startsWith('..')))
     throw new Error('只能从 Claude Code 或 Codex 的 skills 目录导入')
   const { name } = parseSkill(await readFile(join(path, 'SKILL.md'), 'utf8'))
@@ -104,7 +103,7 @@ export async function importSkill(
     '-',
   )
   if (!folder) throw new Error('技能名无效')
-  const target = join(workspace, 'skills', folder)
+  const target = join(importedSkillsDir(), folder)
   if (
     await stat(target).then(
       () => true,
@@ -112,15 +111,12 @@ export async function importSkill(
     )
   )
     throw new Error(`已经有一个叫 ${folder} 的技能`)
-  // Copies, not links: the imported copy is Familiar's own and stays in its git history.
+  // Copies, not links: the imported copy is Familiar's own and survives changes to the source.
   await cp(path, target, { recursive: true, dereference: true })
 }
 
-export async function removeSkill(
-  workspace: string,
-  path: string,
-): Promise<void> {
-  if (relative(join(workspace, 'skills'), path).startsWith('..'))
+export async function removeSkill(path: string): Promise<void> {
+  if (relative(importedSkillsDir(), path).startsWith('..'))
     throw new Error('共享目录里的技能不能在这里删除，只能停用')
   await moveToTrash(path)
 }

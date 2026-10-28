@@ -2,7 +2,7 @@ import { dirname } from 'node:path'
 import type { Settings } from '../../../src/shared'
 import { browserSecret, forbiddenRoots, normalizePath, within } from './paths'
 import { mcpAccess } from '../extensions/mcp'
-import { sharedSkillsDir } from '../extensions/skills'
+import { importedSkillsDir, sharedSkillsDir } from '../extensions/skills'
 
 export interface ToolCall {
   id: string
@@ -70,12 +70,17 @@ export async function decideToolCall(
     const value = shell ? (input?.cwd ?? workspace) : input?.path
     if (typeof value !== 'string' || !value) return result('deny', '路径无效')
     const path = normalizePath(value, workspace)
+    // Imported skills sit inside the forbidden data dir; reading them or running their scripts is fine.
+    const skillFiles =
+      (reads.has(call.toolName) || shell) &&
+      within(path, normalizePath(importedSkillsDir()))
     if (
-      (await forbiddenRoots()).some(
-        (root) =>
-          within(path, root) ||
-          (call.toolName === 'delete_path' && within(root, path)),
-      ) ||
+      (!skillFiles &&
+        (await forbiddenRoots()).some(
+          (root) =>
+            within(path, root) ||
+            (call.toolName === 'delete_path' && within(root, path)),
+        )) ||
       browserSecret(path)
     )
       return result('deny', '路径属于硬性禁区')
@@ -105,12 +110,12 @@ export async function decideToolCall(
         ? result('allow', '工作目录内允许此操作')
         : result('ask', '写入或执行命令需要授权')
     }
-    // Skills in the shared folder can be read like the workspace (their scripts still run sandboxed).
+    // Skill folders can be read like the workspace (their scripts still run sandboxed).
     if (
       reads.has(call.toolName) &&
-      within(path, normalizePath(sharedSkillsDir()))
+      (skillFiles || within(path, normalizePath(sharedSkillsDir())))
     )
-      return result('allow', '读取共享技能')
+      return result('allow', '读取技能文件')
     if (shell && settings.permissionMode === 'auto' && !rule)
       return result('allow', '命令由工作目录写入沙箱约束')
     if (rule) return result(rule.access, '按目录规则处理')

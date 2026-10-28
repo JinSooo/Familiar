@@ -28,8 +28,9 @@ not a checked-in executable. Rebuild it after the parallel agent task finishes.
 Tauri CLI enables `custom-protocol` for production asset embedding. Raw embedded
 frontend builds must pass `--features custom-protocol` explicitly.
 
-`FAMILIAR_DATA_DIR` optionally overrides the default
-`~/Library/Application Support/Familiar` for isolated testing. The shell creates
+`FAMILIAR_DATA_DIR` optionally overrides the default `~/.familiar` for isolated
+testing (without it, Familiar's files in the old `~/Library/Application
+Support/Familiar` are moved there on first launch). The shell creates
 it and passes it plus `FAMILIAR_RESOURCES_DIR` to each agent launch. Set
 `FAMILIAR_SHOW_DOCK` to retain the Dock icon for automation. Debug needs Bun on PATH.
 

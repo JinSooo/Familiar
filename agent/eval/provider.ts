@@ -11,10 +11,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 
-process.env.FAMILIAR_DATA_DIR ??= join(
-  homedir(),
-  'Library/Application Support/Familiar',
-)
+process.env.FAMILIAR_DATA_DIR ??= join(homedir(), '.familiar')
 // Logs go to stderr so stdout is only the result.
 console.log = console.error
 

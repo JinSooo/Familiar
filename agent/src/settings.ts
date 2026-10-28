@@ -25,6 +25,10 @@ export async function loadSettings(): Promise<void> {
   if (current.workspacePath === '~/Familiar')
     current.workspacePath = join(homedir(), 'Familiar')
 }
+/** Before settings load (tests, early startup) snapshots count as on, the default. */
+export function snapshotsEnabled(): boolean {
+  return current?.workspaceSnapshots ?? true
+}
 export function getSettings(): Settings {
   return structuredClone(current)
 }

@@ -15,7 +15,7 @@ FAMILIAR_KEYCHAIN_SERVICE 可覆盖钥匙串服务名，默认 com.allinpet.fami
 - src/pets/index.ts、src/pet-logic.ts：宠物库、PNG/WebP 尺寸、图集校验和状态优先级。
 - src/memory/：记忆。store（Markdown 读写、待确认、替换）、sensitive（敏感信息过滤）、search（FTS5 trigram 索引，`<数据目录>/memory-index.sqlite`，文件一变就整体重建）、reflect（反思）、timeline（周记/月记压缩）、jobs（后台调度，台账 `<数据目录>/reflected.json`）、feedback（用户对推测的确认/纠正/否定，`<数据目录>/evals/memory-feedback.jsonl`）、index（remember / forget / recall 工具）。
 - src/web/：联网。index（web_search：调用服务商自带的联网搜索；来源整理）、page（fetch_page：公网地址检查、逐跳重定向检查、HTML 转正文与图片）。
-- src/extensions/：mcp（读写 `<数据目录>/mcp.json`、按服务器连接与缓存、工具名前缀、权限、从其他工具导入）、skills（SKILL.md 解析、`~/.agents/skills` 与 `<工作目录>/skills`、use_skill、导入）。
+- src/extensions/：mcp（读写 `<数据目录>/mcp.json`、按服务器连接与缓存、工具名前缀、权限、从其他工具导入）、skills（SKILL.md 解析、`~/.agents/skills` 与 `<数据目录>/skills`、use_skill、导入）。
 - eval/：promptfoo 评测集，`pnpm eval` 运行；反思用例会用设置里的后台模型发真实请求。
 - tsconfig.json：agent 独立类型检查。
 

@@ -35,7 +35,9 @@ export async function forbiddenRoots(): Promise<string[]> {
     'Library/Keychains',
     '.ssh',
     '.gnupg',
+    // The old data folder (before 2026-10-28) and the current one.
     'Library/Application Support/Familiar',
+    '.familiar',
   ].map((p) => normalizePath(join(homedir(), p)))
   roots.push(normalizePath(dataDir))
   return roots

@@ -362,6 +362,25 @@ export function SettingsView() {
                 }
               />
             </label>
+            <div className="setting-row">
+              <span>自动快照</span>
+              <div className="segmented">
+                {([true, false] as const).map((on) => (
+                  <button
+                    type="button"
+                    key={String(on)}
+                    className={
+                      settings.workspaceSnapshots === on ? 'selected' : ''
+                    }
+                    onClick={() =>
+                      setSettings({ ...settings, workspaceSnapshots: on })
+                    }
+                  >
+                    {on ? '开' : '关'}
+                  </button>
+                ))}
+              </div>
+            </div>
             <details className="rules">
               <summary>
                 目录规则
@@ -403,6 +422,13 @@ export function SettingsView() {
               )}
             </details>
           </section>
+          {tab === '权限' && (
+            <p className="caption">
+              自动快照：Familiar 每次改动工作目录后用 git
+              提交一次，改错、删错能回滚。关掉后不再提交，已有的 .git
+              原样保留。配置在 ~/.familiar，不在工作目录里，不受快照影响。
+            </p>
+          )}
           <section hidden={tab !== '宠物'}>
             <div className="pet-grid">
               {pets.map((p) => (

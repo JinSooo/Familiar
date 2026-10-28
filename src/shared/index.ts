@@ -34,7 +34,7 @@ export const settingsSchema = z.object({
       z.object({ path: z.string(), access: z.enum(['allow', 'ask', 'deny']) }),
     )
     .default([]),
-  workspacePath: z.string().default('~/Familiar'),
+  workspacePath: z.string().default('~/.familiar/workspace'),
   /** Commit the workspace to git after every change Familiar makes, so mistakes can be undone. */
   workspaceSnapshots: z.boolean().default(true),
   /** Close the chat panel and capsule when the user clicks another app. */
@@ -170,7 +170,7 @@ export const IPC = {
   petsSelect: 'pets:select',
   petSizeSet: 'pet:size-set',
   appQuit: 'app:quit',
-  // Conversation history (Markdown files in ~/Familiar/conversations).
+  // Conversation history (Markdown files in ~/.familiar/conversations).
   conversationsList: 'conversations:list',
   conversationsOpen: 'conversations:open',
   conversationsDelete: 'conversations:delete',
@@ -318,7 +318,7 @@ export interface ShortcutFailure {
   error: string
 }
 
-/** One line of ~/Familiar/memory as the memory page shows it; see agent/src/memory/store.ts. */
+/** One line of ~/.familiar/memory as the memory page shows it; see agent/src/memory/store.ts. */
 export interface MemoryItem {
   id: string
   category: 'profile' | 'habits' | 'topic' | 'pending' | 'timeline'

@@ -26,7 +26,7 @@ export async function runAgent(
     const settings = getSettings()
     const model = createModel(settings.model)
     const workspacePath = await ensureWorkspace(settings)
-    const memory = openMemory(workspacePath)
+    const memory = openMemory()
     const skills = (await listSkills()).filter(
       (s) => !settings.disabledSkills.includes(s.name),
     )

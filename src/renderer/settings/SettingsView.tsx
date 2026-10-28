@@ -424,9 +424,10 @@ export function SettingsView() {
           </section>
           {tab === '权限' && (
             <p className="caption">
-              自动快照：Familiar 每次改动工作目录后用 git
-              提交一次，改错、删错能回滚。关掉后不再提交，已有的 .git
-              原样保留。配置在 ~/.familiar，不在工作目录里，不受快照影响。
+              自动快照：Familiar 每次改动 ~/.familiar
+              里的工作目录、记忆、对话后用 git
+              记录一次，改错、删错能回滚；settings.json、mcp.json 等配置不进
+              git。关掉后不再记录，已有的 .git 原样保留。
             </p>
           )}
           <section hidden={tab !== '宠物'}>
@@ -557,7 +558,7 @@ export function SettingsView() {
                   className="link"
                   onClick={() => api.revealConversations()}
                 >
-                  ~/Familiar/conversations
+                  ~/.familiar/conversations
                 </button>
               </div>
               <div className="setting-row">

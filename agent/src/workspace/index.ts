@@ -6,9 +6,9 @@ import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
 import type { Settings } from '../../../src/shared'
 import { decideToolCall } from '../permissions'
-import { normalizePath } from '../permissions/paths'
+import { normalizePath, within } from '../permissions/paths'
 import { sandboxProfile } from './sandbox'
-import { moveToTrash } from '../system'
+import { dataDir, moveToTrash } from '../system'
 import { snapshotsEnabled } from '../settings'
 
 const exec = promisify(execFile)
@@ -25,6 +25,43 @@ async function git(path: string, args: string[]): Promise<string> {
     ])
   ).stdout
 }
+/**
+ * Everything lives under ~/.familiar: config at the top (off limits to the model), and the
+ * folders below. One git repository at ~/.familiar snapshots only the whitelisted folders, so
+ * config files — mcp.json may hold tokens — can never be committed.
+ */
+const tracked = ['workspace', 'memory', 'knowledge', 'conversations', 'skills']
+export const gitignore = `# Familiar 的快照只记录下面这些目录；其他文件（包括 mcp.json、settings.json）永远不进 git。
+/*
+!/.gitignore
+${tracked.map((d) => `!/${d}/`).join('\n')}
+`
+const familiarRoot = () => normalizePath(dataDir)
+
+/** Repositories a snapshot commits: ~/.familiar, plus a workspace the user moved elsewhere. */
+function snapshotRoots(workspacePath: string): string[] {
+  const workspace = normalizePath(workspacePath)
+  const root = familiarRoot()
+  return within(workspace, root) ? [root] : [root, workspace]
+}
+
+async function ensureRepo(path: string, ignore?: string): Promise<void> {
+  if (ignore) {
+    // Rewritten only when it differs, so a user's additions below the rules would be lost; keep it ours.
+    const current = await readFile(join(path, '.gitignore'), 'utf8').catch(
+      () => '',
+    )
+    if (current !== ignore) await writeFile(join(path, '.gitignore'), ignore)
+  }
+  let top = ''
+  try {
+    top = (await git(path, ['rev-parse', '--show-toplevel'])).trim()
+  } catch {
+    /* Not a repository yet. */
+  }
+  if (!top || normalizePath(top) !== path) await git(path, ['init'])
+}
+
 export async function ensureWorkspace(settings: Settings): Promise<string> {
   const path = normalizePath(settings.workspacePath)
   if (
@@ -37,25 +74,32 @@ export async function ensureWorkspace(settings: Settings): Promise<string> {
   )
     throw new Error('工作目录属于禁止访问的路径')
   await mkdir(path, { recursive: true })
-  for (const dir of ['memory', 'knowledge'])
-    await mkdir(join(path, dir), { recursive: true })
+  for (const dir of ['memory', 'knowledge', 'conversations'])
+    await mkdir(join(dataDir, dir), { recursive: true })
   await writeFile(
-    join(path, 'README.md'),
-    '# Familiar 工作目录\n\n这是 Familiar 的工作目录。memory/ 保存记忆，knowledge/ 保存知识资料。操作通过 Git 快照记录。\n',
+    join(dataDir, 'README.md'),
+    `# ~/.familiar
+
+Familiar 的全部数据都在这里：
+
+- workspace/：工作目录，Familiar 替你读写文件的地方
+- memory/：长期记忆（Markdown，可以直接改）
+- conversations/：对话记录
+- knowledge/：知识资料
+- skills/：导入的技能
+- settings.json、mcp.json 等：配置，模型的工具碰不到
+
+开启「自动快照」时，上面几个目录的改动会用 git 记录在这里，配置文件不进 git。
+`,
     { flag: 'wx' },
   ).catch((error) => {
     if (error.code !== 'EEXIST') throw error
   })
   // With snapshots off, no repository is created; an existing .git is left as it is.
   if (!settings.workspaceSnapshots) return path
-  let root = ''
-  try {
-    root = (await git(path, ['rev-parse', '--show-toplevel'])).trim()
-  } catch {
-    /* New workspace. */
-  }
-  if (!root || normalizePath(root) !== path) await git(path, ['init'])
-  await snapshot(path, 'Initialize Familiar workspace')
+  for (const root of snapshotRoots(path))
+    await ensureRepo(root, root === familiarRoot() ? gitignore : undefined)
+  await snapshot(path, 'Initialize Familiar')
   return path
 }
 export async function snapshot(
@@ -63,14 +107,23 @@ export async function snapshot(
   message: string,
 ): Promise<void> {
   if (!snapshotsEnabled()) return
-  try {
-    const path = normalizePath(workspacePath)
-    await git(path, ['add', '-A'])
-    if (!(await git(path, ['diff', '--cached', '--name-only'])).trim()) return
-    await git(path, ['commit', '-m', message])
-  } catch (error) {
-    console.error('Familiar snapshot failed:', error)
-  }
+  for (const path of snapshotRoots(workspacePath))
+    try {
+      // Never add without the whitelist in place: ~/.familiar also holds config with tokens.
+      if (path === familiarRoot()) {
+        const current = await readFile(join(path, '.gitignore'), 'utf8').catch(
+          () => '',
+        )
+        if (current !== gitignore)
+          await writeFile(join(path, '.gitignore'), gitignore)
+      }
+      await git(path, ['add', '-A'])
+      if (!(await git(path, ['diff', '--cached', '--name-only'])).trim())
+        continue
+      await git(path, ['commit', '-m', message])
+    } catch (error) {
+      console.error('Familiar snapshot failed:', error)
+    }
 }
 
 export function createWorkspaceTools(settings: Settings): ToolSet {

@@ -48,3 +48,10 @@ export function browserSecret(path: string): boolean {
     path,
   )
 }
+
+/** Folders under ~/.familiar the model may read (writes go through Familiar's own tools). */
+export function readableFamiliarDirs(): string[] {
+  return ['memory', 'conversations', 'knowledge', 'skills'].map((d) =>
+    normalizePath(join(dataDir, d)),
+  )
+}

@@ -12,14 +12,12 @@ export interface Memory {
   store: MemoryStore
   index: MemoryIndex
 }
-let current: (Memory & { workspace: string }) | undefined
-/** One store and index per workspace; the index is a rebuildable cache in the app data dir. */
-export function openMemory(workspacePath: string): Memory {
-  if (current?.workspace !== workspacePath) {
-    current?.index.close()
-    const store = new MemoryStore(join(workspacePath, 'memory'))
+let current: Memory | undefined
+/** One store and index for ~/.familiar/memory; the index is a rebuildable cache beside it. */
+export function openMemory(): Memory {
+  if (!current) {
+    const store = new MemoryStore(join(dataDir, 'memory'))
     current = {
-      workspace: workspacePath,
       store,
       index: new MemoryIndex(store, join(dataDir, 'memory-index.sqlite')),
     }

@@ -1,4 +1,6 @@
 import { createInterface } from 'node:readline'
+import { homedir } from 'node:os'
+import { migrateLegacyWorkspace } from './migrate'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
@@ -134,7 +136,7 @@ const idleRestart = 2 * 60 * 60 * 1000
 let openedAt = 0
 async function memory() {
   const workspace = await ensureWorkspace(getSettings())
-  return { workspace, ...openMemory(workspace) }
+  return { workspace, ...openMemory() }
 }
 function memoryChanged(change: MemoryChange = {}) {
   broadcast(IPC.memoryChanged, change)
@@ -871,6 +873,27 @@ async function handle(line: string) {
     console.error('Invalid sidecar message')
   }
 }
+/** Move the old ~/Familiar workspace into ~/.familiar once, then point the setting at it. */
+async function migrate() {
+  try {
+    const moved = await migrateLegacyWorkspace(
+      join(homedir(), 'Familiar'),
+      dataDir,
+      getSettings().workspacePath,
+    )
+    if (!moved) return
+    const settings = publicSettings()
+    await saveSettings({
+      ...settings,
+      model: { ...settings.model, apiKey: undefined },
+      workspacePath: moved,
+    })
+    await ensureWorkspace(getSettings())
+    await snapshot(moved, 'familiar: move ~/Familiar into ~/.familiar')
+  } catch (error) {
+    console.error('Moving ~/Familiar into ~/.familiar failed', error)
+  }
+}
 /** Pick up where the last run left off, or offer it as "previous" when it is old. */
 async function restoreLatest() {
   try {
@@ -887,6 +910,7 @@ async function restoreLatest() {
 async function start() {
   await mkdir(dataDir, { recursive: true })
   await loadSettings()
+  await migrate()
   skins = await listPets()
   await refreshProxy()
   try {

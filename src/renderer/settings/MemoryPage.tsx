@@ -209,7 +209,7 @@ export function MemoryPage() {
             className="link"
             onClick={() => api.revealMemory()}
           >
-            ~/Familiar/memory
+            ~/.familiar/memory
           </button>
         </div>
       </div>

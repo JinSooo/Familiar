@@ -22,8 +22,8 @@ export async function loadSettings(): Promise<void> {
   const model = raw.model && typeof raw.model === 'object' ? raw.model : {}
   current = settingsSchema.parse({ ...raw, model: { ...model, apiKey: '' } })
   current.model.apiKey = await readKey()
-  if (current.workspacePath === '~/Familiar')
-    current.workspacePath = join(homedir(), 'Familiar')
+  if (current.workspacePath.startsWith('~/'))
+    current.workspacePath = join(homedir(), current.workspacePath.slice(2))
 }
 /** Before settings load (tests, early startup) snapshots count as on, the default. */
 export function snapshotsEnabled(): boolean {

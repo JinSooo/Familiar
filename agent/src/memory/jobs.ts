@@ -69,7 +69,7 @@ async function work(currentId: string, force: boolean): Promise<ReflectResult> {
   const ledger = await readLedger()
   const settings = getSettings()
   const workspace = await ensureWorkspace(settings)
-  const { store } = openMemory(workspace)
+  const { store } = openMemory()
   const due = (await listConversations())
     .filter(
       (c) =>

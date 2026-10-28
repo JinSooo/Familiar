@@ -1,15 +1,13 @@
 import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { join, resolve } from 'node:path'
-import { homedir } from 'node:os'
 const exec = promisify(execFile)
 if (!process.env.FAMILIAR_DATA_DIR)
   throw new Error('FAMILIAR_DATA_DIR is required')
 export const dataDir = resolve(process.env.FAMILIAR_DATA_DIR)
-/** User-readable conversation transcripts, next to the planned ~/Familiar/memory. */
+/** User-readable conversation transcripts, beside memory/ in ~/.familiar. */
 export const conversationsDir = resolve(
-  process.env.FAMILIAR_CONVERSATIONS_DIR ??
-    join(homedir(), 'Familiar', 'conversations'),
+  process.env.FAMILIAR_CONVERSATIONS_DIR ?? join(dataDir, 'conversations'),
 )
 /** Finder's delete, so the item lands in the Trash and can be put back. */
 export async function moveToTrash(path: string): Promise<void> {

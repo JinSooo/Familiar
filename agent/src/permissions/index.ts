@@ -1,8 +1,14 @@
 import { dirname } from 'node:path'
 import type { Settings } from '../../../src/shared'
-import { browserSecret, forbiddenRoots, normalizePath, within } from './paths'
+import {
+  browserSecret,
+  forbiddenRoots,
+  normalizePath,
+  readableFamiliarDirs,
+  within,
+} from './paths'
 import { mcpAccess } from '../extensions/mcp'
-import { importedSkillsDir, sharedSkillsDir } from '../extensions/skills'
+import { sharedSkillsDir } from '../extensions/skills'
 
 export interface ToolCall {
   id: string
@@ -70,12 +76,15 @@ export async function decideToolCall(
     const value = shell ? (input?.cwd ?? workspace) : input?.path
     if (typeof value !== 'string' || !value) return result('deny', '路径无效')
     const path = normalizePath(value, workspace)
-    // Imported skills sit inside the forbidden data dir; reading them or running their scripts is fine.
-    const skillFiles =
+    // ~/.familiar is off limits except the workspace (read-write) and the folders the model may
+    // read: memory, conversations, knowledge, skills. Config such as mcp.json stays out of reach.
+    const familiarRead =
       (reads.has(call.toolName) || shell) &&
-      within(path, normalizePath(importedSkillsDir()))
+      readableFamiliarDirs().some((dir) => within(path, dir))
+    const inWorkspace = within(path, workspace)
     if (
-      (!skillFiles &&
+      (!familiarRead &&
+        !inWorkspace &&
         (await forbiddenRoots()).some(
           (root) =>
             within(path, root) ||
@@ -110,12 +119,12 @@ export async function decideToolCall(
         ? result('allow', '工作目录内允许此操作')
         : result('ask', '写入或执行命令需要授权')
     }
-    // Skill folders can be read like the workspace (their scripts still run sandboxed).
+    // Familiar's own folders and shared skills read like the workspace (scripts still run sandboxed).
     if (
       reads.has(call.toolName) &&
-      (skillFiles || within(path, normalizePath(sharedSkillsDir())))
+      (familiarRead || within(path, normalizePath(sharedSkillsDir())))
     )
-      return result('allow', '读取技能文件')
+      return result('allow', '读取 Familiar 的资料或技能')
     if (shell && settings.permissionMode === 'auto' && !rule)
       return result('allow', '命令由工作目录写入沙箱约束')
     if (rule) return result(rule.access, '按目录规则处理')

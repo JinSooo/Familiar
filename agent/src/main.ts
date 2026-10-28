@@ -43,7 +43,28 @@ import { mentions, openMemory } from './memory'
 import { recordFeedback } from './memory/feedback'
 import { reflectDue } from './memory/jobs'
 import { ensureWorkspace, snapshot } from './workspace'
-import type { MemoryChange, MemoryItem } from '../../src/shared'
+import type {
+  Extensions,
+  MemoryChange,
+  MemoryItem,
+  ShortcutAction,
+  ShortcutFailure,
+} from '../../src/shared'
+import {
+  closeMcp,
+  mcpCandidates,
+  mcpFile,
+  mcpStatus,
+  mcpTools,
+  resetMcp,
+  updateMcpServer,
+} from './extensions/mcp'
+import {
+  importSkill,
+  listSkills,
+  removeSkill,
+  skillCandidates,
+} from './extensions/skills'
 import {
   dataDir,
   conversationsDir,
@@ -145,6 +166,44 @@ async function memoryEdit(
   const message = await work(m)
   await snapshot(m.workspace, `familiar: ${message}`)
   memoryChanged()
+}
+let shortcutFailures: ShortcutFailure[] = []
+let petHidden = false
+function sendShortcuts() {
+  ui({ type: 'shortcuts', bindings: getSettings().shortcuts })
+}
+function setPetVisible(visible: boolean) {
+  petHidden = !visible
+  if (!visible) dismissChat()
+  ui({ type: 'pet-visible', visible })
+}
+function shortcut(action: ShortcutAction) {
+  if (action === 'togglePet') return setPetVisible(petHidden)
+  if (petHidden) setPetVisible(true)
+  if (action === 'main') {
+    dismissChat()
+    emit(IPC.view, 'chat', 'main')
+    return ui({ type: 'show-main' })
+  }
+  if (action === 'newChat') {
+    if (controller) return
+    startFresh()
+  }
+  // summon (and a new chat) put the user in the capsule, ready to type.
+  if (chatVisible) ui({ type: 'show-chat' })
+  else {
+    restartIfIdle()
+    setCapsule(true)
+  }
+}
+async function extensions(connect: boolean): Promise<Extensions> {
+  const workspace = await ensureWorkspace(getSettings())
+  if (connect) await mcpTools().catch(console.error)
+  return {
+    mcp: await mcpStatus(),
+    skills: await listSkills(workspace),
+    mcpFile: mcpFile(),
+  }
 }
 function startFresh() {
   const previous = session.messages.length
@@ -357,6 +416,7 @@ async function request(
       updatePet()
       publishSession()
       rebuildTray()
+      sendShortcuts()
       return saved
     }
     case IPC.sessionGet:
@@ -464,8 +524,14 @@ async function request(
       const id = z.string().parse(input)
       const choice = z.enum(['approve', 'deny', 'always']).parse(args[1])
       if (!pendingApprovals.has(id)) throw new Error('Unknown approval')
-      const dir = session.approvals.find((a) => a.id === id)?.dir
-      if (choice === 'always') {
+      const approval = session.approvals.find((a) => a.id === id)
+      const dir = approval?.dir
+      if (choice === 'always' && approval?.server) {
+        const server = approval.server
+        await updateMcpServer(server, (entry) =>
+          entry ? { ...entry, access: 'allow' } : null,
+        )
+      } else if (choice === 'always') {
         if (!dir) throw new Error('这个请求不能记成目录规则')
         const settings = publicSettings()
         await saveSettings({
@@ -641,6 +707,76 @@ async function request(
       await reveal(store.dir)
       return
     }
+    case IPC.shortcut:
+      requireSender(window, ['tray'])
+      shortcut(z.enum(['summon', 'main', 'togglePet', 'newChat']).parse(input))
+      return
+    case IPC.shortcutStatus:
+      requireSender(window, ['settings'])
+      return shortcutFailures
+    case IPC.extensionsGet:
+      requireSender(window, ['settings'])
+      return extensions(z.boolean().optional().parse(input) ?? false)
+    case IPC.mcpAccess: {
+      requireSender(window, ['settings'])
+      const name = z.string().parse(input)
+      const access = z.enum(['allow', 'ask', 'off']).parse(args[1])
+      await updateMcpServer(name, (entry) =>
+        entry ? { ...entry, access } : null,
+      )
+      resetMcp(name)
+      return
+    }
+    case IPC.mcpRemove:
+      requireSender(window, ['settings'])
+      await updateMcpServer(z.string().parse(input), () => null)
+      resetMcp(z.string().parse(input))
+      return
+    case IPC.mcpCandidates:
+      requireSender(window, ['settings'])
+      return mcpCandidates()
+    case IPC.mcpImport: {
+      requireSender(window, ['settings'])
+      const items = z
+        .array(
+          z.object({
+            name: z.string().min(1).max(64),
+            entry: z.record(z.string(), z.unknown()),
+          }),
+        )
+        .parse(input)
+      for (const { name, entry } of items)
+        await updateMcpServer(name, (old) => old ?? { ...entry, access: 'ask' })
+      return
+    }
+    case IPC.mcpReconnect:
+      requireSender(window, ['settings'])
+      resetMcp(z.string().parse(input))
+      await mcpTools().catch(console.error)
+      return
+    case IPC.mcpReveal:
+      requireSender(window, ['settings'])
+      // Creates an empty config on first use, then opens it in the default editor.
+      await updateMcpServer('', () => null)
+      await reveal(mcpFile())
+      return
+    case IPC.skillCandidates:
+      requireSender(window, ['settings'])
+      return skillCandidates(await ensureWorkspace(getSettings()))
+    case IPC.skillImport: {
+      requireSender(window, ['settings'])
+      const workspace = await ensureWorkspace(getSettings())
+      await importSkill(workspace, z.string().parse(input))
+      await snapshot(workspace, 'familiar: import skill')
+      return
+    }
+    case IPC.skillRemove: {
+      requireSender(window, ['settings'])
+      const workspace = await ensureWorkspace(getSettings())
+      await removeSkill(workspace, z.string().parse(input))
+      await snapshot(workspace, 'familiar: remove skill')
+      return
+    }
     case IPC.appQuit:
       requireSender(window, ['tray'])
       ui({ type: 'quit' })
@@ -668,6 +804,16 @@ const signalSchema = z.object({
       name: z.literal('main-window'),
       visible: z.boolean(),
       focused: z.boolean(),
+    }),
+    z.object({
+      name: z.literal('shortcut-status'),
+      failed: z.array(
+        z.object({
+          action: z.enum(['summon', 'main', 'togglePet', 'newChat']),
+          accelerator: z.string(),
+          error: z.string(),
+        }),
+      ),
     }),
     z.object({ name: z.literal('app-activated') }),
     z.object({ name: z.literal('blurred') }),
@@ -713,6 +859,8 @@ async function handle(line: string) {
           activity.done = false
           refreshState()
         }
+      } else if (signal.name === 'shortcut-status') {
+        shortcutFailures = signal.failed
       } else if (signal.name === 'app-activated')
         broadcast(IPC.appearance, await accent())
       else if (signal.name === 'blurred') {
@@ -756,6 +904,7 @@ async function start() {
   await restoreLatest()
   updatePet()
   rebuildTray()
+  sendShortcuts()
   const proxyTimer = setInterval(() => {
     void refreshProxy()
   }, 60000)
@@ -783,6 +932,7 @@ async function start() {
     if (closing) return
     closing = true
     controller?.abort()
+    void closeMcp()
     clearTimeout(bubbleTimer)
     for (const timer of [proxyTimer, idleTimer, stateTimer, reflectTimer])
       clearInterval(timer)

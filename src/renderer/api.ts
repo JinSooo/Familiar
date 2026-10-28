@@ -79,6 +79,17 @@ export const api: FamiliarAPI = {
   reflectMemory: () => send(IPC.memoryReflect),
   revealMemory: () => send(IPC.memoryReveal),
   onMemoryChanged: (cb) => subscribe(IPC.memoryChanged, cb),
+  getExtensions: (connect) => request(IPC.extensionsGet, connect),
+  setMcpAccess: (name, access) => request(IPC.mcpAccess, name, access),
+  removeMcp: (name) => request(IPC.mcpRemove, name),
+  mcpCandidates: () => request(IPC.mcpCandidates),
+  importMcp: (items) => request(IPC.mcpImport, items),
+  reconnectMcp: (name) => request(IPC.mcpReconnect, name),
+  revealMcp: () => send(IPC.mcpReveal),
+  skillCandidates: () => request(IPC.skillCandidates),
+  importSkill: (path) => request(IPC.skillImport, path),
+  removeSkill: (path) => request(IPC.skillRemove, path),
+  shortcutStatus: () => request(IPC.shortcutStatus),
   petMenu: (x, y) => {
     void invoke('pet_menu', { x, y }).catch(console.error)
   },

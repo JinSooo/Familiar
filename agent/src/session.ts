@@ -110,6 +110,7 @@ function toolDescription(name: string, input: unknown): string {
     forget: '忘掉',
     recall: '回想',
     web_search: '搜索',
+    use_skill: '使用技能',
     fetch_page: '读网页',
   }
   const field = (key: string): string =>
@@ -126,13 +127,17 @@ function toolDescription(name: string, input: unknown): string {
           ? '一条记忆'
           : name === 'recall'
             ? field('query') || field('topic') || '全部记忆'
-            : name === 'web_search'
-              ? field('query')
-              : name === 'fetch_page'
-                ? (field('url')
-                    .replace(/^https?:\/\/(www\.)?/, '')
-                    .split('/')[0] ?? '')
-                : (field('path').split('/').filter(Boolean).at(-1) ?? '')
+            : name === 'use_skill'
+              ? field('name')
+              : name === 'web_search'
+                ? field('query')
+                : name === 'fetch_page'
+                  ? (field('url')
+                      .replace(/^https?:\/\/(www\.)?/, '')
+                      .split('/')[0] ?? '')
+                  : (field('path').split('/').filter(Boolean).at(-1) ?? '')
   const short = target.length > 40 ? `${target.slice(0, 39)}…` : target
+  const mcp = /^mcp__(.+?)__(.+)$/.exec(name)
+  if (mcp) return `调用 ${mcp[1]} · ${mcp[2]}`
   return `${labels[name] ?? name}${short ? ` ${short}` : ''}`
 }

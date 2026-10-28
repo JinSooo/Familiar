@@ -37,6 +37,17 @@ export const settingsSchema = z.object({
   workspacePath: z.string().default('~/Familiar'),
   /** Close the chat panel and capsule when the user clicks another app. */
   chatAutoHide: z.boolean().default(true),
+  /** Global shortcuts as Tauri accelerators ("Alt+Space"); empty means none. */
+  shortcuts: z
+    .object({
+      summon: z.string().default('Alt+Space'),
+      main: z.string().default('Alt+Shift+Space'),
+      togglePet: z.string().default('Alt+Shift+P'),
+      newChat: z.string().default('Alt+Shift+N'),
+    })
+    .prefault({}),
+  /** Skills by name that the model should not be offered. */
+  disabledSkills: z.array(z.string()).default([]),
 })
 export type Settings = z.infer<typeof settingsSchema>
 export type PublicSettings = Omit<Settings, 'model'> & {
@@ -114,6 +125,8 @@ export type AgentEvent =
       input: unknown
       reason: string
       dir?: string
+      /** For an MCP tool: the server an "always allow" would trust. */
+      server?: string
     }
   | { type: 'tool-result'; id: string; output: unknown }
   /** Web pages the reply drew on (search results, pages read), for its source cards. */
@@ -170,6 +183,18 @@ export const IPC = {
   chatDismiss: 'chat:dismiss',
   chatHistory: 'chat:history',
   mainOpen: 'main:open',
+  shortcut: 'shortcut:fire',
+  shortcutStatus: 'shortcut:status',
+  extensionsGet: 'extensions:get',
+  mcpAccess: 'mcp:access',
+  mcpRemove: 'mcp:remove',
+  mcpImport: 'mcp:import',
+  mcpCandidates: 'mcp:candidates',
+  mcpReconnect: 'mcp:reconnect',
+  mcpReveal: 'mcp:reveal',
+  skillCandidates: 'skills:candidates',
+  skillImport: 'skills:import',
+  skillRemove: 'skills:remove',
   memoryList: 'memory:list',
   memoryConfirm: 'memory:confirm',
   memoryCorrect: 'memory:correct',
@@ -239,6 +264,56 @@ export interface FamiliarAPI {
   reflectMemory(): void
   revealMemory(): void
   onMemoryChanged(callback: (change: MemoryChange) => void): () => void
+  /** MCP servers (connecting them first when asked) and skills. */
+  getExtensions(connect?: boolean): Promise<Extensions>
+  setMcpAccess(name: string, access: McpServerStatus['access']): Promise<void>
+  removeMcp(name: string): Promise<void>
+  mcpCandidates(): Promise<McpCandidate[]>
+  importMcp(
+    items: { name: string; entry: Record<string, unknown> }[],
+  ): Promise<void>
+  reconnectMcp(name: string): Promise<void>
+  revealMcp(): void
+  skillCandidates(): Promise<(SkillInfo & { from: string; exists: boolean })[]>
+  importSkill(path: string): Promise<void>
+  removeSkill(path: string): Promise<void>
+  /** Which configured shortcuts the system refused (taken by another app). */
+  shortcutStatus(): Promise<ShortcutFailure[]>
+}
+
+export interface McpServerStatus {
+  name: string
+  /** The command line or URL. */
+  target: string
+  access: 'allow' | 'ask' | 'off'
+  state: 'connected' | 'error' | 'idle' | 'off'
+  tools: string[]
+  error?: string
+}
+export interface McpCandidate {
+  source: string
+  name: string
+  target: string
+  exists: boolean
+  entry: Record<string, unknown>
+}
+export interface SkillInfo {
+  name: string
+  description: string
+  /** imported: a copy under ~/Familiar/skills; shared: read in place from ~/.agents/skills. */
+  source: 'imported' | 'shared'
+  path: string
+}
+export interface Extensions {
+  mcp: McpServerStatus[]
+  skills: SkillInfo[]
+  mcpFile: string
+}
+export type ShortcutAction = 'summon' | 'main' | 'togglePet' | 'newChat'
+export interface ShortcutFailure {
+  action: ShortcutAction
+  accelerator: string
+  error: string
 }
 
 /** One line of ~/Familiar/memory as the memory page shows it; see agent/src/memory/store.ts. */

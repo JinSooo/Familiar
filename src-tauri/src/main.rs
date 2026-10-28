@@ -1,6 +1,7 @@
 mod agent;
 mod hit;
 mod protocol;
+mod shortcuts;
 mod tray;
 mod windows;
 use tauri::Manager;
@@ -9,6 +10,8 @@ fn main() {
         .plugin(tauri_nspanel::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(shortcuts::plugin())
+        .manage(shortcuts::Bindings::default())
         .manage(agent::Agent::default())
         .manage(hit::Hit::default())
         .invoke_handler(tauri::generate_handler![

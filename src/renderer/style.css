@@ -1168,3 +1168,123 @@ summary:focus-visible {
   font-size: 11px;
   color: var(--muted);
 }
+/* Settings › 快捷键 */
+.shortcut {
+  min-width: 110px;
+  padding: 3px 12px;
+  font-variant-numeric: tabular-nums;
+}
+.shortcut.recording {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.shortcut-error {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: #d94b47;
+}
+/* Settings › 扩展 */
+.ext-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  font-size: 13px;
+  border-bottom: 0.5px solid var(--line);
+}
+.ext-item:last-child {
+  border: 0;
+}
+.ext-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ext-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ext-title small {
+  font-size: 11px;
+}
+.ext-sub {
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ext-item .row-actions button {
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+.ext-item .segmented button {
+  padding: 3px 8px;
+}
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--muted);
+}
+.dot.connected {
+  background: #34c759;
+}
+.dot.error {
+  background: #d94b47;
+}
+.ext-actions {
+  display: flex;
+  gap: 8px;
+  margin: -6px 2px 12px;
+}
+.ext-actions button {
+  padding: 3px 12px;
+  font-size: 12px;
+}
+.picker {
+  padding: 10px 12px;
+  font-size: 12px;
+}
+.picker ul {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+  max-height: 260px;
+  overflow: auto;
+}
+.picker li label {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 4px 0;
+}
+.picker li small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 480px;
+}
+.picker .row-actions button {
+  padding: 3px 12px;
+}
+/* The settings form's input styling (padding, select chevron) must not reach checkboxes. */
+.settings .picker input[type='checkbox'] {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  margin: 2px 0 0;
+  padding: 0;
+  background: none;
+  cursor: pointer;
+}
+.picker li label > span {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}

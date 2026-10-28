@@ -1,6 +1,8 @@
 import { dirname } from 'node:path'
 import type { Settings } from '../../../src/shared'
 import { browserSecret, forbiddenRoots, normalizePath, within } from './paths'
+import { mcpAccess } from '../extensions/mcp'
+import { sharedSkillsDir } from '../extensions/skills'
 
 export interface ToolCall {
   id: string
@@ -12,6 +14,8 @@ export type ToolDecision = {
   reason: string
   /** For an ask outside the workspace: the directory an "always allow" rule would cover. */
   dir?: string
+  /** For an MCP tool: the server an "always allow" would trust. */
+  server?: string
 }
 const reads = new Set(['read_file', 'list_dir'])
 const names = new Set([
@@ -39,6 +43,18 @@ export async function decideToolCall(
   try {
     if (memoryTools.has(call.toolName))
       return result('allow', '记忆由 Familiar 自己维护')
+    if (call.toolName === 'use_skill') return result('allow', '读取技能说明')
+    const mcp = mcpAccess(call.toolName)
+    if (mcp) {
+      if (mcp.access === 'off') return result('deny', 'MCP 服务器已停用')
+      if (settings.permissionMode === 'full' || mcp.access === 'allow')
+        return result('allow', `MCP 服务器 ${mcp.server} 已允许`)
+      return {
+        decision: 'ask',
+        reason: `使用 MCP 服务器「${mcp.server}」的工具`,
+        server: mcp.server,
+      }
+    }
     if (webTools.has(call.toolName))
       return settings.permissionMode === 'ask'
         ? result('ask', '联网读取需要授权')
@@ -89,6 +105,12 @@ export async function decideToolCall(
         ? result('allow', '工作目录内允许此操作')
         : result('ask', '写入或执行命令需要授权')
     }
+    // Skills in the shared folder can be read like the workspace (their scripts still run sandboxed).
+    if (
+      reads.has(call.toolName) &&
+      within(path, normalizePath(sharedSkillsDir()))
+    )
+      return result('allow', '读取共享技能')
     if (shell && settings.permissionMode === 'auto' && !rule)
       return result('allow', '命令由工作目录写入沙箱约束')
     if (rule) return result(rule.access, '按目录规则处理')

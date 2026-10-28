@@ -21,3 +21,9 @@ declare module 'bun:sqlite' {
     close(): void
   }
 }
+
+// Bun's built-in TOML parser (used to read Codex's config.toml).
+declare const Bun: {
+  TOML: { parse(text: string): unknown }
+  file(path: string): { text(): Promise<string> }
+}

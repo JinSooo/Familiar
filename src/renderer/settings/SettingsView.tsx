@@ -7,6 +7,8 @@ import type {
 } from '../../shared'
 import { api } from '../api'
 import { MemoryPage } from './MemoryPage'
+import { ExtensionsPage } from './ExtensionsPage'
+import { ShortcutsSection } from './Shortcuts'
 
 // Icon tiles mirror the System Settings sidebar.
 const tabs = [
@@ -24,6 +26,16 @@ const tabs = [
     name: '宠物',
     tile: '#34A853',
     icon: 'M12 21c-4 0-7-2-7-5s3-6 7-6 7 3 7 6-3 5-7 5zM7 4v3M17 4v3',
+  },
+  {
+    name: '快捷键',
+    tile: '#636366',
+    icon: 'M3 7h18v10H3zM7 11h.01M11 11h.01M15 11h.01M8 14h8',
+  },
+  {
+    name: '扩展',
+    tile: '#AF52DE',
+    icon: 'M14 4a2 2 0 1 1 4 0v2h2v4h-2a2 2 0 1 0 0 4h2v4h-4v-2a2 2 0 1 0-4 0v2H6v-4H4a2 2 0 1 1 0-4h2V6h4V4z',
   },
   {
     name: '记忆',
@@ -188,7 +200,22 @@ export function SettingsView() {
             <MemoryPage />
           </div>
         )}
-        <form className="settings" hidden={tab === '记忆'} onSubmit={save}>
+        {tab === '扩展' && (
+          <div className="settings">
+            <ExtensionsPage />
+          </div>
+        )}
+        <form
+          className="settings"
+          hidden={tab === '记忆' || tab === '扩展'}
+          onSubmit={save}
+        >
+          <section hidden={tab !== '快捷键'}>
+            <ShortcutsSection
+              value={settings.shortcuts}
+              onChange={(shortcuts) => setSettings({ ...settings, shortcuts })}
+            />
+          </section>
           <section hidden={tab !== '模型'} className="group">
             <label>
               模型协议

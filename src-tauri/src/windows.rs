@@ -334,6 +334,16 @@ pub fn action(app: &tauri::AppHandle, action: crate::protocol::UiAction) -> taur
             w.set_focus()?;
             main_signal(app);
         }
+        UiAction::Shortcuts { bindings } => crate::shortcuts::apply(app, &bindings),
+        UiAction::PetVisible { visible } => {
+            if let Ok(panel) = app.get_webview_panel("pet") {
+                if visible {
+                    panel.show();
+                } else {
+                    panel.hide();
+                }
+            }
+        }
         UiAction::ShowSettings => {
             let w = app.get_webview_window("settings").unwrap();
             w.show()?;

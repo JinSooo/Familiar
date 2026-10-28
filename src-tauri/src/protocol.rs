@@ -32,6 +32,12 @@ pub enum UiAction {
     ShowSettings,
     /// The standalone conversation window; Familiar shows in the Dock while it is open.
     ShowMain,
+    Shortcuts {
+        bindings: std::collections::HashMap<String, String>,
+    },
+    PetVisible {
+        visible: bool,
+    },
     PetSize {
         width: f64,
         height: f64,

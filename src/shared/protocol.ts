@@ -1,3 +1,4 @@
+import type { ShortcutAction } from './index'
 /**
  * Wire protocol between the Tauri shell (src-tauri), the agent sidecar (agent/) and the
  * webviews (src/renderer). See docs/architecture.md for the full picture.
@@ -26,6 +27,11 @@ export type ShellToAgent =
 export type ShellSignal =
   | { name: 'chat-window'; visible: boolean; focused: boolean }
   | { name: 'main-window'; visible: boolean; focused: boolean }
+  /** Shortcuts the system refused to register (already taken). */
+  | {
+      name: 'shortcut-status'
+      failed: { action: ShortcutAction; accelerator: string; error: string }[]
+    }
   /** The app became active; refresh things like the accent colour. */
   | { name: 'app-activated' }
   /** The user went to another app: the pet or chat lost focus and no Familiar window has it. */
@@ -53,6 +59,9 @@ export type UiAction =
   | { type: 'show-settings' }
   /** The standalone conversation window (Familiar appears in the Dock while it is open). */
   | { type: 'show-main' }
+  /** (Re)register global shortcuts; an empty accelerator means none. */
+  | { type: 'shortcuts'; bindings: Record<ShortcutAction, string> }
+  | { type: 'pet-visible'; visible: boolean }
   /** Resize the pet overlay, keeping its bottom-right corner fixed. */
   | { type: 'pet-size'; width: number; height: number }
   /** Rebuild the tray menu. */

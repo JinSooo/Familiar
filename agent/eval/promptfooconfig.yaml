@@ -116,6 +116,42 @@ tests:
     assert:
       - type: javascript
         value: output.candidates.every(c => !/管理员|权限/.test(c.text))
+  - description: 同一天重问的事不再记时间线
+    vars:
+      kind: reflect
+      existing: |
+        已确认：
+        （无）
+
+        待确认：
+        （无）
+
+        当天时间线：
+        - 11:42 用户询问如何删除本地 tag 并更新为最新的 tag。
+      conversation: |
+        用户：我想要删除本地的 tag，更新成最新的 tag 怎么处理
+        小黑：执行 git fetch origin --prune --prune-tags --force 即可。
+    assert:
+      - type: javascript
+        value: output.summary === ''
+  - description: 同一话题的新问题照常记时间线
+    vars:
+      kind: reflect
+      existing: |
+        已确认：
+        （无）
+
+        待确认：
+        （无）
+
+        当天时间线：
+        - 10:05 用户询问了 Git rebase 发生冲突后如何继续操作。
+      conversation: |
+        用户：git rebase 和 merge 到底有什么区别，什么时候用哪个
+        小黑：rebase 改写提交历史让它变成一条直线，merge 保留分叉并多一个合并提交。
+    assert:
+      - type: javascript
+        value: output.summary.length > 0
   # --- recall: the index finds the right line ---
   - description: 口语问题找到两字词
     vars:

@@ -92,12 +92,12 @@ async function work(currentId: string, force: boolean): Promise<ReflectResult> {
       const from = ledger[summary.id] ?? 0
       const fresh = conversation.messages.slice(from)
       if (fresh.some((m) => m.role === 'user' && m.content.trim())) {
+        const last = new Date(conversation.updatedAt)
         const reflection = await reflectOn(
           model!,
           transcript(conversation.messages, from, settings.pet.name),
-          await existingMemories(store),
+          await existingMemories(store, today(last)),
         )
-        const last = new Date(conversation.updatedAt)
         const applied = await applyReflection(store, reflection, {
           id: summary.id,
           day: today(last),

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { settingsSchema, type PerceptionEvent } from '../../src/shared'
 import {
   admit,
+  cleanUrl,
   describe as describeActivity,
   segments,
 } from '../src/perception/activity'
@@ -79,6 +80,32 @@ describe('admit', () => {
     expect(e.title).toBe('设置')
     expect(e.text).toBeUndefined()
     expect(e.dropped).toEqual(['text'])
+  })
+  // A Google search used to lose its whole URL: long query parameters looked like keys.
+  test('URLs keep the page, without query, credentials or key-like segments', () => {
+    const e = admit(
+      {
+        kind: 'window',
+        bundleId: 'app.zen-browser.zen',
+        title: 'Fork 和 GitKraken 怎么样 - Google Search',
+        url: 'https://www.google.com/search?q=Fork&sxsrf=AE3TifN8kZ2x7Qp9LmR4vW1yB6cD0eFgH2jK5lM8nO3pQ',
+      },
+      settings,
+    )!
+    expect(e.url).toBe('https://www.google.com/search')
+    expect(e.dropped).toBeUndefined()
+    expect(cleanUrl('https://user:hunter2@example.com/reset?token=abc#x')).toBe(
+      'https://example.com/reset',
+    )
+    expect(
+      cleanUrl(
+        'https://docs.google.com/document/d/1Xk9bQ7mN3pL5vR8tW2yZ4aC6eG0hJ1kM3nP5qS7uV9x/edit',
+      ),
+    ).toBe('https://docs.google.com/document/d/…/edit')
+    expect(cleanUrl('file:///tmp/%E5%91%A8%E6%8A%A5.txt')).toBe(
+      'file:///tmp/%E5%91%A8%E6%8A%A5.txt',
+    )
+    expect(cleanUrl('about:blank')).toBe('about:blank')
   })
   test('excluded sites and apps off the list keep only the app', () => {
     expect(
@@ -193,27 +220,5 @@ describe('history periods', () => {
       '早些时候的事',
       '对话里聊到的事',
     ])
-  })
-})
-
-describe('prefill', () => {
-  test('excludes installed chat and password apps once, keeping what is listed', async () => {
-    const { withPrivateApps } = await import('../src/perception/activity')
-    const installed = new Map([
-      ['com.tencent.xinWeChat', 'WeChat'],
-      ['com.apple.Passwords', 'Passwords'],
-      ['com.tinyspeck.slackmacgap', 'Slack'],
-      ['com.google.Chrome', 'Google Chrome'],
-    ])
-    const once = withPrivateApps(settings, installed)
-    expect(once.prefilled).toBe(true)
-    // Notes was already excluded; Slack stays "local only"; Chrome is not private.
-    expect(once.excludedApps.map((a) => a.bundleId)).toEqual([
-      'com.apple.Notes',
-      'com.tencent.xinWeChat',
-      'com.apple.Passwords',
-    ])
-    const removed = { ...once, excludedApps: [] }
-    expect(withPrivateApps(removed, installed)).toBe(removed)
   })
 })

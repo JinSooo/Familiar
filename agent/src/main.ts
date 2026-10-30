@@ -52,7 +52,6 @@ import {
   clearEvents,
   grantAccess,
   perceptionStatus,
-  prefillExclusions,
   recentEvents,
   startPerception,
   stopPerception,
@@ -825,17 +824,11 @@ async function request(
     case IPC.perceptionSave: {
       requireSender(window, ['settings'])
       const settings = publicSettings()
-      const perception = settingsSchema.shape.perception.parse(input)
       await saveSettings({
         ...settings,
         model: { ...settings.model, apiKey: undefined },
-        // A page loaded before the prefill must not make it run again.
-        perception: {
-          ...perception,
-          prefilled: perception.prefilled || settings.perception.prefilled,
-        },
+        perception: settingsSchema.shape.perception.parse(input),
       })
-      await prefillExclusions()
       applyPerceptionSettings()
       rebuildTray()
       return getSettings().perception
@@ -1007,7 +1000,6 @@ async function start() {
   updatePet()
   rebuildTray()
   sendShortcuts()
-  await prefillExclusions().catch(console.error)
   startPerception((status) => broadcast(IPC.perceptionChanged, status))
   const proxyTimer = setInterval(() => {
     void refreshProxy()

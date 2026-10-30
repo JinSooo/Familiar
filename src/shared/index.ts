@@ -67,8 +67,6 @@ export const settingsSchema = z.object({
       excludedSites: z.array(z.string()).default([]),
       /** Each period this long becomes one history entry. */
       summaryMinutes: z.number().int().min(5).max(60).default(30),
-      /** Installed chat and password apps were put in excludedApps once; removing them sticks. */
-      prefilled: z.boolean().default(false),
     })
     .prefault({}),
 })

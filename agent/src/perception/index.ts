@@ -13,10 +13,10 @@ import type {
 } from '../../../src/shared'
 import { openMemory } from '../memory'
 import { backgroundModel } from '../memory/jobs'
-import { getSettings, publicSettings, saveSettings } from '../settings'
+import { getSettings } from '../settings'
 import { dataDir, readKey, writeKey } from '../system'
 import { ensureWorkspace, snapshot } from '../workspace'
-import { admit, withPrivateApps } from './activity'
+import { admit } from './activity'
 import { keepHours, PerceptionBuffer } from './buffer'
 import { periodEnd, summarizeWindow } from './summarize'
 
@@ -368,18 +368,6 @@ async function installedApps(): Promise<Map<string, string>> {
       )
   })
   return apps
-}
-
-/** The first time Computer History is on, installed chat and password apps start out excluded. */
-export async function prefillExclusions() {
-  const p = getSettings().perception
-  if (!p.enabled || p.prefilled) return
-  const settings = publicSettings()
-  await saveSettings({
-    ...settings,
-    model: { ...settings.model, apiKey: undefined },
-    perception: withPrivateApps(p, await installedApps()),
-  })
 }
 
 /** Installed browsers, editors and terminals, then other apps seen in the last day. */

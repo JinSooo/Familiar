@@ -5,8 +5,8 @@ type Perception = Settings['perception']
 
 /**
  * Turns one line from familiar-sensor into what may be stored, or null. Runs before anything
- * touches disk: a field the sensitive filter flags is dropped whole, and pages on excluded sites
- * keep only the app.
+ * touches disk: a field the sensitive filter flags is dropped whole (URLs are cleaned instead, see
+ * cleanUrl), and pages on excluded sites keep only the app.
  */
 export function admit(
   raw: unknown,
@@ -50,55 +50,46 @@ export function admit(
   const dropped: string[] = []
   for (const [key, value] of Object.entries(fields)) {
     if (!value) continue
-    if (key !== 'role' && sensitiveReason(value)) dropped.push(key)
-    else (event as unknown as Record<string, string>)[key] = value
+    const kept = key === 'url' ? cleanUrl(value) : value
+    if (
+      kept === null ||
+      (key !== 'role' && key !== 'url' && sensitiveReason(kept))
+    )
+      dropped.push(key)
+    else (event as unknown as Record<string, string>)[key] = kept
   }
   if (dropped.length) event.dropped = dropped
   return event
 }
 
-/** Chat and password apps, excluded the first time Computer History is on (docs/design.md §7). */
-export const privateApps = [
-  'com.tencent.xinWeChat',
-  'com.tencent.WeWorkMac',
-  'com.tencent.qq',
-  'com.alibaba.DingTalkMac',
-  'com.electron.lark',
-  'ru.keepcoder.Telegram',
-  'org.telegram.desktop',
-  'com.apple.MobileSMS',
-  'com.tinyspeck.slackmacgap',
-  'com.hnc.Discord',
-  'net.whatsapp.WhatsApp',
-  'org.whispersystems.signal-desktop',
-  'com.microsoft.teams2',
-  'com.apple.Passwords',
-  'com.apple.keychainaccess',
-  'com.1password.1password',
-  'com.agilebits.onepassword7',
-  'com.bitwarden.desktop',
-  'me.proton.pass.electron',
-  'com.lastpass.LastPass',
-  'org.keepassxc.keepassxc',
-]
-
-/** Adds the installed private apps to excludedApps, once; `installed` maps bundle id to name. */
-export function withPrivateApps(
-  settings: Perception,
-  installed: Map<string, string>,
-): Perception {
-  if (settings.prefilled) return settings
-  const listed = new Set(
-    [...settings.excludedApps, ...settings.localApps].map((a) => a.bundleId),
-  )
-  const added = privateApps
-    .filter((id) => installed.has(id) && !listed.has(id))
-    .map((id) => ({ bundleId: id, name: installed.get(id)! }))
-  return {
-    ...settings,
-    excludedApps: [...settings.excludedApps, ...added],
-    prefilled: true,
+/**
+ * The part of a URL worth keeping: no query, fragment or credentials (tokens and one-time codes
+ * live there, and the page title already carries what was searched), and path segments that look
+ * like keys become "…". Null when it cannot be parsed and looks sensitive as a whole.
+ */
+export function cleanUrl(url: string): string | null {
+  let u: URL
+  try {
+    u = new URL(url)
+  } catch {
+    return sensitiveReason(url) ? null : url
   }
+  const base = u.href.startsWith(`${u.protocol}//`)
+    ? `${u.protocol}//${u.host}`
+    : u.protocol
+  const path = u.pathname
+    .split('/')
+    .map((segment) => {
+      let plain = segment
+      try {
+        plain = decodeURIComponent(segment)
+      } catch {
+        /* Not valid percent-encoding: check it as it is. */
+      }
+      return sensitiveReason(plain) ? '…' : segment
+    })
+    .join('/')
+  return base + path
 }
 
 export function excluded(url: string, sites: string[]): boolean {

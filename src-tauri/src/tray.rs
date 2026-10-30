@@ -64,6 +64,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
                 | "session:new"
                 | "settings:open"
                 | "pets:import"
+                | "perception:pause"
                 | "app:quit"
         ) {
             crate::agent::menu_request(app, id, &[]);
@@ -77,7 +78,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         .tooltip("Familiar")
         .show_menu_on_left_click(true)
         .build(app)?;
-    rebuild(app, &[], "", "medium")
+    rebuild(app, &[], "", "medium", "off")
 }
 
 pub fn rebuild(
@@ -85,6 +86,7 @@ pub fn rebuild(
     pets: &[crate::protocol::PetEntry],
     current_pet: &str,
     size: &str,
+    perception: &str,
 ) -> tauri::Result<()> {
     let pet_menu = Submenu::new(app, "宠物", true)?;
     for pet in pets {
@@ -108,6 +110,8 @@ pub fn rebuild(
             None::<&str>,
         )?)?;
     }
+    let pause_label = if perception == "paused" { "继续感知" } else { "暂停感知" };
+    let pause = MenuItem::with_id(app, "perception:pause", pause_label, true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
         &[
@@ -131,6 +135,10 @@ pub fn rebuild(
             &MenuItem::with_id(app, "app:quit", "退出", true, None::<&str>)?,
         ],
     )?;
+    if perception != "off" {
+        // Right after 设置…, before the pet section's separator.
+        menu.insert(&pause, 6)?;
+    }
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
         tray.set_menu(Some(menu))?;
     }

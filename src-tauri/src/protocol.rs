@@ -47,6 +47,9 @@ pub enum UiAction {
         #[serde(rename = "currentPet")]
         current_pet: String,
         size: String,
+        /// "off" | "on" | "paused": whether the tray offers to pause Computer History.
+        #[serde(default)]
+        perception: String,
     },
     Quit,
 }

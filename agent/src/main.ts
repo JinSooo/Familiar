@@ -45,6 +45,19 @@ import { mentions, openMemory } from './memory'
 import { recordFeedback } from './memory/feedback'
 import { reflectDue } from './memory/jobs'
 import { ensureWorkspace, snapshot } from './workspace'
+import {
+  appCandidates,
+  appIcons,
+  applyPerceptionSettings,
+  clearEvents,
+  grantAccess,
+  perceptionStatus,
+  prefillExclusions,
+  recentEvents,
+  startPerception,
+  stopPerception,
+  summarizeDue,
+} from './perception'
 import type {
   Extensions,
   MemoryChange,
@@ -291,6 +304,11 @@ function rebuildTray() {
     pets: skins.map((skin) => ({ id: skin.id, name: skin.displayName })),
     currentPet: currentSkin(settings.pet.id).id,
     size: settings.pet.size,
+    perception: !settings.perception.enabled
+      ? 'off'
+      : settings.perception.paused
+        ? 'paused'
+        : 'on',
   })
 }
 function updatePet() {
@@ -410,14 +428,17 @@ async function request(
     case IPC.settingsSave: {
       requireSender(window, ['settings'])
       // The window only lists directory rules; approvals may have added one since it loaded.
+      // Perception has its own channels (page and tray), so a stale form copy cannot undo them.
       const saved = await saveSettings({
         ...(input as Parameters<typeof saveSettings>[0]),
         dirRules: getSettings().dirRules,
+        perception: getSettings().perception,
       })
       updatePet()
       publishSession()
       rebuildTray()
       sendShortcuts()
+      applyPerceptionSettings()
       return saved
     }
     case IPC.sessionGet:
@@ -772,6 +793,70 @@ async function request(
       requireSender(window, ['settings'])
       await removeSkill(z.string().parse(input))
       return
+    case IPC.perceptionStatus:
+      requireSender(window, ['settings'])
+      return perceptionStatus()
+    case IPC.perceptionRecent:
+      requireSender(window, ['settings'])
+      return recentEvents()
+    case IPC.perceptionClear:
+      requireSender(window, ['settings'])
+      await clearEvents(
+        z.union([z.literal('all'), z.number().int().positive()]).parse(input),
+      )
+      memoryChanged()
+      return
+    case IPC.perceptionIcons:
+      requireSender(window, ['settings'])
+      return appIcons(z.array(z.string()).max(100).parse(input))
+    case IPC.perceptionSummarize:
+      requireSender(window, ['settings'])
+      void summarizeDue(true)
+        .catch(console.error)
+        .finally(() => memoryChanged())
+      return
+    case IPC.perceptionApps:
+      requireSender(window, ['settings'])
+      return appCandidates()
+    case IPC.perceptionGrant:
+      requireSender(window, ['settings'])
+      await grantAccess()
+      return
+    case IPC.perceptionSave: {
+      requireSender(window, ['settings'])
+      const settings = publicSettings()
+      const perception = settingsSchema.shape.perception.parse(input)
+      await saveSettings({
+        ...settings,
+        model: { ...settings.model, apiKey: undefined },
+        // A page loaded before the prefill must not make it run again.
+        perception: {
+          ...perception,
+          prefilled: perception.prefilled || settings.perception.prefilled,
+        },
+      })
+      await prefillExclusions()
+      applyPerceptionSettings()
+      rebuildTray()
+      return getSettings().perception
+    }
+    case IPC.perceptionPause: {
+      requireSender(window, ['tray', 'settings'])
+      const settings = publicSettings()
+      const paused =
+        z.boolean().optional().parse(input) ?? !settings.perception.paused
+      await saveSettings({
+        ...settings,
+        model: { ...settings.model, apiKey: undefined },
+        perception: {
+          ...settings.perception,
+          paused,
+        },
+      })
+      applyPerceptionSettings()
+      rebuildTray()
+      return
+    }
     case IPC.appQuit:
       requireSender(window, ['tray'])
       ui({ type: 'quit' })
@@ -922,6 +1007,8 @@ async function start() {
   updatePet()
   rebuildTray()
   sendShortcuts()
+  await prefillExclusions().catch(console.error)
+  startPerception((status) => broadcast(IPC.perceptionChanged, status))
   const proxyTimer = setInterval(() => {
     void refreshProxy()
   }, 60000)
@@ -950,6 +1037,7 @@ async function start() {
     closing = true
     controller?.abort()
     void closeMcp()
+    stopPerception()
     clearTimeout(bubbleTimer)
     for (const timer of [proxyTimer, idleTimer, stateTimer, reflectTimer])
       clearInterval(timer)

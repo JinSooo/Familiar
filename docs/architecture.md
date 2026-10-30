@@ -4,11 +4,11 @@
 
 ## 三个部分
 
-| 部分 | 位置            | 语言                   | 负责                                                                                                                                                                                                                                                                                                               |
-| ---- | --------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 壳   | `src-tauri/`    | Rust                   | 四个窗口（宠物覆盖层 `pet`、聊天面板 `chat`、设置 `settings`、大窗口 `main`，打开 `main` 时切成 Dock 可见的普通应用）、NSPanel（置顶、全屏可见、全 Spaces）、点击穿透、拖动与位置持久化、托盘菜单与 ⌘, 菜单、全局快捷键（按下后转给 agent）、`familiar-pet://` 资源协议、外部链接、启动并守护 agent 进程、消息转发 |
-| 大脑 | `agent/`        | TypeScript（Bun 运行） | 设置（`settings.json` + 钥匙串）、会话、agent 循环（AI SDK 7）、三种协议与中转参数、重试、权限判定、工具与沙箱、git 快照、对话记录（`~/.familiar/conversations/*.md`）、记忆（`~/.familiar/memory/`，`agent/src/memory/`）、宠物库（列出 / 从 ChatGPT 导入）、宠物状态机与气泡计时、决定什么时候展开面板           |
-| 界面 | `src/renderer/` | React + Vite           | 宠物精灵动画、胶囊、气泡、聊天面板（Markdown / 公式 / 代码）、设置页；通过 `src/renderer/api.ts` 实现 `FamiliarAPI`                                                                                                                                                                                                |
+| 部分 | 位置            | 语言                   | 负责                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ---- | --------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 壳   | `src-tauri/`    | Rust                   | 四个窗口（宠物覆盖层 `pet`、聊天面板 `chat`、设置 `settings`、大窗口 `main`，打开 `main` 时切成 Dock 可见的普通应用）、NSPanel（置顶、全屏可见、全 Spaces）、点击穿透、拖动与位置持久化、托盘菜单与 ⌘, 菜单、全局快捷键（按下后转给 agent）、`familiar-pet://` 资源协议、外部链接、启动并守护 agent 进程、消息转发                                                                                         |
+| 大脑 | `agent/`        | TypeScript（Bun 运行） | 设置（`settings.json` + 钥匙串）、会话、agent 循环（AI SDK 7）、三种协议与中转参数、重试、权限判定、工具与沙箱、git 快照、对话记录（`~/.familiar/conversations/*.md`）、记忆（`~/.familiar/memory/`，`agent/src/memory/`）、Computer History（启停 `familiar-sensor` 子进程、过滤、加密缓冲、摘要，`agent/src/perception/`）、宠物库（列出 / 从 ChatGPT 导入）、宠物状态机与气泡计时、决定什么时候展开面板 |
+| 界面 | `src/renderer/` | React + Vite           | 宠物精灵动画、胶囊、气泡、聊天面板（Markdown / 公式 / 代码）、设置页；通过 `src/renderer/api.ts` 实现 `FamiliarAPI`                                                                                                                                                                                                                                                                                        |
 
 原则：**Rust 只做窗口和系统集成，不放业务逻辑**；业务状态的唯一来源是 agent 进程。
 
@@ -43,5 +43,5 @@ webview ──invoke pet_hit / pet_drag_start──▶ Rust  (窗口本地操作
 ## 运行与打包
 
 - 开发：`pnpm dev` → `tauri dev`（Vite 开发服务器 + Rust 壳；壳用 `bun agent/src/main.ts` 启动 agent）。
-- 打包：`bun build --compile` 把 agent 编成 `src-tauri/binaries/familiar-agent-<target>`，作为 `externalBin` 放进 `.app`。
+- 打包：`bun build --compile` 把 agent 编成 `src-tauri/binaries/familiar-agent-<target>`，`pnpm sensor:build` 用 `swiftc` 把 `sensor/main.swift` 编成 `familiar-sensor-<target>`，两者都作为 `externalBin` 放进 `.app` 的 `Contents/MacOS`，用 Apple Development 证书签名。agent ↔ 采集程序也是逐行 JSON（agent 的 stdin/stdout 之外另一对管道）；开发时 agent 直接用 `sensor/.build/familiar-sensor`。
 - 配置目录 `~/.familiar/`（2026-10-28 前是 `~/Library/Application Support/Familiar/`，壳首次启动时把 Familiar 自己的文件搬过来，Electron 时期留下的缓存不动）；API Key 存钥匙串。模型的工具和沙箱不能碰这个目录里的配置；`workspace/` 可读写，`memory/` `conversations/` `knowledge/` `skills/` 只读。旧的 `~/Familiar` 工作目录由 agent 启动时迁入（`agent/src/migrate.ts`，可续跑）。

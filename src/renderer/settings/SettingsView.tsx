@@ -8,6 +8,7 @@ import type {
 import { api } from '../api'
 import { MemoryPage } from './MemoryPage'
 import { ExtensionsPage } from './ExtensionsPage'
+import { PerceptionPage } from './PerceptionPage'
 import { ShortcutsSection } from './Shortcuts'
 
 // Icon tiles mirror the System Settings sidebar.
@@ -41,6 +42,11 @@ const tabs = [
     name: '记忆',
     tile: '#FF9F0A',
     icon: 'M4 5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-2zM4 17a2 2 0 0 1 2-2h12M8 7h6',
+  },
+  {
+    name: '感知',
+    tile: '#30B0C7',
+    icon: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
   },
   {
     name: '隐私',
@@ -205,9 +211,14 @@ export function SettingsView() {
             <ExtensionsPage />
           </div>
         )}
+        {tab === '感知' && (
+          <div className="settings">
+            <PerceptionPage />
+          </div>
+        )}
         <form
           className="settings"
-          hidden={tab === '记忆' || tab === '扩展'}
+          hidden={tab === '记忆' || tab === '扩展' || tab === '感知'}
           onSubmit={save}
         >
           <section hidden={tab !== '快捷键'}>

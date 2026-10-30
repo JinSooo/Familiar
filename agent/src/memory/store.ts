@@ -35,6 +35,14 @@ export interface MemoryMeta {
   confidence?: number
   evidence?: string
   seen?: string[]
+  /** Timeline entries written from Computer History: the period they cover and its apps. */
+  activity?: ActivityMeta
+}
+export interface ActivityMeta {
+  title: string
+  start: number
+  end: number
+  apps: { bundleId: string; name: string }[]
 }
 export interface MemoryEntry extends MemoryMeta {
   text: string
@@ -415,7 +423,11 @@ export class MemoryStore {
     })
   }
 
-  appendTimeline(day: string, text: string): Promise<MemoryEntry> {
+  appendTimeline(
+    day: string,
+    text: string,
+    activity?: ActivityMeta,
+  ): Promise<MemoryEntry> {
     return this.serial(async () => {
       const entry: MemoryEntry = {
         id: newMemoryId(),
@@ -425,9 +437,32 @@ export class MemoryStore {
         text: checked(text),
         category: 'timeline',
         key: day,
+        ...(activity
+          ? { activity: { ...activity, title: checked(activity.title) } }
+          : {}),
       }
       await this.append(entry)
       return entry
+    })
+  }
+
+  /** Deletes Computer History entries that reach past `from`; returns when each removed one started. */
+  removeActivity(from: number): Promise<number[]> {
+    return this.serial(async () => {
+      const removed: number[] = []
+      for (const key of await this.periods()) {
+        const path = this.file('timeline', key)
+        const lines = await this.lines(path)
+        if (!lines) continue
+        const hit = parseLines(lines).filter(
+          (i) => i.entry.activity && i.entry.activity.end > from,
+        )
+        if (!hit.length) continue
+        const drop = new Set(hit.map((i) => i.line))
+        removed.push(...hit.map((i) => i.entry.activity!.start))
+        await writeFile(path, lines.filter((_, i) => !drop.has(i)).join('\n'))
+      }
+      return removed
     })
   }
 

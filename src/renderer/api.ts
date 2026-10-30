@@ -90,6 +90,16 @@ export const api: FamiliarAPI = {
   importSkill: (path) => request(IPC.skillImport, path),
   removeSkill: (path) => request(IPC.skillRemove, path),
   shortcutStatus: () => request(IPC.shortcutStatus),
+  perceptionStatus: () => request(IPC.perceptionStatus),
+  perceptionRecent: () => request(IPC.perceptionRecent),
+  perceptionClear: (minutes) => request(IPC.perceptionClear, minutes),
+  perceptionSummarize: () => send(IPC.perceptionSummarize),
+  perceptionApps: () => request(IPC.perceptionApps),
+  perceptionIcons: (ids) => request(IPC.perceptionIcons, ids),
+  perceptionGrant: () => send(IPC.perceptionGrant),
+  perceptionPause: (paused) => request(IPC.perceptionPause, paused),
+  savePerception: (perception) => request(IPC.perceptionSave, perception),
+  onPerceptionChanged: (cb) => subscribe(IPC.perceptionChanged, cb),
   petMenu: (x, y) => {
     void invoke('pet_menu', { x, y }).catch(console.error)
   },

@@ -101,6 +101,8 @@ describe('hard limits hold in every mode', () => {
     ['~/Library/Keychains/login.keychain-db'],
     ['~/Library/Application Support/Google/Chrome/Default/Login Data'],
     [process.env.FAMILIAR_DATA_DIR + '/settings.json'],
+    // Computer History's encrypted raw events.
+    [process.env.FAMILIAR_DATA_DIR + '/perception/2026-10-29-14.enc'],
   ])('%s', async (path) => {
     expect((await decide('read_file', { path }, full)).decision).toBe('deny')
   })

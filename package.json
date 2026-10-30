@@ -11,6 +11,7 @@
     "dev": "tauri dev",
     "build": "tauri build",
     "agent": "bun agent/src/main.ts",
+    "sensor:build": "mkdir -p sensor/.build && ([ sensor/.build/familiar-sensor -nt sensor/main.swift ] || swiftc -O -swift-version 5 sensor/main.swift -o sensor/.build/familiar-sensor) && cp sensor/.build/familiar-sensor src-tauri/binaries/familiar-sensor-$(rustc -vV | sed -n 's/^host: //p')",
     "agent:build": "bun build --compile agent/src/main.ts --outfile src-tauri/binaries/familiar-agent-$(rustc -vV | sed -n 's/^host: //p')",
     "typecheck": "tsc --noEmit && tsc -p agent",
     "test": "bun test --preload ./agent/test/setup.ts agent/test",

@@ -50,6 +50,27 @@ export const settingsSchema = z.object({
     .prefault({}),
   /** Skills by name that the model should not be offered. */
   disabledSkills: z.array(z.string()).default([]),
+  /** Computer History (docs/design.md §7): off until the user turns it on. */
+  perception: z
+    .object({
+      enabled: z.boolean().default(false),
+      paused: z.boolean().default(false),
+      /** Every app is read except these, which are not even named in the history. */
+      excludedApps: z
+        .array(z.object({ bundleId: z.string().min(1), name: z.string() }))
+        .default([]),
+      /** Read and kept on this Mac, but never sent to the model for summaries. */
+      localApps: z
+        .array(z.object({ bundleId: z.string().min(1), name: z.string() }))
+        .default([]),
+      /** Domains whose pages only count as "in the browser". */
+      excludedSites: z.array(z.string()).default([]),
+      /** Each period this long becomes one history entry. */
+      summaryMinutes: z.number().int().min(5).max(60).default(30),
+      /** Installed chat and password apps were put in excludedApps once; removing them sticks. */
+      prefilled: z.boolean().default(false),
+    })
+    .prefault({}),
 })
 export type Settings = z.infer<typeof settingsSchema>
 export type PublicSettings = Omit<Settings, 'model'> & {
@@ -204,6 +225,16 @@ export const IPC = {
   memoryReflect: 'memory:reflect',
   memoryReveal: 'memory:reveal',
   memoryChanged: 'memory:changed',
+  perceptionStatus: 'perception:status',
+  perceptionRecent: 'perception:recent',
+  perceptionClear: 'perception:clear',
+  perceptionSummarize: 'perception:summarize',
+  perceptionApps: 'perception:apps',
+  perceptionGrant: 'perception:grant',
+  perceptionPause: 'perception:pause',
+  perceptionSave: 'perception:save',
+  perceptionIcons: 'perception:icons',
+  perceptionChanged: 'perception:changed',
 } as const
 export type DragAction = 'start' | 'move' | 'end'
 export interface FamiliarAPI {
@@ -281,6 +312,59 @@ export interface FamiliarAPI {
   removeSkill(path: string): Promise<void>
   /** Which configured shortcuts the system refused (taken by another app). */
   shortcutStatus(): Promise<ShortcutFailure[]>
+  perceptionStatus(): Promise<PerceptionStatus>
+  /** The raw events of the last hour, decrypted, newest first. */
+  perceptionRecent(): Promise<PerceptionEvent[]>
+  /** App icons as data: URLs by bundle id; apps without one are left out. */
+  perceptionIcons(bundleIds: string[]): Promise<Record<string, string>>
+  /** Deletes raw events and history entries from the last `minutes`, or all of them. */
+  perceptionClear(minutes: number | 'all'): Promise<void>
+  /** Summarizes what is buffered now; the result arrives with onPerceptionChanged. */
+  perceptionSummarize(): void
+  /** Installed browsers, editors and terminals, plus apps seen recently. */
+  perceptionApps(): Promise<PerceptionApp[]>
+  /** Shows the macOS Accessibility prompt and opens its settings pane. */
+  perceptionGrant(): void
+  perceptionPause(paused: boolean): Promise<void>
+  /** Perception settings are saved on their own, right away, apart from the settings form. */
+  savePerception(
+    perception: Settings['perception'],
+  ): Promise<Settings['perception']>
+  onPerceptionChanged(callback: (status: PerceptionStatus) => void): () => void
+}
+
+/** One raw event from familiar-sensor, after the agent's filter. */
+export interface PerceptionEvent {
+  at: number
+  kind: 'app' | 'window' | 'idle' | 'active'
+  bundleId?: string
+  app?: string
+  title?: string
+  url?: string
+  role?: string
+  text?: string
+  /** A private browsing window: nothing but the app was kept. */
+  private?: boolean
+  /** The focus was in a password field: its text was never read. */
+  secure?: boolean
+  /** Fields dropped by the sensitive-information filter. */
+  dropped?: string[]
+}
+export interface PerceptionStatus {
+  enabled: boolean
+  paused: boolean
+  running: boolean
+  /** null until the sensor has reported. */
+  trusted: boolean | null
+  error?: string
+  lastEventAt?: number
+  lastSummaryAt?: number
+  summary?: { timeline: number; pending: number } | { error: string }
+}
+export interface PerceptionApp {
+  bundleId: string
+  name: string
+  kind: 'browser' | 'editor' | 'terminal' | 'recent'
 }
 
 export interface McpServerStatus {
@@ -334,6 +418,13 @@ export interface MemoryItem {
   evidence?: string
   /** Pending: how many conversations showed it. */
   seen?: number
+  /** A Computer History entry: its title, period and the apps used. */
+  activity?: {
+    title: string
+    start: number
+    end: number
+    apps: { bundleId: string; name: string }[]
+  }
 }
 export interface ReflectResult {
   conversations: number

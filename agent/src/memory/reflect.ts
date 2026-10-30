@@ -9,7 +9,7 @@ import { restates, type MemoryStore } from './store'
  * summary for the day's timeline. JSON is asked for in plain text rather than through a
  * provider's structured-output mode, which relays support unevenly.
  */
-const candidateSchema = z.object({
+export const candidateSchema = z.object({
   target: z.enum(['profile', 'habits', 'topic']),
   topic: z.string().max(40).optional().nullable(),
   text: z.string().min(1).max(200),

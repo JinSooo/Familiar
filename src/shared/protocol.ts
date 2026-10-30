@@ -70,6 +70,7 @@ export type UiAction =
       pets: { id: string; name: string }[]
       currentPet: string
       size: 'small' | 'medium' | 'large'
+      perception: 'off' | 'on' | 'paused'
     }
   | { type: 'quit' }
 

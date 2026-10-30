@@ -25,8 +25,8 @@ export const resourcesDir = resolve(
   process.env.FAMILIAR_RESOURCES_DIR ?? 'resources',
 )
 const service = process.env.FAMILIAR_KEYCHAIN_SERVICE ?? 'com.allinpet.familiar'
-const account = 'model-api-key'
-export async function readKey(): Promise<string> {
+/** Keychain items by account: the model API key, and the perception buffer's key. */
+export async function readKey(account = 'model-api-key'): Promise<string> {
   try {
     return (
       await exec('/usr/bin/security', [
@@ -43,7 +43,10 @@ export async function readKey(): Promise<string> {
     throw new Error('无法读取钥匙串 API Key')
   }
 }
-export async function writeKey(key: string): Promise<void> {
+export async function writeKey(
+  key: string,
+  account = 'model-api-key',
+): Promise<void> {
   // security's interactive parser accepts quoted words; forbid line separators.
   const quote = (s: string) => {
     if (/[\r\n\0]/.test(s)) throw new Error('钥匙串值不能包含换行或 NUL')
@@ -90,7 +93,8 @@ export async function writeKey(key: string): Promise<void> {
     )
     child.stdin.end(command)
   })
-  if ((await readKey()) !== key) throw new Error('钥匙串 API Key 写入校验失败')
+  if ((await readKey(account)) !== key)
+    throw new Error('钥匙串 API Key 写入校验失败')
 }
 let proxies: { http?: string; https?: string } = {}
 export async function refreshProxy() {

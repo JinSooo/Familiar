@@ -371,7 +371,8 @@ pub fn action(app: &tauri::AppHandle, action: crate::protocol::UiAction) -> taur
             pets,
             current_pet,
             size,
-        } => crate::tray::rebuild(app, &pets, &current_pet, &size)?,
+            perception,
+        } => crate::tray::rebuild(app, &pets, &current_pet, &size, &perception)?,
         UiAction::Quit => app.exit(0),
     }
     Ok(())

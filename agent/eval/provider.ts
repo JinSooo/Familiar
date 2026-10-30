@@ -5,6 +5,8 @@
  * - kind=reflect: one real reflection call with the configured background model (costs a
  *   request), printed with the candidates that would survive the sensitive filter.
  * - kind=recall: builds a throwaway memory from `memories` and prints what the index finds.
+ * - kind=perception: one real Computer History summary of `activity` (segment lines as
+ *   describe() writes them) with the background model.
  */
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -34,6 +36,18 @@ if (vars.kind === 'recall') {
   const index = new MemoryIndex(store, join(dir, 'index.sqlite'))
   const hits = await index.search(vars.query!)
   process.stdout.write(JSON.stringify({ hits: hits.map((h) => h.text) }))
+} else if (vars.kind === 'perception') {
+  const { loadSettings } = await import('../src/settings')
+  const { backgroundModel } = await import('../src/memory/jobs')
+  const { digestActivity } = await import('../src/perception/summarize')
+  await loadSettings()
+  const digest = await digestActivity(
+    backgroundModel(),
+    vars.activity!.trim(),
+    vars.existing?.trim() ||
+      '已确认：\n（无）\n\n待确认：\n（无）\n\n当天时间线：\n（无）',
+  )
+  process.stdout.write(JSON.stringify(digest))
 } else {
   const { loadSettings } = await import('../src/settings')
   const { backgroundModel } = await import('../src/memory/jobs')

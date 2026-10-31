@@ -722,7 +722,7 @@ summary:focus-visible {
 .context-strip {
   position: absolute;
   right: 0;
-  bottom: calc(100% + 8px);
+  bottom: calc(100% + 10px);
   max-width: 100%;
   display: flex;
   align-items: center;
@@ -732,7 +732,7 @@ summary:focus-visible {
   background: var(--glass);
   backdrop-filter: blur(24px) saturate(1.6);
   box-shadow:
-    0 4px 14px #0002,
+    0 2px 8px #0002,
     0 0 0 0.5px var(--line);
   font-size: 12px;
   animation: pop 200ms ease-out both;
@@ -878,6 +878,27 @@ summary:focus-visible {
 .empty .link {
   font-size: 12px;
 }
+/* The way back into the last conversation: a quiet card, not a stray link. */
+.empty .resume {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  max-width: 360px;
+  margin: 12px auto 0;
+  padding: 8px 12px;
+  border-radius: var(--radius-card);
+  text-align: left;
+  font-size: 12px;
+}
+.resume-title {
+  color: var(--text);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
 .row-actions {
   display: flex;
   flex-shrink: 0;
@@ -935,9 +956,6 @@ summary:focus-visible {
 }
 .memory-period:not(:last-child) {
   border-bottom: 0.5px solid var(--line);
-}
-.ch-head + .caption {
-  margin-top: 8px;
 }
 /* A list and a disclosure row sharing one card (感知 › 应用和网站). */
 .group > .memory-list {
@@ -1277,15 +1295,6 @@ form.setting-row input {
 .dot.error {
   background: var(--red);
 }
-.ext-actions {
-  display: flex;
-  gap: 8px;
-  margin: -6px 2px 12px;
-}
-.ext-actions button {
-  padding: 3px 12px;
-  font-size: 12px;
-}
 .picker {
   padding: 10px 12px;
   font-size: 12px;
@@ -1379,27 +1388,19 @@ form.setting-row input {
 .ch-label .warn {
   color: var(--orange);
 }
-.ch-head {
+/* A section heading with small actions on the right (导入…, 刷新). */
+.section-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 4px;
+  margin: 4px 0 6px;
 }
-.ch-head .memory-heading {
+.section-head .memory-heading {
   margin-bottom: 0;
 }
-.ch-head .row-actions button {
+.section-head .row-actions button {
   font-size: 12px;
   padding: 3px 10px;
-}
-/* Same height as the buttons beside it; keeps the settings select's room for its chevron. */
-.ch-head select {
-  font-size: 12px;
-  height: 25px;
-  line-height: 25px;
-}
-.ch-head {
-  margin-bottom: 6px;
 }
 .ch-history {
   padding: 10px 12px 4px;
@@ -1498,4 +1499,37 @@ form.setting-row input {
 .settings .ch-back {
   margin: 0 4px 12px;
   font-size: 13px;
+}
+/* A subpage's title row: back, then its own name. */
+.subpage-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 14px -4px;
+}
+.subpage-head h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.subpage-head .icon {
+  width: 24px;
+  height: 24px;
+  font-size: 20px;
+  line-height: 1;
+}
+/* Long memories: three lines until opened. */
+.memory-text .clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.memory-text .more {
+  align-self: flex-start;
+  font-size: 11px;
+}
+/* An inline action in a row's status line (暂停 / 继续). */
+.ch-label .link {
+  font-size: inherit;
 }

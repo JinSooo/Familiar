@@ -392,7 +392,8 @@ async function installedApps(): Promise<Map<string, string>> {
 /** Installed browsers, editors and terminals, then other apps seen in the last day. */
 export async function appCandidates(): Promise<PerceptionApp[]> {
   const found = new Map<string, PerceptionApp>()
-  for (const [id, name] of await installedApps()) {
+  const installed = await installedApps()
+  for (const [id, name] of installed) {
     const kind = kindOf(id)
     if (kind) found.set(id, { bundleId: id, name, kind })
   }
@@ -402,7 +403,13 @@ export async function appCandidates(): Promise<PerceptionApp[]> {
   )
   const recent = await buffer.read(Date.now() - 86400000).catch(() => [])
   for (const e of recent.reverse())
-    if (e.kind === 'app' && e.bundleId && !found.has(e.bundleId)) {
+    // Only real apps: events recorded before the sensor skipped system agents may name them.
+    if (
+      e.kind === 'app' &&
+      e.bundleId &&
+      installed.has(e.bundleId) &&
+      !found.has(e.bundleId)
+    ) {
       const app = {
         bundleId: e.bundleId,
         name: e.app ?? e.bundleId,

@@ -14,6 +14,8 @@ const periodLabel = (key: string) => {
   if (key === dayKey(new Date(Date.now() - 86400000))) return '昨天'
   return key
 }
+/** Characters past which a memory shows three lines until opened. */
+const long = 160
 const clock = (at: number) => new Date(at).toTimeString().slice(0, 5)
 /** What a timeline line shows: conversation lines start with their time, activity lines carry theirs. */
 function view(item: MemoryItem): { time: string; title: string; body: string } {
@@ -34,6 +36,8 @@ export function MemoryPage() {
   const [items, setItems] = useState<MemoryItem[]>()
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
+  /** Long memories show three lines until opened. */
+  const [opened, setOpened] = useState<Set<string>>(new Set())
   const [icons, setIcons] = useState<Record<string, string>>({})
   const [editing, setEditing] = useState<{ id: string; text: string }>()
   /** Timeline lines that still restate a memory the user just deleted. */
@@ -161,7 +165,31 @@ export function MemoryPage() {
     return (
       <li key={item.id} className="memory-item">
         <div className="memory-text">
-          <span>{item.text}</span>
+          <span
+            className={
+              item.text.length > long && !opened.has(item.id)
+                ? 'clamped'
+                : undefined
+            }
+          >
+            {item.text}
+          </span>
+          {item.text.length > long && (
+            <button
+              type="button"
+              className="link more"
+              onClick={() =>
+                setOpened((o) => {
+                  const next = new Set(o)
+                  if (next.has(item.id)) next.delete(item.id)
+                  else next.add(item.id)
+                  return next
+                })
+              }
+            >
+              {opened.has(item.id) ? '收起' : '展开'}
+            </button>
+          )}
           {actions === 'pending' ? (
             <span className="muted">
               推测 · 归入{targetLabel[item.target ?? 'profile']}
@@ -175,6 +203,7 @@ export function MemoryPage() {
           ) : (
             item.at && (
               <span className="muted">
+                {item.category === 'topic' && item.key ? `${item.key} · ` : ''}
                 {item.at}
                 {item.source === 'reflection' && actions === 'kept'
                   ? ' · 从对话里整理'
@@ -392,7 +421,11 @@ export function MemoryPage() {
       {group('它对我的判断', pending, 'pending', '暂时没有待确认的判断。')}
       {group('画像', kept('profile'), 'kept', '还没有。可以对它说「记住……」。')}
       {group('习惯', kept('habits'), 'kept')}
-      {topics.map((t) => group(`主题：${t}`, kept('topic', t), 'kept'))}
+      {group(
+        '主题',
+        topics.flatMap((t) => kept('topic', t)),
+        'kept',
+      )}
       {periods.length > 0 && <h3 className="memory-heading">时间线</h3>}
       {periods.length > 0 && (
         <div className="group">

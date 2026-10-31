@@ -6,6 +6,7 @@ import type {
   SkillInfo,
 } from '../../shared'
 import { api } from '../api'
+import { Switch } from './Switch'
 
 const failure = (e: unknown) =>
   typeof e === 'string' ? e : e instanceof Error ? e.message : '操作失败'
@@ -109,7 +110,32 @@ export function ExtensionsPage() {
 
   return (
     <div className="ext-page">
-      <h3 className="memory-heading">MCP 服务器</h3>
+      <div className="section-head">
+        <h3 className="memory-heading">MCP 服务器</h3>
+        <span className="row-actions">
+          <button
+            type="button"
+            onClick={() =>
+              api
+                .mcpCandidates()
+                .then(setMcpOffer)
+                .catch((e: unknown) => setNotice(failure(e)))
+            }
+          >
+            导入…
+          </button>
+          <button type="button" onClick={() => api.revealMcp()}>
+            编辑配置文件
+          </button>
+          <button
+            type="button"
+            aria-disabled={busy}
+            onClick={() => !busy && load(true)}
+          >
+            {busy ? '连接中…' : '刷新'}
+          </button>
+        </span>
+      </div>
       <ul className="group memory-list">
         {data.mcp.length ? (
           data.mcp.map(server)
@@ -119,29 +145,6 @@ export function ExtensionsPage() {
           </li>
         )}
       </ul>
-      <div className="ext-actions">
-        <button
-          type="button"
-          onClick={() =>
-            api
-              .mcpCandidates()
-              .then(setMcpOffer)
-              .catch((e: unknown) => setNotice(failure(e)))
-          }
-        >
-          导入…
-        </button>
-        <button type="button" onClick={() => api.revealMcp()}>
-          编辑配置文件
-        </button>
-        <button
-          type="button"
-          aria-disabled={busy}
-          onClick={() => !busy && load(true)}
-        >
-          {busy ? '连接中…' : '刷新'}
-        </button>
-      </div>
       {mcpOffer && (
         <Picker
           title="从其他工具导入 MCP 服务器"
@@ -171,7 +174,22 @@ export function ExtensionsPage() {
         工具由服务器自己执行，不受 Familiar 的沙箱约束。
       </p>
 
-      <h3 className="memory-heading">技能</h3>
+      <div className="section-head">
+        <h3 className="memory-heading">技能</h3>
+        <span className="row-actions">
+          <button
+            type="button"
+            onClick={() =>
+              api
+                .skillCandidates()
+                .then(setSkillOffer)
+                .catch((e: unknown) => setNotice(failure(e)))
+            }
+          >
+            导入…
+          </button>
+        </span>
+      </div>
       <ul className="group memory-list">
         {data.skills.length ? (
           data.skills.map((s) => {
@@ -190,22 +208,6 @@ export function ExtensionsPage() {
                   </span>
                 </div>
                 <span className="row-actions">
-                  <div className="segmented">
-                    {[true, false].map((v) => (
-                      <button
-                        type="button"
-                        key={String(v)}
-                        className={on === v ? 'selected' : ''}
-                        onClick={() =>
-                          toggleSkill(s.name, v).catch((e: unknown) =>
-                            setNotice(failure(e)),
-                          )
-                        }
-                      >
-                        {v ? '启用' : '停用'}
-                      </button>
-                    ))}
-                  </div>
                   {s.source === 'imported' && (
                     <button
                       type="button"
@@ -214,6 +216,15 @@ export function ExtensionsPage() {
                       删除
                     </button>
                   )}
+                  <Switch
+                    on={on}
+                    label={`启用技能 ${s.name}`}
+                    onChange={(v) =>
+                      toggleSkill(s.name, v).catch((e: unknown) =>
+                        setNotice(failure(e)),
+                      )
+                    }
+                  />
                 </span>
               </li>
             )
@@ -222,19 +233,6 @@ export function ExtensionsPage() {
           <li className="memory-item muted">还没有技能。</li>
         )}
       </ul>
-      <div className="ext-actions">
-        <button
-          type="button"
-          onClick={() =>
-            api
-              .skillCandidates()
-              .then(setSkillOffer)
-              .catch((e: unknown) => setNotice(failure(e)))
-          }
-        >
-          从 Claude Code / Codex 导入…
-        </button>
-      </div>
       {skillOffer && (
         <Picker
           title="导入技能"

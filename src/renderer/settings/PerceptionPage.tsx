@@ -6,6 +6,7 @@ import type {
   Settings,
 } from '../../shared'
 import { api } from '../api'
+import { Switch } from './Switch'
 
 type Perception = Settings['perception']
 const failure = (e: unknown) =>
@@ -23,23 +24,6 @@ const clearOptions = [
   ['all', '全部'],
 ] as const
 const time = (at: number) => new Date(at).toTimeString().slice(0, 5)
-
-function Switch(props: {
-  on: boolean
-  label: string
-  onChange: (on: boolean) => void
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={props.on}
-      aria-label={props.label}
-      className="switch"
-      onClick={() => props.onChange(!props.on)}
-    />
-  )
-}
 
 /** The settings window's 感知 tab: Computer History's switch, permissions and history. */
 export function PerceptionPage() {
@@ -104,13 +88,29 @@ export function PerceptionPage() {
       <div className="group">
         <div className="setting-row">
           <div className="ch-label">
-            <span>Computer History</span>
+            <span>记录电脑活动</span>
             <span className="muted">
               记下你在电脑上做的事，让它知道你在忙什么、接着帮你。不截图，不碰摄像头和麦克风。
             </span>
             {state && (
               <span className={status.trusted === false ? 'warn' : 'muted'}>
                 {state}
+                {perception.enabled && status.trusted !== false && (
+                  <>
+                    {' · '}
+                    <button
+                      type="button"
+                      className="link"
+                      onClick={() =>
+                        api
+                          .perceptionPause(!perception.paused)
+                          .catch((e: unknown) => setNotice(failure(e)))
+                      }
+                    >
+                      {perception.paused ? '继续' : '暂停'}
+                    </button>
+                  </>
+                )}
               </span>
             )}
           </div>
@@ -120,21 +120,9 @@ export function PerceptionPage() {
                 去授权…
               </button>
             )}
-            {perception.enabled && (
-              <button
-                type="button"
-                onClick={() =>
-                  api
-                    .perceptionPause(!perception.paused)
-                    .catch((e: unknown) => setNotice(failure(e)))
-                }
-              >
-                {perception.paused ? '继续' : '暂停'}
-              </button>
-            )}
             <Switch
               on={perception.enabled}
-              label="Computer History"
+              label="记录电脑活动"
               onChange={(on) => save({ ...perception, enabled: on })}
             />
           </span>
@@ -157,19 +145,32 @@ export function PerceptionPage() {
         </div>
       </div>
 
-      <div className="ch-head">
-        <h3 className="memory-heading">数据</h3>
-        <span className="row-actions">
+      <p className="caption">
+        整理出的历史在「记忆」页的时间线里。整理时会把过滤后的活动发给你在「模型」页选的模型，推测出的长期信息只进待确认。
+      </p>
+
+      <h3 className="memory-heading">原始记录</h3>
+      <div className="group">
+        <div className="setting-row">
+          <div className="ch-label">
+            <span>最近一小时</span>
+            <span className="muted">
+              解密后只在这里显示，看它到底记下了什么
+            </span>
+          </div>
           <button type="button" onClick={() => setView('raw')}>
-            原始记录
+            查看…
           </button>
+        </div>
+        <div className="setting-row">
+          <span>清除</span>
           <select
             aria-label="清除记录"
             value=""
             onChange={(e) => setClearing(clearOptions[Number(e.target.value)])}
           >
             <option value="" disabled>
-              清除记录
+              选择范围
             </option>
             {clearOptions.map(([, label], i) => (
               <option key={label} value={i}>
@@ -177,10 +178,8 @@ export function PerceptionPage() {
               </option>
             ))}
           </select>
-        </span>
-      </div>
-      {clearing && (
-        <div className="group">
+        </div>
+        {clearing && (
           <div className="setting-row">
             <span>
               清除{clearing[1]}的原始记录？跨进这段时间的历史条目整条删除。
@@ -205,16 +204,31 @@ export function PerceptionPage() {
               </button>
             </span>
           </div>
-        </div>
-      )}
-      <p className="caption">
-        原始记录加密存在本机，48
-        小时后自动删除；整理时会把过滤后的活动发给你在「模型」页选的模型，结果写进「记忆」的时间线，推测出的长期信息只进待确认。
-      </p>
+        )}
+      </div>
+      <p className="caption">原始记录加密存在本机，48 小时后自动删除。</p>
       <p role="status" className="caption">
         {notice}
       </p>
     </>
+  )
+}
+
+/** A subpage's own title, with the way back to the main page. */
+function SubpageHeader(props: { title: string; back: () => void }) {
+  return (
+    <div className="subpage-head">
+      <button
+        type="button"
+        className="icon"
+        aria-label="返回"
+        title="返回"
+        onClick={props.back}
+      >
+        ‹
+      </button>
+      <h3>{props.title}</h3>
+    </div>
   )
 }
 
@@ -261,10 +275,8 @@ function Choose(props: {
   }
   return (
     <>
-      <button type="button" className="link ch-back" onClick={props.back}>
-        ‹ Computer History
-      </button>
-      <h3 className="memory-heading">应用</h3>
+      <SubpageHeader title="应用和网站" back={props.back} />
+      <h3 className="memory-heading">不记录或只留本机的应用</h3>
       <div className="group">
         <ul className="memory-list">
           {listed.map((app) => (
@@ -302,15 +314,13 @@ function Choose(props: {
             </li>
           ))}
           {!listed.length && (
-            <li className="memory-item muted">
-              还没有排除的应用，所有应用都在记录。
-            </li>
+            <li className="memory-item muted">没有。所有应用都在记录。</li>
           )}
         </ul>
         {addable.length > 0 && (
           <details className="rules">
             <summary>
-              添加应用<span className="muted">{addable.length} 个</span>
+              加入列表<span className="muted">{addable.length} 个可选</span>
             </summary>
             <ul>
               {addable.map((app) => (
@@ -321,7 +331,7 @@ function Choose(props: {
                     type="button"
                     onClick={() => save(move(app, 'excluded'))}
                   >
-                    添加
+                    不记录
                   </button>
                 </li>
               ))}
@@ -380,6 +390,30 @@ function Choose(props: {
   )
 }
 
+/** File and web addresses as people read them: percent-encoding decoded. */
+function readable(url: string): string {
+  try {
+    return decodeURI(url)
+  } catch {
+    return url
+  }
+}
+
+/** Runs of the same app, window and page become one row (events are newest first). */
+function collapse(events: PerceptionEvent[]) {
+  const rows: { event: PerceptionEvent; count: number; until: number }[] = []
+  const key = (e: PerceptionEvent) =>
+    [e.kind, e.bundleId, e.title, e.url, e.text].join('\u0000')
+  for (const e of events) {
+    const last = rows.at(-1)
+    if (last && key(last.event) === key(e)) {
+      last.count++
+      last.until = e.at
+    } else rows.push({ event: e, count: 1, until: e.at })
+  }
+  return rows
+}
+
 /** The raw events of the last hour, as stored (decrypted for display only). */
 function Raw(props: { back: () => void }) {
   const [events, setEvents] = useState<PerceptionEvent[]>()
@@ -392,15 +426,12 @@ function Raw(props: { back: () => void }) {
   }, [])
   return (
     <>
-      <button type="button" className="link ch-back" onClick={props.back}>
-        ‹ Computer History
-      </button>
-      <h3 className="memory-heading">最近一小时的原始记录</h3>
+      <SubpageHeader title="最近一小时的原始记录" back={props.back} />
       {!events ? (
         <p role="status">{error || '读取…'}</p>
       ) : (
         <ul className="memory-list group">
-          {events.map((e, i) => (
+          {collapse(events).map(({ event: e, count, until }, i) => (
             <li key={i} className="memory-item">
               <div className="memory-text">
                 <span>
@@ -412,12 +443,14 @@ function Raw(props: { back: () => void }) {
                         ? `${e.app ?? e.bundleId}${e.title ? `「${e.title}」` : ''}`
                         : '不记录的应用'}
                 </span>
-                {e.url && <span className="muted">{e.url}</span>}
+                {e.url && <span className="muted">{readable(e.url)}</span>}
                 {e.text && (
                   <span className="muted">{e.text.slice(0, 160)}</span>
                 )}
                 <span className="muted">
-                  {time(e.at)}
+                  {count > 1
+                    ? `${time(until)}–${time(e.at)} · ${count} 次`
+                    : time(e.at)}
                   {e.private ? ' · 隐私窗口，只记应用' : ''}
                   {e.secure ? ' · 密码框，没读内容' : ''}
                   {e.dropped?.length

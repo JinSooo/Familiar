@@ -24,11 +24,30 @@ pub fn persist(app: &tauri::AppHandle) {
     };
     if let (Ok(p), Ok(scale)) = (w.outer_position(), w.scale_factor()) {
         let p = p.to_logical::<f64>(scale);
-        let path = app.state::<Paths>().data.join("window-state.json");
-        let result = std::fs::write(path, serde_json::json!({"x":p.x,"y":p.y}).to_string());
-        if let Err(e) = result {
-            eprintln!("Save window position: {e}");
-        }
+        persist_at(app, p.x, p.y);
+    }
+}
+
+fn persist_at(app: &tauri::AppHandle, x: f64, y: f64) {
+    let path = app.state::<Paths>().data.join("window-state.json");
+    let result = std::fs::write(path, serde_json::json!({"x":x,"y":y}).to_string());
+    if let Err(e) = result {
+        eprintln!("Save window position: {e}");
+    }
+}
+
+/// Set when the pet window was placed from the saved position. The saved position belongs to the
+/// size the window had when it was saved, not to the default size it is created with.
+static KEEP_ORIGIN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Where the pet window's top-left goes when it is resized: the bottom-right corner stays put,
+/// except for the first resize after a restore, which keeps the saved top-left.
+fn resized_origin(old: (f64, f64, f64, f64), new: (f64, f64), keep_origin: bool) -> (f64, f64) {
+    let (x, y, w, h) = old;
+    if keep_origin {
+        (x, y)
+    } else {
+        (x + w - new.0, y + h - new.1)
     }
 }
 
@@ -84,11 +103,17 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
             if let (Some(x), Some(y)) = (v["x"].as_f64(), v["y"].as_f64()) {
                 if x.is_finite() && y.is_finite() {
                     position = LogicalPosition::new(x, y);
+                    KEEP_ORIGIN.store(true, std::sync::atomic::Ordering::Relaxed);
                 }
             }
         }
     }
-    pet.set_position(clamp(&pet, position.x, position.y, 460., 330.)?)?;
+    // A saved position is clamped after the first resize, with the size it was saved at.
+    pet.set_position(if KEEP_ORIGIN.load(std::sync::atomic::Ordering::Relaxed) {
+        position
+    } else {
+        clamp(&pet, position.x, position.y, 460., 330.)?
+    })?;
     let panel = pet.to_panel::<PetPanel>()?;
     panel.set_level(PanelLevel::ScreenSaver.value());
     panel.set_collection_behavior(
@@ -361,14 +386,15 @@ pub fn action(app: &tauri::AppHandle, action: crate::protocol::UiAction) -> taur
             let p = w.outer_position()?.to_logical::<f64>(scale);
             let s = w.outer_size()?.to_logical::<f64>(scale);
             w.set_size(LogicalSize::new(width, height))?;
-            w.set_position(clamp(
-                &w,
-                p.x + s.width - width,
-                p.y + s.height - height,
-                width,
-                height,
-            )?)?;
-            persist(app);
+            let (x, y) = resized_origin(
+                (p.x, p.y, s.width, s.height),
+                (width, height),
+                KEEP_ORIGIN.swap(false, std::sync::atomic::Ordering::Relaxed),
+            );
+            let at = clamp(&w, x, y, width, height)?;
+            w.set_position(at)?;
+            // set_position lands on the main queue after this call: save what was set, not what reads back.
+            persist_at(app, at.x, at.y);
         }
         UiAction::Tray {
             pets,
@@ -379,4 +405,25 @@ pub fn action(app: &tauri::AppHandle, action: crate::protocol::UiAction) -> taur
         UiAction::Quit => app.exit(0),
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resized_origin;
+
+    #[test]
+    fn resize_keeps_the_bottom_right_corner() {
+        assert_eq!(
+            resized_origin((100., 200., 460., 330.), (316., 227.), false),
+            (244., 303.)
+        );
+    }
+
+    #[test]
+    fn first_resize_after_restore_keeps_the_saved_origin() {
+        assert_eq!(
+            resized_origin((1222., 833., 460., 330.), (316., 227.), true),
+            (1222., 833.)
+        );
+    }
 }

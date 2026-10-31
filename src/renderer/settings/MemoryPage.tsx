@@ -5,12 +5,36 @@ import { api } from '../api'
 const targetLabel = { profile: '画像', habits: '习惯', topic: '主题' } as const
 const failure = (e: unknown) =>
   typeof e === 'string' ? e : e instanceof Error ? e.message : '操作失败'
+const pad = (n: number) => String(n).padStart(2, '0')
+const dayKey = (d: Date) =>
+  `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+const isDay = (key: string) => /^\d{4}-\d{2}-\d{2}$/.test(key)
+const periodLabel = (key: string) => {
+  if (key === dayKey(new Date())) return '今天'
+  if (key === dayKey(new Date(Date.now() - 86400000))) return '昨天'
+  return key
+}
+const clock = (at: number) => new Date(at).toTimeString().slice(0, 5)
+/** What a timeline line shows: conversation lines start with their time, activity lines carry theirs. */
+function view(item: MemoryItem): { time: string; title: string; body: string } {
+  if (item.activity)
+    return {
+      time: clock(item.activity.start),
+      title: item.activity.title,
+      body: item.text,
+    }
+  const m = /^(\d{2}:\d{2}) ([\s\S]*)$/.exec(item.text)
+  return m
+    ? { time: m[1]!, title: '', body: m[2]! }
+    : { time: '', title: '', body: item.text }
+}
 
 /** The settings window's 记忆 tab: what Familiar believes about the user, editable in place. */
 export function MemoryPage() {
   const [items, setItems] = useState<MemoryItem[]>()
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
+  const [icons, setIcons] = useState<Record<string, string>>({})
   const [editing, setEditing] = useState<{ id: string; text: string }>()
   /** Timeline lines that still restate a memory the user just deleted. */
   const [leftovers, setLeftovers] = useState<MemoryItem[]>([])
@@ -40,6 +64,28 @@ export function MemoryPage() {
       window.removeEventListener('focus', load)
     }
   }, [load])
+  // Icons for every app the timeline mentions, fetched once each.
+  useEffect(() => {
+    const missing = [
+      ...new Set(
+        (items ?? []).flatMap(
+          (i) => i.activity?.apps.map((a) => a.bundleId) ?? [],
+        ),
+      ),
+    ].filter((id) => !(id in icons))
+    if (!missing.length) return
+    void api
+      .perceptionIcons(missing)
+      .then((found) =>
+        setIcons((old) => ({
+          ...old,
+          // Remember misses too, so they are not asked for again.
+          ...Object.fromEntries(missing.map((id) => [id, ''])),
+          ...found,
+        })),
+      )
+      .catch(console.error)
+  }, [items, icons])
   if (!items) return <p role="status">{notice || '读取记忆…'}</p>
   const act = (work: Promise<unknown>) => {
     setEditing(undefined)
@@ -146,6 +192,21 @@ export function MemoryPage() {
               对
             </button>
           )}
+          {item.conversation && (
+            <button
+              type="button"
+              title="打开产生这条记录的对话"
+              onClick={() => {
+                const id = item.conversation!
+                api
+                  .openConversation(id)
+                  .then(() => api.openMainWindow())
+                  .catch((e: unknown) => setNotice(failure(e)))
+              }}
+            >
+              打开对话
+            </button>
+          )}
           {actions !== 'timeline' && (
             <button
               type="button"
@@ -184,11 +245,88 @@ export function MemoryPage() {
       </Fragment>
     )
 
+  /** Day lines run newest first; week and month lines keep the order they were written in. */
+  const ordered = (key: string, list: MemoryItem[]) =>
+    isDay(key)
+      ? [...list].sort((a, b) => view(b).time.localeCompare(view(a).time))
+      : list
+  /** Opens the conversation behind a line (the latest one when several were merged) in the big window. */
+  const openOrigin = (ids: string[]) =>
+    api
+      .openConversation(ids.at(-1)!)
+      .then(() => api.openMainWindow())
+      .catch((e: unknown) => setNotice(failure(e)))
+  const entry = (item: MemoryItem) => {
+    const v = view(item)
+    const ids =
+      item.conversations ?? (item.conversation ? [item.conversation] : [])
+    const apps = item.activity?.apps ?? []
+    return (
+      <li key={item.id}>
+        <time>{v.time}</time>
+        <div className="ch-entry">
+          {v.title && <strong>{v.title}</strong>}
+          <p>{v.body}</p>
+          {(apps.length > 0 || ids.length > 0) && (
+            <span className="ch-apps">
+              {apps.map((a) =>
+                icons[a.bundleId] ? (
+                  <img
+                    key={a.bundleId}
+                    src={icons[a.bundleId]}
+                    alt={a.name}
+                    title={a.name}
+                  />
+                ) : (
+                  <span key={a.bundleId} className="ch-app-name">
+                    {a.name}
+                  </span>
+                ),
+              )}
+              {ids.length > 0 && (
+                <button
+                  type="button"
+                  className="link"
+                  title="打开产生这条记录的对话"
+                  onClick={() => void openOrigin(ids)}
+                >
+                  {ids.length > 1
+                    ? `打开最近的对话（共 ${ids.length} 个）`
+                    : '打开对话'}
+                </button>
+              )}
+            </span>
+          )}
+        </div>
+        <button
+          type="button"
+          className="icon ch-delete"
+          aria-label="删除这条"
+          title="删除这条"
+          onClick={() => remove(item)}
+        >
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            aria-hidden="true"
+          >
+            <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" />
+          </svg>
+        </button>
+      </li>
+    )
+  }
+
   return (
     <div className="memory-page">
       <div className="group">
         <div className="setting-row">
-          <span>从最近的对话里整理</span>
+          <span>整理最近的对话和电脑活动</span>
           <button
             type="button"
             aria-disabled={busy}
@@ -197,6 +335,7 @@ export function MemoryPage() {
               setBusy(true)
               setNotice('正在整理…')
               api.reflectMemory()
+              api.perceptionSummarize()
             }}
           >
             现在整理
@@ -255,17 +394,25 @@ export function MemoryPage() {
       {group('习惯', kept('habits'), 'kept')}
       {topics.map((t) => group(`主题：${t}`, kept('topic', t), 'kept'))}
       {periods.length > 0 && <h3 className="memory-heading">时间线</h3>}
-      {periods.map((p) => (
-        <details key={p} className="group rules memory-period">
-          <summary>
-            {p}
-            <span className="muted">{kept('timeline', p).length} 条</span>
-          </summary>
-          <ul className="memory-list">
-            {kept('timeline', p).map((i) => row(i, 'timeline'))}
-          </ul>
-        </details>
-      ))}
+      {periods.length > 0 && (
+        <div className="group">
+          {periods.map((p) => (
+            <details
+              key={p}
+              className="rules memory-period"
+              open={p === periods[0]}
+            >
+              <summary>
+                {periodLabel(p)}
+                <span className="muted">{kept('timeline', p).length} 条</span>
+              </summary>
+              <div className="ch-history">
+                <ol>{ordered(p, kept('timeline', p)).map(entry)}</ol>
+              </div>
+            </details>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

@@ -915,6 +915,24 @@ summary:focus-visible {
   margin: 0;
   padding: 0;
 }
+.memory-period:not(:last-child) {
+  border-bottom: 0.5px solid var(--line);
+}
+.ch-head + .caption {
+  margin-top: 8px;
+}
+/* A list and a disclosure row sharing one card (感知 › 应用和网站). */
+.group > .memory-list {
+  margin: 0;
+  padding: 0;
+}
+.group > .memory-list + .rules {
+  border-top: 0.5px solid var(--line);
+}
+/* An input with its own submit button: the field takes the row. */
+form.setting-row input {
+  flex: 1;
+}
 .memory-item {
   display: flex;
   align-items: center;
@@ -1352,16 +1370,28 @@ summary:focus-visible {
 .ch-head .memory-heading {
   margin-bottom: 0;
 }
-.ch-head .row-actions button,
-.ch-head select {
+.ch-head .row-actions button {
   font-size: 12px;
   padding: 3px 10px;
+}
+/* Same height as the buttons beside it; keeps the settings select's room for its chevron. */
+.ch-head select {
+  font-size: 12px;
+  height: 25px;
+  line-height: 25px;
 }
 .ch-head {
   margin-bottom: 6px;
 }
 .ch-history {
   padding: 10px 12px 4px;
+}
+/* The memory page puts this list inside a .rules disclosure, whose flex rows must not apply here. */
+.rules .ch-history li {
+  display: grid;
+  justify-content: normal;
+  align-items: start;
+  padding: 8px 0 12px;
 }
 .ch-day {
   margin: 0 0 6px;

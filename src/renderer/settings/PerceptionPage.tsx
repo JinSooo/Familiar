@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
 import type {
-  MemoryItem,
   PerceptionApp,
   PerceptionEvent,
   PerceptionStatus,
@@ -9,7 +8,6 @@ import type {
 import { api } from '../api'
 
 type Perception = Settings['perception']
-type Entry = MemoryItem & { activity: NonNullable<MemoryItem['activity']> }
 const failure = (e: unknown) =>
   typeof e === 'string' ? e : e instanceof Error ? e.message : '操作失败'
 const kindLabel = {
@@ -25,17 +23,6 @@ const clearOptions = [
   ['all', '全部'],
 ] as const
 const time = (at: number) => new Date(at).toTimeString().slice(0, 5)
-const dayOf = (at: number) => {
-  const d = new Date(at)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-}
-const dayLabel = (day: string) => {
-  const today = dayOf(Date.now())
-  if (day === today) return '今天'
-  if (day === dayOf(Date.now() - 86400000)) return '昨天'
-  return `${Number(day.slice(5, 7))} 月 ${Number(day.slice(8))} 日`
-}
 
 function Switch(props: {
   on: boolean
@@ -58,70 +45,29 @@ function Switch(props: {
 export function PerceptionPage() {
   const [perception, setPerception] = useState<Perception>()
   const [status, setStatus] = useState<PerceptionStatus>()
-  const [entries, setEntries] = useState<Entry[]>([])
-  const [icons, setIcons] = useState<Record<string, string>>({})
   const [view, setView] = useState<'main' | 'choose' | 'raw'>('main')
-  const [day, setDay] = useState('')
   const [clearing, setClearing] = useState<(typeof clearOptions)[number]>()
   const [notice, setNotice] = useState('')
-  const [summarizing, setSummarizing] = useState(false)
 
-  const loadHistory = useCallback(() => {
-    void api
-      .listMemory()
-      .then((items) =>
-        setEntries(
-          items
-            .filter((i): i is Entry => Boolean(i.activity))
-            .sort((a, b) => b.activity.start - a.activity.start),
-        ),
-      )
-      .catch((e: unknown) => setNotice(failure(e)))
-  }, [])
   const refresh = useCallback(() => {
     void api
       .getSettings()
       .then((s) => setPerception(s.perception))
       .catch((e: unknown) => setNotice(failure(e)))
     void api.perceptionStatus().then(setStatus).catch(console.error)
-    loadHistory()
-  }, [loadHistory])
+  }, [])
   useEffect(() => {
     refresh()
-    const offPerception = api.onPerceptionChanged((next) => {
+    const off = api.onPerceptionChanged((next) => {
       setStatus(next)
       setPerception((p) => p && { ...p, paused: next.paused })
-      setSummarizing(false)
-      loadHistory()
     })
-    const offMemory = api.onMemoryChanged(loadHistory)
     window.addEventListener('focus', refresh)
     return () => {
-      offPerception()
-      offMemory()
+      off()
       window.removeEventListener('focus', refresh)
     }
-  }, [refresh, loadHistory])
-  // Icons for every app the history mentions, fetched once each.
-  useEffect(() => {
-    const missing = [
-      ...new Set(
-        entries.flatMap((e) => e.activity.apps.map((a) => a.bundleId)),
-      ),
-    ].filter((id) => !(id in icons))
-    if (!missing.length) return
-    void api
-      .perceptionIcons(missing)
-      .then((found) =>
-        setIcons((old) => ({
-          ...old,
-          // Remember misses too, so they are not asked for again.
-          ...Object.fromEntries(missing.map((id) => [id, ''])),
-          ...found,
-        })),
-      )
-      .catch(console.error)
-  }, [entries, icons])
+  }, [refresh])
   if (!perception || !status) return <p role="status">{notice || '读取…'}</p>
 
   const save = (next: Perception) => {
@@ -142,9 +88,6 @@ export function PerceptionPage() {
     )
   if (view === 'raw') return <Raw back={() => setView('main')} />
 
-  const days = [...new Set(entries.map((e) => dayOf(e.activity.start)))]
-  const shownDay = days.includes(day) ? day : (days[0] ?? '')
-  const shown = entries.filter((e) => dayOf(e.activity.start) === shownDay)
   const state = !perception.enabled
     ? ''
     : perception.paused
@@ -215,30 +158,18 @@ export function PerceptionPage() {
       </div>
 
       <div className="ch-head">
-        <h3 className="memory-heading">历史</h3>
+        <h3 className="memory-heading">数据</h3>
         <span className="row-actions">
-          <button
-            type="button"
-            aria-disabled={summarizing || !perception.enabled}
-            title="把还没整理的活动现在整理成历史"
-            onClick={() => {
-              if (summarizing || !perception.enabled) return
-              setSummarizing(true)
-              api.perceptionSummarize()
-            }}
-          >
-            {summarizing ? '整理中…' : '现在整理'}
-          </button>
           <button type="button" onClick={() => setView('raw')}>
             原始记录
           </button>
           <select
-            aria-label="清除历史"
+            aria-label="清除记录"
             value=""
             onChange={(e) => setClearing(clearOptions[Number(e.target.value)])}
           >
             <option value="" disabled>
-              清除历史
+              清除记录
             </option>
             {clearOptions.map(([, label], i) => (
               <option key={label} value={i}>
@@ -276,85 +207,6 @@ export function PerceptionPage() {
           </div>
         </div>
       )}
-      <div className="group ch-history">
-        {days.length > 1 && (
-          <select
-            className="ch-day"
-            aria-label="日期"
-            value={shownDay}
-            onChange={(e) => setDay(e.target.value)}
-          >
-            {days.map((d) => (
-              <option key={d} value={d}>
-                {dayLabel(d)}
-              </option>
-            ))}
-          </select>
-        )}
-        {days.length === 1 && <p className="ch-day">{dayLabel(shownDay)}</p>}
-        {shown.length ? (
-          <ol>
-            {shown.map((e) => (
-              <li key={e.id}>
-                <time>{time(e.activity.start)}</time>
-                <div className="ch-entry">
-                  <strong>{e.activity.title}</strong>
-                  <p>{e.text}</p>
-                  {e.activity.apps.length > 0 && (
-                    <span className="ch-apps">
-                      {e.activity.apps.map((a) =>
-                        icons[a.bundleId] ? (
-                          <img
-                            key={a.bundleId}
-                            src={icons[a.bundleId]}
-                            alt={a.name}
-                            title={a.name}
-                          />
-                        ) : (
-                          <span key={a.bundleId} className="ch-app-name">
-                            {a.name}
-                          </span>
-                        ),
-                      )}
-                    </span>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  className="icon ch-delete"
-                  aria-label={`删除「${e.activity.title}」`}
-                  title="删除这条"
-                  onClick={() =>
-                    api
-                      .deleteMemory(e.id)
-                      .then(loadHistory)
-                      .catch((err: unknown) => setNotice(failure(err)))
-                  }
-                >
-                  <svg
-                    width="13"
-                    height="13"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" />
-                  </svg>
-                </button>
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <p className="muted ch-empty">
-            {perception.enabled
-              ? `还没有历史。每 ${perception.summaryMinutes} 分钟整理一次，用了一会儿电脑后会出现在这里。`
-              : '打开 Computer History 后，你在电脑上做的事会按时间整理在这里。'}
-          </p>
-        )}
-      </div>
       <p className="caption">
         原始记录加密存在本机，48
         小时后自动删除；整理时会把过滤后的活动发给你在「模型」页选的模型，结果写进「记忆」的时间线，推测出的长期信息只进待确认。
@@ -413,68 +265,70 @@ function Choose(props: {
         ‹ Computer History
       </button>
       <h3 className="memory-heading">应用</h3>
-      <ul className="memory-list group">
-        {listed.map((app) => (
-          <li key={app.bundleId} className="memory-item">
-            <div className="memory-text">
-              <span>{app.name}</span>
-              <span className="muted">{app.bundleId}</span>
-            </div>
-            <span className="row-actions">
-              <span className="segmented">
-                {(['excluded', 'local'] as const).map((mode) => (
-                  <button
-                    type="button"
-                    key={mode}
-                    className={app.mode === mode ? 'selected' : ''}
-                    title={
-                      mode === 'local'
-                        ? '照常记录，但整理时不把它发给模型'
-                        : undefined
-                    }
-                    onClick={() => save(move(app, mode))}
-                  >
-                    {mode === 'excluded' ? '不记录' : '只留本机'}
-                  </button>
-                ))}
-              </span>
-              <button
-                type="button"
-                aria-label={`移除 ${app.name}`}
-                onClick={() => save(move(app))}
-              >
-                移除
-              </button>
-            </span>
-          </li>
-        ))}
-        {!listed.length && (
-          <li className="memory-item muted">
-            还没有排除的应用，所有应用都在记录。
-          </li>
-        )}
-      </ul>
-      {addable.length > 0 && (
-        <details className="rules">
-          <summary>
-            添加应用<span className="muted">{addable.length} 个</span>
-          </summary>
-          <ul>
-            {addable.map((app) => (
-              <li key={app.bundleId}>
+      <div className="group">
+        <ul className="memory-list">
+          {listed.map((app) => (
+            <li key={app.bundleId} className="memory-item">
+              <div className="memory-text">
                 <span>{app.name}</span>
-                <span className="muted">{kindLabel[app.kind]}</span>
+                <span className="muted">{app.bundleId}</span>
+              </div>
+              <span className="row-actions">
+                <span className="segmented">
+                  {(['excluded', 'local'] as const).map((mode) => (
+                    <button
+                      type="button"
+                      key={mode}
+                      className={app.mode === mode ? 'selected' : ''}
+                      title={
+                        mode === 'local'
+                          ? '照常记录，但整理时不把它发给模型'
+                          : undefined
+                      }
+                      onClick={() => save(move(app, mode))}
+                    >
+                      {mode === 'excluded' ? '不记录' : '只留本机'}
+                    </button>
+                  ))}
+                </span>
                 <button
                   type="button"
-                  onClick={() => save(move(app, 'excluded'))}
+                  aria-label={`移除 ${app.name}`}
+                  onClick={() => save(move(app))}
                 >
-                  添加
+                  移除
                 </button>
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
+              </span>
+            </li>
+          ))}
+          {!listed.length && (
+            <li className="memory-item muted">
+              还没有排除的应用，所有应用都在记录。
+            </li>
+          )}
+        </ul>
+        {addable.length > 0 && (
+          <details className="rules">
+            <summary>
+              添加应用<span className="muted">{addable.length} 个</span>
+            </summary>
+            <ul>
+              {addable.map((app) => (
+                <li key={app.bundleId}>
+                  <span>{app.name}</span>
+                  <span className="muted">{kindLabel[app.kind]}</span>
+                  <button
+                    type="button"
+                    onClick={() => save(move(app, 'excluded'))}
+                  >
+                    添加
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+      </div>
       <p className="caption">
         默认所有应用都会记录窗口和文字。「不记录」的应用什么都不留，连名字也不记；「只留本机」的应用照常记录，但整理时不发给模型。密码框、浏览器隐私窗口一律不读。
       </p>

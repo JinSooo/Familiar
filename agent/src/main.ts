@@ -467,7 +467,7 @@ async function request(
       requireSender(window, ['chat', 'settings', 'main'])
       return listConversations(z.string().max(200).optional().parse(input))
     case IPC.conversationsOpen:
-      requireSender(window, ['chat', 'pet', 'main'])
+      requireSender(window, ['chat', 'pet', 'main', 'settings'])
       return openConversation(z.string().parse(input))
     case IPC.conversationsDelete: {
       requireSender(window, ['chat', 'main'])
@@ -522,7 +522,7 @@ async function request(
       showChat()
       return
     case IPC.mainOpen:
-      requireSender(window, ['chat', 'pet', 'tray'])
+      requireSender(window, ['chat', 'pet', 'tray', 'settings'])
       // One conversation on screen at a time: the big window takes over from panel and capsule.
       dismissChat()
       emit(IPC.view, 'chat', 'main')

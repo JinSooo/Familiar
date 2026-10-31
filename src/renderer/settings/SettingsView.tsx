@@ -1,16 +1,19 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import type {
+  ChatGptStatus,
   ModelDraft,
   PetSkin,
   PublicSettings,
   SettingsUpdate,
 } from '../../shared'
 import { api } from '../api'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import { MemoryPage } from './MemoryPage'
 import { ExtensionsPage } from './ExtensionsPage'
 import { PerceptionPage } from './PerceptionPage'
 import { TimelinePage } from './TimelinePage'
 import { ShortcutsSection } from './Shortcuts'
+import { presetOf, providerPresets } from '../../shared/presets'
 
 type Page =
   | 'pet'
@@ -128,6 +131,11 @@ export function SettingsView() {
   const [notice, setNotice] = useState('')
   const [clearing, setClearing] = useState(false)
   const [models, setModels] = useState<string[]>()
+  const [chatgpt, setChatgpt] = useState<ChatGptStatus>()
+  /** The relay last saved, so picking 自定义中转 again brings its address back. */
+  const [savedRelay, setSavedRelay] =
+    useState<Pick<PublicSettings['model'], 'protocol' | 'baseURL'>>()
+  const [signingIn, setSigningIn] = useState(false)
   const [probe, setProbe] = useState<{
     kind: 'busy' | 'ok' | 'error'
     text: string
@@ -136,9 +144,20 @@ export function SettingsView() {
     void api.listPets().then(setPets).catch(console.error)
     api
       .getSettings()
-      .then(setSettings)
+      .then((loaded) => {
+        setSettings(loaded)
+        if (loaded.model.protocol !== 'chatgpt' && !presetOf(loaded.model))
+          setSavedRelay(loaded.model)
+      })
       .catch(() => setNotice('无法读取设置'))
   }, [])
+  // The ChatGPT account is read when the form first needs it and after sign-in or sign-out.
+  useEffect(() => {
+    if (settings?.model.protocol === 'chatgpt')
+      api.chatgptStatus().then(setChatgpt).catch(console.error)
+  }, [settings?.model.protocol])
+  // The menu bar panel can ask for a page.
+  useEffect(() => api.onSettingsPage((page) => setTab(page)), [])
   // Rules are added from approval cards, so pick them up whenever the window comes back.
   useEffect(() => {
     const refresh = () => {
@@ -172,6 +191,56 @@ export function SettingsView() {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { apiKeySet, ...rest } = settings.model
     return { ...rest, ...(key ? { apiKey: key } : {}) }
+  }
+  /** The service the form is on: a preset when protocol and address match one, else a relay. */
+  const viaChatGpt = settings.model.protocol === 'chatgpt'
+  const preset = viaChatGpt ? undefined : presetOf(settings.model)
+  const pickProvider = (id: string) => {
+    if (id === 'chatgpt') {
+      setSettings({
+        ...settings,
+        model: { ...settings.model, protocol: 'chatgpt', baseURL: '' },
+      })
+      setProbe(undefined)
+      setModels(undefined)
+      return
+    }
+    const next = providerPresets.find((p) => p.id === id)
+    setSettings({
+      ...settings,
+      model: {
+        ...settings.model,
+        // A custom relay gets back the one last saved; the ChatGPT route has no relay protocol.
+        protocol:
+          next?.protocol ??
+          savedRelay?.protocol ??
+          (settings.model.protocol === 'chatgpt'
+            ? 'openai-compatible'
+            : settings.model.protocol),
+        baseURL: next?.baseURL ?? savedRelay?.baseURL ?? '',
+        ...(next ? { authStyle: 'x-api-key' as const } : {}),
+      },
+    })
+    setProbe(undefined)
+    setModels(undefined)
+  }
+  const chatGptSignIn = () => {
+    setSigningIn(true)
+    api
+      .chatgptSignIn()
+      .then(setChatgpt)
+      .catch((e: unknown) => {
+        // Cancelling is the user's choice, not a failure.
+        if (failure(e) !== '登录已取消')
+          setProbe({ kind: 'error', text: failure(e) })
+      })
+      .finally(() => setSigningIn(false))
+  }
+  const chatGptSignOut = () => {
+    api
+      .chatgptSignOut()
+      .then(() => setChatgpt({ signedIn: false }))
+      .catch((e: unknown) => setProbe({ kind: 'error', text: failure(e) }))
   }
   const failure = (e: unknown) =>
     typeof e === 'string' ? e : e instanceof Error ? e.message : '请求失败'
@@ -225,7 +294,10 @@ export function SettingsView() {
       },
     }
     try {
-      setSettings(await api.saveSettings(update))
+      const saved = await api.saveSettings(update)
+      setSettings(saved)
+      if (saved.model.protocol !== 'chatgpt' && !presetOf(saved.model))
+        setSavedRelay(saved.model)
       setKey('')
       setNotice('已保存')
     } catch {
@@ -339,29 +411,95 @@ export function SettingsView() {
           </section>
           <section hidden={tab !== 'model'} className="group">
             <label>
-              模型协议
+              服务商
               <select
-                value={settings.model.protocol}
-                onChange={(e) =>
-                  model(
-                    'protocol',
-                    e.target.value as PublicSettings['model']['protocol'],
-                  )
-                }
+                value={viaChatGpt ? 'chatgpt' : (preset?.id ?? 'custom')}
+                onChange={(e) => pickProvider(e.target.value)}
               >
-                <option value="openai-compatible">OpenAI Compatible</option>
-                <option value="openai-responses">OpenAI Responses</option>
-                <option value="anthropic">Anthropic Messages</option>
+                {providerPresets.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+                <option value="chatgpt">ChatGPT 登录</option>
+                <option value="custom">自定义中转</option>
               </select>
             </label>
-            <label>
-              Base URL
-              <input
-                value={settings.model.baseURL}
-                placeholder="https://api.example.com/v1"
-                onChange={(e) => model('baseURL', e.target.value)}
-              />
-            </label>
+            {!preset && !viaChatGpt && (
+              <>
+                <label>
+                  模型协议
+                  <select
+                    value={settings.model.protocol}
+                    onChange={(e) =>
+                      model(
+                        'protocol',
+                        e.target.value as PublicSettings['model']['protocol'],
+                      )
+                    }
+                  >
+                    <option value="openai-compatible">OpenAI Compatible</option>
+                    <option value="openai-responses">OpenAI Responses</option>
+                    <option value="anthropic">Anthropic Messages</option>
+                  </select>
+                </label>
+                <label>
+                  Base URL
+                  <input
+                    value={settings.model.baseURL}
+                    placeholder="https://api.example.com/v1"
+                    onChange={(e) => model('baseURL', e.target.value)}
+                  />
+                </label>
+              </>
+            )}
+            {viaChatGpt && (
+              <div className="setting-row">
+                <div className="ch-label">
+                  <span>使用你的 ChatGPT 套餐</span>
+                  <span
+                    className={
+                      chatgpt?.signedIn && chatgpt.planUsage === false
+                        ? 'warn'
+                        : 'muted'
+                    }
+                  >
+                    {signingIn
+                      ? '在浏览器里完成登录…'
+                      : chatgpt?.signedIn
+                        ? `${chatgpt.email || '已登录'}${chatgpt.planUsage === false ? ' · 没有授权使用套餐额度，请重新登录并同意' : ''}`
+                        : '未登录'}
+                  </span>
+                </div>
+                <span className="row-actions">
+                  {chatgpt?.signedIn && !signingIn && (
+                    <button
+                      type="button"
+                      className="link"
+                      onClick={() =>
+                        void openUrl('https://chatgpt.com/settings/usage')
+                      }
+                    >
+                      管理用量
+                    </button>
+                  )}
+                  {signingIn ? (
+                    <button type="button" onClick={() => api.chatgptCancel()}>
+                      取消
+                    </button>
+                  ) : (
+                    <button type="button" onClick={chatGptSignIn}>
+                      {chatgpt?.signedIn ? '重新登录' : '使用 ChatGPT 登录'}
+                    </button>
+                  )}
+                  {chatgpt?.signedIn && !signingIn && (
+                    <button type="button" onClick={chatGptSignOut}>
+                      退出
+                    </button>
+                  )}
+                </span>
+              </div>
+            )}
             <label>
               模型名称
               <input
@@ -385,45 +523,62 @@ export function SettingsView() {
                 <option key={id} value={id} />
               ))}
             </datalist>
-            <label>
-              API Key
-              <input
-                type="password"
-                autoComplete="new-password"
-                placeholder={
-                  settings.model.apiKeySet ? '已保存在钥匙串' : '尚未设置'
-                }
-                value={key}
-                onChange={(e) => setKey(e.target.value)}
-              />
-            </label>
-            {settings.model.protocol === 'anthropic' && (
+            {!viaChatGpt && (
               <label>
-                认证方式
-                <select
-                  value={settings.model.authStyle}
-                  onChange={(e) =>
-                    model(
-                      'authStyle',
-                      e.target.value as PublicSettings['model']['authStyle'],
-                    )
+                <span>
+                  API Key
+                  {preset && (
+                    <button
+                      type="button"
+                      className="link key-link"
+                      onClick={() => void openUrl(preset.keyURL)}
+                    >
+                      获取 Key
+                    </button>
+                  )}
+                </span>
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  placeholder={
+                    settings.model.apiKeySet ? '已保存在钥匙串' : '尚未设置'
                   }
-                >
-                  <option value="x-api-key">x-api-key</option>
-                  <option value="bearer">Bearer</option>
-                </select>
+                  value={key}
+                  onChange={(e) => setKey(e.target.value)}
+                />
               </label>
             )}
+            {!preset &&
+              !viaChatGpt &&
+              settings.model.protocol === 'anthropic' && (
+                <label>
+                  认证方式
+                  <select
+                    value={settings.model.authStyle}
+                    onChange={(e) =>
+                      model(
+                        'authStyle',
+                        e.target.value as PublicSettings['model']['authStyle'],
+                      )
+                    }
+                  >
+                    <option value="x-api-key">x-api-key</option>
+                    <option value="bearer">Bearer</option>
+                  </select>
+                </label>
+              )}
             <div className="setting-row">
               <span>连接</span>
               <span className="row-actions">
-                <button
-                  type="button"
-                  aria-disabled={probe?.kind === 'busy'}
-                  onClick={fetchModels}
-                >
-                  获取模型列表
-                </button>
+                {!viaChatGpt && (
+                  <button
+                    type="button"
+                    aria-disabled={probe?.kind === 'busy'}
+                    onClick={fetchModels}
+                  >
+                    获取模型列表
+                  </button>
+                )}
                 <button
                   type="button"
                   aria-disabled={probe?.kind === 'busy'}
@@ -628,6 +783,23 @@ export function SettingsView() {
                     </button>
                   ))}
                 </div>
+              </div>
+              <div className="setting-row">
+                <span>面板透明度</span>
+                <input
+                  type="range"
+                  min={50}
+                  max={100}
+                  step={5}
+                  aria-label="面板透明度"
+                  value={Math.round(settings.panelOpacity * 100)}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      panelOpacity: Number(e.target.value) / 100,
+                    })
+                  }
+                />
               </div>
               <div className="setting-row">
                 <span title="等你允许或输入框里有草稿时不收；面板里按 Esc 也能收起">

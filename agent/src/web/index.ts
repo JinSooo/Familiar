@@ -3,7 +3,9 @@ import { createOpenAI } from '@ai-sdk/openai'
 import { generateText, tool, type ToolSet } from 'ai'
 import { z } from 'zod'
 import type { Settings, Source } from '../../../src/shared'
+import { chatGptResource } from '../agent/chatgpt-auth'
 import { createRelayFetch, systemFetch } from '../agent/fetch'
+import { chatGptFetch } from '../agent/provider'
 import { fetchPage } from './page'
 
 /**
@@ -17,9 +19,13 @@ export async function searchWeb(
   query: string,
   signal?: AbortSignal,
 ): Promise<{ answer: string; sources: Source[] }> {
-  const fetch = createRelayFetch(config)
-  const baseURL = config.baseURL.trim() || undefined
-  const apiKey = config.apiKey.trim()
+  const viaChatGpt = config.protocol === 'chatgpt'
+  const fetch = viaChatGpt ? chatGptFetch(config) : createRelayFetch(config)
+  const baseURL = viaChatGpt
+    ? chatGptResource
+    : config.baseURL.trim() || undefined
+  // The ChatGPT login adds its own token to each request; the key is a placeholder.
+  const apiKey = viaChatGpt ? 'chatgpt-login' : config.apiKey.trim()
   if (!config.model.trim() || !apiKey)
     throw new Error('请先在设置里填写模型和 API Key')
   const common = {

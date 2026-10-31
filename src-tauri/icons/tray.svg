@@ -10,6 +10,6 @@
   </defs>
   <g mask="url(#eyes)" fill="black">
     <rect x="3" y="10" width="30" height="23" rx="10"/>
-    <path d="M4 18 L6 3 L16 11 Z M32 18 L30 3 L20 11 Z"/>
+    <path d="M5.5 18 L7 5.5 L15 11.5 Z M30.5 18 L29 5.5 L21 11.5 Z" stroke="black" stroke-width="3" stroke-linejoin="round"/>
   </g>
 </svg>

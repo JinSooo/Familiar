@@ -4,6 +4,7 @@ import { migrateLegacyWorkspace } from './migrate'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
+import { optionalArg } from './ipc-args'
 import {
   IPC,
   settingsSchema,
@@ -31,6 +32,12 @@ import {
 } from './session'
 import { runAgent, resolveApproval } from './agent'
 import { listModels, testModel } from './agent/probe'
+import {
+  cancelSignIn,
+  chatGptStatus,
+  signIn as chatGptSignIn,
+  signOut as chatGptSignOut,
+} from './agent/chatgpt-auth'
 import { listPets, currentSkin, importCodexPets } from './pets'
 import {
   clearConversations,
@@ -84,6 +91,7 @@ import {
   conversationsDir,
   refreshProxy,
   idleSeconds,
+  openExternal,
   reveal,
 } from './system'
 
@@ -434,6 +442,8 @@ async function request(
         perception: getSettings().perception,
       })
       updatePet()
+      broadcast(IPC.appearance, saved.panelOpacity)
+      ui({ type: 'panel-opacity', value: saved.panelOpacity })
       publishSession()
       rebuildTray()
       sendShortcuts()
@@ -465,7 +475,7 @@ async function request(
       return
     case IPC.conversationsList:
       requireSender(window, ['chat', 'settings', 'main'])
-      return listConversations(z.string().max(200).optional().parse(input))
+      return listConversations(optionalArg(z.string().max(200)).parse(input))
     case IPC.conversationsOpen:
       requireSender(window, ['chat', 'pet', 'main', 'settings'])
       return openConversation(z.string().parse(input))
@@ -513,6 +523,19 @@ async function request(
     case IPC.modelTest:
       requireSender(window, ['settings'])
       return testModel(modelDraft.parse(input))
+    case IPC.chatgptStatus:
+      requireSender(window, ['settings', 'panel'])
+      return chatGptStatus()
+    case IPC.chatgptSignIn:
+      requireSender(window, ['settings'])
+      return chatGptSignIn(openExternal)
+    case IPC.chatgptCancel:
+      requireSender(window, ['settings'])
+      cancelSignIn()
+      return
+    case IPC.chatgptSignOut:
+      requireSender(window, ['settings'])
+      return chatGptSignOut()
     case IPC.chatDismiss:
       requireSender(window, ['chat'])
       dismissChat()
@@ -589,9 +612,12 @@ async function request(
         else showChat()
       }
       return
-    case IPC.settingsOpen:
+    case IPC.settingsOpen: {
+      const page = optionalArg(z.enum(['timeline'])).parse(input)
+      if (page) emit(IPC.settingsPage, page, 'settings')
       ui({ type: 'show-settings' })
       return
+    }
     case IPC.capsule: {
       requireSender(window, ['pet'])
       const open = z.boolean().parse(input)
@@ -643,6 +669,7 @@ async function request(
       return
     case IPC.ready:
       requireSender(window, ['pet', 'chat', 'settings', 'main', 'panel'])
+      emit(IPC.appearance, getSettings().panelOpacity, window as WindowLabel)
       if (window === 'panel') {
         emit(IPC.petState, state, 'panel')
         emit(IPC.petSkin, currentSkin(getSettings().pet.id), 'panel')
@@ -675,7 +702,7 @@ async function request(
     case IPC.memoryConfirm: {
       requireSender(window, ['settings'])
       const id = z.string().parse(input)
-      const text = z.string().trim().min(1).max(300).optional().parse(args[1])
+      const text = optionalArg(z.string().trim().min(1).max(300)).parse(args[1])
       await memoryEdit(async ({ store }) => {
         const entry = await store.get(id)
         await store.confirm(id, text)
@@ -741,7 +768,7 @@ async function request(
       return shortcutFailures
     case IPC.extensionsGet:
       requireSender(window, ['settings'])
-      return extensions(z.boolean().optional().parse(input) ?? false)
+      return extensions(optionalArg(z.boolean()).parse(input) ?? false)
     case IPC.mcpAccess: {
       requireSender(window, ['settings'])
       const name = z.string().parse(input)
@@ -841,7 +868,7 @@ async function request(
       requireSender(window, ['tray', 'settings', 'panel'])
       const settings = publicSettings()
       const paused =
-        z.boolean().optional().parse(input) ?? !settings.perception.paused
+        optionalArg(z.boolean()).parse(input) ?? !settings.perception.paused
       await saveSettings({
         ...settings,
         model: { ...settings.model, apiKey: undefined },
@@ -1001,6 +1028,7 @@ async function start() {
   updatePet()
   rebuildTray()
   sendShortcuts()
+  ui({ type: 'panel-opacity', value: getSettings().panelOpacity })
   startPerception((status) => broadcast(IPC.perceptionChanged, status))
   const proxyTimer = setInterval(() => {
     void refreshProxy()

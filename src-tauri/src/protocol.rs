@@ -51,6 +51,10 @@ pub enum UiAction {
         #[serde(default)]
         perception: String,
     },
+    /// How opaque the chat panel and the menu bar panel windows are (0.5 to 1).
+    PanelOpacity {
+        value: f64,
+    },
     Quit,
 }
 

@@ -18,6 +18,8 @@ const today = () => {
   const d = new Date()
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
+/** Rows the panel shows before pointing to the timeline page. */
+const shownCount = 6
 const clock = (at: number) => new Date(at).toTimeString().slice(0, 5)
 /** A timeline line's time and title: activity lines carry them, conversation lines start with the time. */
 function view(item: MemoryItem): { time: string; title: string } {
@@ -141,7 +143,7 @@ export function TrayPanel() {
       </div>
       <h3 className="tray-heading">今天</h3>
       <ol className="tray-list">
-        {items?.map((item) => {
+        {items?.slice(0, shownCount).map((item) => {
           const v = view(item)
           return (
             <li key={item.id}>
@@ -170,6 +172,15 @@ export function TrayPanel() {
           <li className="tray-empty muted">还没有整理出的活动</li>
         )}
       </ol>
+      {items && items.length > shownCount && (
+        <button
+          type="button"
+          className="link tray-more"
+          onClick={() => api.openSettings('timeline')}
+        >
+          还有 {items.length - shownCount} 条 · 在设置里查看
+        </button>
+      )}
     </main>
   )
 }

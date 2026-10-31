@@ -39,7 +39,9 @@ impl Agent {
             id,
             Pending {
                 sender,
-                deadline: (channel != "agent:run")
+                // A conversation turn and a ChatGPT sign-in (the user is in the browser) take as long
+                // as they take; the agent times those out itself.
+                deadline: (!["agent:run", "chatgpt:sign-in"].contains(&channel))
                     .then(|| Instant::now() + Duration::from_secs(30)),
             },
         );
@@ -329,9 +331,15 @@ mod tests {
         let state = Agent::default();
         let (run, mut response) = state.enqueue("pet".into(), "agent:run", vec![]);
         let (short, _) = state.enqueue("chat".into(), "session:get", vec![]);
+        // Regression: a ChatGPT sign-in failed after 30s while the user was still in the browser.
+        let (sign_in, _) = state.enqueue("settings".into(), "chatgpt:sign-in", vec![]);
         let run_id = run["id"].as_u64().unwrap();
         let short_id = short["id"].as_u64().unwrap();
+        let sign_in_id = sign_in["id"].as_u64().unwrap();
         assert!(state.pending.lock().unwrap()[&run_id].deadline.is_none());
+        assert!(state.pending.lock().unwrap()[&sign_in_id]
+            .deadline
+            .is_none());
         assert!(state.pending.lock().unwrap()[&short_id].deadline.is_some());
         state.resolve(run_id, false, None, Some("failed".into()));
         assert_eq!(response.try_recv().unwrap(), Err("failed".into()));

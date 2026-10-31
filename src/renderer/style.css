@@ -7,13 +7,23 @@
   --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
   --text: #23211e;
   --muted: #77736c;
-  --glass: rgba(252, 250, 246, 0.94);
-  --surface: #f4f2ee;
+  --glass: color-mix(
+    in srgb,
+    rgb(252 250 246) calc(var(--panel-opacity) * 94%),
+    transparent
+  );
+  --surface: color-mix(
+    in srgb,
+    #f4f2ee calc(var(--panel-opacity) * 100%),
+    transparent
+  );
   --group: #fffefc;
   --line: rgba(60, 50, 40, 0.11);
   --settings: #f7f5f1;
   --sidebar: #efece6;
   --hover: rgba(60, 50, 40, 0.06);
+  /* Set from settings by every window; 1 is fully opaque. */
+  --panel-opacity: 1;
   /* Status colors, one of each. */
   --red: #cf4a3f;
   --orange: #b9770e;
@@ -29,8 +39,16 @@
     --accent: #7873e6;
     --text: #ecebe8;
     --muted: #a19d96;
-    --glass: rgba(33, 32, 30, 0.95);
-    --surface: #1d1c1a;
+    --glass: color-mix(
+      in srgb,
+      rgb(33 32 30) calc(var(--panel-opacity) * 95%),
+      transparent
+    );
+    --surface: color-mix(
+      in srgb,
+      #1d1c1a calc(var(--panel-opacity) * 100%),
+      transparent
+    );
     --group: #2a2926;
     --line: rgba(255, 250, 240, 0.1);
     --settings: #22211f;
@@ -475,8 +493,12 @@ summary:focus-visible {
   color: var(--accent);
   font-weight: 500;
 }
-.settings-shell aside button[aria-expanded] {
+/* Every top-level item reads the same, with or without sub-pages; only sub-pages are quieter. */
+.settings-shell aside .nav-item:not(.child) {
   color: var(--text);
+}
+.settings-shell aside .nav-item.selected {
+  color: var(--accent);
 }
 .nav-chevron {
   margin-left: auto;
@@ -1649,7 +1671,11 @@ form.setting-row input {
   flex-direction: column;
   padding: 14px 12px 8px;
   border-radius: 12px;
-  background: color-mix(in srgb, var(--settings) 82%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--settings) calc(var(--panel-opacity) * 82%),
+    transparent
+  );
   box-shadow: inset 0 0 0 1px var(--line);
 }
 .tray-head {
@@ -1674,8 +1700,8 @@ form.setting-row input {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 12px 0 4px;
-  padding: 8px 10px;
+  margin: 16px 0 6px;
+  padding: 10px 12px;
   border-radius: var(--radius-card);
   background: var(--group);
   border: 1px solid var(--line);
@@ -1694,7 +1720,7 @@ form.setting-row input {
   background: var(--orange);
 }
 .tray-heading {
-  margin: 12px 4px 4px;
+  margin: 18px 4px 6px;
   font-size: 11px;
   font-weight: 600;
   color: var(--muted);
@@ -1710,9 +1736,9 @@ form.setting-row input {
 .tray-list li {
   display: grid;
   grid-template-columns: 38px 1fr auto;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 4px;
+  align-items: start;
+  gap: 10px;
+  padding: 10px 6px;
   border-radius: var(--radius-control);
   font-size: 12.5px;
 }
@@ -1725,13 +1751,31 @@ form.setting-row input {
   font-variant-numeric: tabular-nums;
 }
 .tray-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.4;
 }
+.tray-list time {
+  padding-top: 2px;
+}
+.tray-more {
+  align-self: flex-start;
+  margin: 4px 6px 4px;
+  padding: 0;
+  font-size: 12px;
+}
+/* App icons only show while the row is hovered; the list stays quiet. */
 .tray-apps {
   display: flex;
   gap: 3px;
+  padding-top: 2px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.tray-list li:hover .tray-apps {
+  opacity: 1;
 }
 .tray-apps img {
   width: 14px;
@@ -1740,4 +1784,17 @@ form.setting-row input {
 .tray-list li.tray-empty {
   display: block;
   padding: 8px 4px;
+}
+/* Settings > 宠物: the opacity slider. */
+.settings input[type='range'] {
+  width: 160px;
+  height: auto;
+  padding: 0;
+  background: none;
+  box-shadow: none;
+  accent-color: var(--accent);
+}
+/* Settings > 模型: the link beside API Key to where keys are made. */
+.settings .key-link {
+  margin-left: 10px;
 }

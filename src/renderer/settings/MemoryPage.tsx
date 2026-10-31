@@ -2,7 +2,11 @@ import { Fragment, useCallback, useEffect, useState } from 'react'
 import type { MemoryItem } from '../../shared'
 import { api } from '../api'
 
-const targetLabel = { profile: '画像', habits: '习惯', topic: '主题' } as const
+const targetLabel = {
+  profile: '画像',
+  habits: '习惯',
+  topic: '主题',
+} as const
 const failure = (e: unknown) =>
   typeof e === 'string' ? e : e instanceof Error ? e.message : '操作失败'
 /** Characters past which a memory shows three lines until opened. */
@@ -141,13 +145,13 @@ export function MemoryPage({ section }: { section: MemorySection }) {
           )}
           {actions === 'pending' ? (
             <span className="muted">
-              推测 · 归入{targetLabel[item.target ?? 'profile']}
-              {item.targetTopic ? `「${item.targetTopic}」` : ''} · 把握{' '}
-              {Math.round((item.confidence ?? 0) * 100)}%
+              {item.target === 'topic' && item.targetTopic
+                ? `确认后记到主题「${item.targetTopic}」`
+                : `确认后记到${targetLabel[item.target ?? 'profile']}`}
+              {item.evidence ? ` · 来自「${item.evidence}」` : ''}
               {item.seen && item.seen > 1
-                ? ` · ${item.seen} 个对话里出现过`
+                ? ` · ${item.seen} 个对话里都出现过`
                 : ''}
-              {item.evidence ? ` · 依据「${item.evidence}」` : ''}
             </span>
           ) : (
             item.at && (
@@ -162,9 +166,11 @@ export function MemoryPage({ section }: { section: MemorySection }) {
           {actions === 'pending' && (
             <button
               type="button"
+              className="primary"
+              title="这条判断没错，记下来"
               onClick={() => act(api.confirmMemory(item.id))}
             >
-              对
+              记下
             </button>
           )}
           <button
@@ -175,7 +181,7 @@ export function MemoryPage({ section }: { section: MemorySection }) {
           </button>
           <button
             type="button"
-            title={actions === 'pending' ? '这条判断不对，删掉' : '删除这条'}
+            title={actions === 'pending' ? '这条判断不对，丢掉' : '删除这条'}
             onClick={() => remove(item)}
           >
             {actions === 'pending' ? '不对' : '删除'}
@@ -262,7 +268,12 @@ export function MemoryPage({ section }: { section: MemorySection }) {
         </div>
       )}
       {section === 'pending' &&
-        group('它对我的判断', pending, 'pending', '没有待确认的判断。')}
+        group(
+          '从对话和电脑活动里猜的，点「记下」才会记住',
+          pending,
+          'pending',
+          '没有待确认的判断。',
+        )}
       {section === 'kept' && (
         <>
           {group(

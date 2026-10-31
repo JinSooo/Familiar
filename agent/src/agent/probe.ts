@@ -17,6 +17,7 @@ const defaultBase: Record<Settings['model']['protocol'], string> = {
   'openai-compatible': '',
   'openai-responses': 'https://api.openai.com/v1',
   anthropic: 'https://api.anthropic.com/v1',
+  chatgpt: 'https://api.openai.com/v1',
 }
 
 export async function listModels(draft: ModelDraft): Promise<string[]> {

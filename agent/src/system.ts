@@ -21,6 +21,11 @@ export async function moveToTrash(path: string): Promise<void> {
 export async function reveal(path: string): Promise<void> {
   await exec('/usr/bin/open', [path])
 }
+/** Opens a web page in the default browser; only https addresses. */
+export async function openExternal(url: string): Promise<void> {
+  if (!/^https:\/\//.test(url)) throw new Error('只能打开 https 地址')
+  await exec('/usr/bin/open', [url])
+}
 export const resourcesDir = resolve(
   process.env.FAMILIAR_RESOURCES_DIR ?? 'resources',
 )

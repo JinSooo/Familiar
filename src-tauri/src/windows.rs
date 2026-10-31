@@ -14,7 +14,7 @@ tauri_panel! {
     panel!(TrayPanel { config: { can_become_key_window: true } })
 }
 
-const PANEL_SIZE: (f64, f64) = (320., 440.);
+const PANEL_SIZE: (f64, f64) = (320., 400.);
 /// When the menu bar panel last hid itself on losing focus, in ms since the epoch. A click on the
 /// tray icon while the panel is open first takes its focus away; that click must not reopen it.
 static PANEL_HIDDEN_AT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -498,6 +498,17 @@ pub fn action(app: &tauri::AppHandle, action: crate::protocol::UiAction) -> taur
             size,
             perception,
         } => crate::tray::rebuild(app, &pets, &current_pet, &size, &perception)?,
+        UiAction::PanelOpacity { value } => {
+            if value.is_finite() {
+                let value = value.clamp(0.5, 1.);
+                // The windows' own blur material sits under the page, so the window itself fades.
+                for label in ["chat", "panel"] {
+                    if let Ok(panel) = app.get_webview_panel(label) {
+                        panel.set_alpha_value(value);
+                    }
+                }
+            }
+        }
         UiAction::Quit => app.exit(0),
     }
     Ok(())

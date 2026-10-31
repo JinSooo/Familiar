@@ -3,7 +3,7 @@ export const settingsSchema = z.object({
   model: z
     .object({
       protocol: z
-        .enum(['openai-compatible', 'openai-responses', 'anthropic'])
+        .enum(['openai-compatible', 'openai-responses', 'anthropic', 'chatgpt'])
         .default('openai-compatible'),
       baseURL: z.string().default(''),
       apiKey: z.string().default(''),
@@ -39,6 +39,8 @@ export const settingsSchema = z.object({
   workspaceSnapshots: z.boolean().default(true),
   /** Close the chat panel and capsule when the user clicks another app. */
   chatAutoHide: z.boolean().default(true),
+  /** How opaque the floating panels (capsule, bubble, chat panel, menu bar panel) are, 0.5 to 1. */
+  panelOpacity: z.number().min(0.5).max(1).default(1),
   /** Global shortcuts as Tauri accelerators ("Alt+Space"); empty means none. */
   shortcuts: z
     .object({
@@ -79,6 +81,13 @@ export type SettingsUpdate = Omit<Settings, 'model'> & {
 }
 /** Model settings as edited in the settings window; no apiKey means the saved one. */
 export type ModelDraft = SettingsUpdate['model']
+/** The ChatGPT account the app is signed in with (docs/design.md §4). */
+export interface ChatGptStatus {
+  signedIn: boolean
+  email?: string
+  /** Whether the user granted use of the ChatGPT plan, not just identity. */
+  planUsage?: boolean
+}
 export interface ModelTestResult {
   ms: number
   reply: string
@@ -180,6 +189,8 @@ export const IPC = {
   sessionNew: 'session:new',
   capsule: 'overlay:capsule',
   settingsOpen: 'settings:open',
+  appearance: 'appearance:changed',
+  settingsPage: 'settings:page',
   // Tauri migration (see protocol.ts): Rust → pet webview cursor position for hit testing.
   petCursor: 'pet:cursor',
   // agent → pet webview: drag direction for the running-left/right rows.
@@ -198,6 +209,10 @@ export const IPC = {
   modelsList: 'models:list',
   dirRuleRemove: 'rules:remove',
   modelTest: 'model:test',
+  chatgptStatus: 'chatgpt:status',
+  chatgptSignIn: 'chatgpt:sign-in',
+  chatgptCancel: 'chatgpt:cancel',
+  chatgptSignOut: 'chatgpt:sign-out',
   chatOpen: 'chat:open',
   /** Chat panel → agent: close the panel and the capsule together (Esc). */
   chatDismiss: 'chat:dismiss',
@@ -241,7 +256,15 @@ export interface FamiliarAPI {
   getSession(): Promise<Session>
   onSession(callback: (session: Session) => void): () => void
   newSession(): void
-  openSettings(): void
+  /** Opens the settings window, on a page when one is named. */
+  openSettings(page?: 'timeline'): void
+  onSettingsPage(callback: (page: 'timeline') => void): () => void
+  chatgptStatus(): Promise<ChatGptStatus>
+  /** Opens the browser for sign-in and resolves once the user has finished there. */
+  chatgptSignIn(): Promise<ChatGptStatus>
+  chatgptCancel(): void
+  chatgptSignOut(): Promise<void>
+  onAppearance(callback: (panelOpacity: number) => void): () => void
   capsule(open: boolean): void
   onCapsule(callback: (open: boolean) => void): () => void
   stop(): void

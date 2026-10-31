@@ -7,6 +7,12 @@ import { api } from './api'
 import './style.css'
 const kind = new URLSearchParams(location.search).get('window')
 document.body.className = `${kind}-window`
+api.onAppearance((opacity) =>
+  document.documentElement.style.setProperty(
+    '--panel-opacity',
+    String(opacity),
+  ),
+)
 createRoot(document.getElementById('root')!).render(
   kind === 'pet' ? (
     <Overlay />

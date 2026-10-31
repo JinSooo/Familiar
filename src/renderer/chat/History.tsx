@@ -152,9 +152,12 @@ export function History({
           {query ? '没有找到相关对话' : '还没有对话记录'}
         </p>
       )}
-      <button className="link" onClick={() => api.revealConversations()}>
-        在 Finder 中打开对话文件夹
-      </button>
+      {/* The big window's sidebar stays a list of conversations; the folder is on the 隐私 page. */}
+      {!compact && (
+        <button className="link" onClick={() => api.revealConversations()}>
+          在 Finder 中打开对话文件夹
+        </button>
+      )}
     </section>
   )
 }

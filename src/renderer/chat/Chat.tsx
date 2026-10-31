@@ -146,7 +146,7 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
                   <p>和{name}说句话…</p>
                   {session.previous && (
                     <button
-                      className="link"
+                      className="resume"
                       onClick={() => {
                         if (!session.previous) return
                         setOpenError('')
@@ -157,7 +157,10 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
                           )
                       }}
                     >
-                      继续上次：{session.previous.title}
+                      <span className="muted">继续上次</span>
+                      <span className="resume-title">
+                        {session.previous.title}
+                      </span>
                     </button>
                   )}
                   {openError && <p className="error">{openError}</p>}

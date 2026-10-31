@@ -11,6 +11,15 @@
   --group: #fff;
   --line: rgba(0, 0, 0, 0.12);
   --settings: rgba(245, 245, 247, 0.55);
+  /* Status colors: the system palette, one of each. */
+  --red: #d94b47;
+  --orange: #c27c0e;
+  --green: #2e9b55;
+  /* Corners: controls, cards, and floating things (capsule, bubble, panel). */
+  --radius-control: 7px;
+  --radius-card: 12px;
+  --radius-float: 16px;
+  --focus: color-mix(in srgb, var(--accent) 55%, transparent);
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -21,6 +30,9 @@
     --group: #303032;
     --line: rgba(255, 255, 255, 0.14);
     --settings: rgba(36, 36, 38, 0.55);
+    --red: #ff6961;
+    --orange: #ffb340;
+    --green: #4cd964;
   }
 }
 * {
@@ -49,7 +61,7 @@ select {
 button {
   cursor: pointer;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   padding: 6px 12px;
   background: var(--group);
   box-shadow: 0 0 0 0.5px var(--line);
@@ -69,8 +81,13 @@ input:focus-visible,
 textarea:focus-visible,
 select:focus-visible,
 summary:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline: 1.5px solid var(--focus);
+  outline-offset: 1px;
+}
+/* A selected sidebar item already shows where you are; no second frame on top. */
+.settings-shell aside button.selected:focus-visible {
+  outline-color: color-mix(in srgb, white 45%, transparent);
+  outline-offset: -2px;
 }
 .primary {
   background: var(--accent);
@@ -80,7 +97,7 @@ summary:focus-visible {
   color: var(--muted);
 }
 .error {
-  color: #d94b47;
+  color: var(--red);
   font-size: 12px;
   overflow-wrap: anywhere;
 }
@@ -234,7 +251,7 @@ summary:focus-visible {
   bottom: calc(var(--pet-height) + 16px);
   max-width: min(280px, calc(100% - 32px));
   padding: 10px 14px;
-  border-radius: 16px;
+  border-radius: var(--radius-float);
   background: var(--glass);
   backdrop-filter: blur(24px) saturate(1.6);
   font-size: 15px;
@@ -295,7 +312,7 @@ summary:focus-visible {
   height: 100%;
   display: flex;
   flex-direction: column;
-  border-radius: 16px;
+  border-radius: var(--radius-float);
   overflow: hidden;
   background: var(--surface);
   box-shadow: inset 0 0 0 0.5px var(--line);
@@ -334,7 +351,7 @@ summary:focus-visible {
   align-self: flex-end;
   max-width: 78%;
   padding: 7px 12px;
-  border-radius: 16px;
+  border-radius: var(--radius-float);
   background: var(--accent);
   color: white;
 }
@@ -377,10 +394,10 @@ summary:focus-visible {
 }
 .approval-detail code {
   padding: 6px 8px;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   background: color-mix(in srgb, var(--text) 7%, transparent);
   font-family: ui-monospace, Menlo, monospace;
-  font-size: 11.5px;
+  font-size: 11px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   max-height: 160px;
@@ -388,7 +405,7 @@ summary:focus-visible {
 }
 .approval {
   padding: 12px;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: var(--group);
   box-shadow: 0 0 0 0.5px var(--line);
   flex-shrink: 0;
@@ -428,7 +445,7 @@ summary:focus-visible {
   height: 28px;
   margin: 1px 0;
   padding: 0 6px;
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   background: transparent;
   box-shadow: none;
   font-size: 13px;
@@ -440,7 +457,7 @@ summary:focus-visible {
 .settings-shell aside .tile {
   width: 20px;
   height: 20px;
-  border-radius: 5px;
+  border-radius: var(--radius-control);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -473,7 +490,7 @@ summary:focus-visible {
 }
 .group {
   background: var(--group);
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   box-shadow: 0 0 0 0.5px var(--line);
   margin-bottom: 16px;
   padding: 0 12px;
@@ -496,7 +513,7 @@ summary:focus-visible {
 .settings select,
 .settings textarea {
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-control);
   padding: 4px 6px;
   background: var(--settings);
   box-shadow: inset 0 0 0 0.5px var(--line);
@@ -517,7 +534,7 @@ summary:focus-visible {
   flex-direction: column;
   align-items: center;
   padding: 10px;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: var(--group);
 }
 .pet-card.selected {
@@ -532,13 +549,14 @@ summary:focus-visible {
 .segmented {
   display: flex;
   gap: 2px;
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   background: var(--settings);
   padding: 2px;
 }
 .segmented button {
   height: 22px;
   padding: 0 14px;
+  /* Nests inside the 7px track. */
   border-radius: 5px;
   font-size: 12px;
   box-shadow: none;
@@ -692,13 +710,13 @@ summary:focus-visible {
 .composer:focus-within {
   box-shadow:
     0 0 0 0.5px var(--line),
-    0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
+    0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 .composer.mini:focus-within {
   box-shadow:
     0 8px 24px #0002,
     0 0 0 0.5px var(--line),
-    0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
+    0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 /* Above the reopened capsule: one line of where the conversation stands. */
 .context-strip {
@@ -710,7 +728,7 @@ summary:focus-visible {
   align-items: center;
   gap: 2px;
   padding: 2px 2px 2px 4px;
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   background: var(--glass);
   backdrop-filter: blur(24px) saturate(1.6);
   box-shadow:
@@ -723,7 +741,7 @@ summary:focus-visible {
   background: transparent;
   box-shadow: none;
   padding: 4px 8px;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
 }
 .context-main {
   min-width: 0;
@@ -760,7 +778,7 @@ summary:focus-visible {
   width: 100%;
   height: 30px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   padding: 0 10px;
   background: var(--group);
   box-shadow: 0 0 0 0.5px var(--line);
@@ -781,7 +799,7 @@ summary:focus-visible {
   display: flex;
   align-items: center;
   gap: 6px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
 }
 .history-item:hover {
   background: color-mix(in srgb, var(--group) 70%, transparent);
@@ -813,8 +831,8 @@ summary:focus-visible {
 .history .current {
   margin-left: 6px;
   padding: 0 5px;
-  border-radius: 4px;
-  font-size: 10px;
+  border-radius: var(--radius-control);
+  font-size: 11px;
   color: var(--accent);
   box-shadow: inset 0 0 0 0.5px var(--accent);
 }
@@ -848,7 +866,7 @@ summary:focus-visible {
   font-size: 12px;
 }
 .danger {
-  background: #d94b47;
+  background: var(--red);
   color: white;
 }
 .history > .link {
@@ -875,17 +893,17 @@ summary:focus-visible {
   margin-top: -8px;
 }
 .settings .caption.probe.failed {
-  color: #d94b47;
+  color: var(--red);
 }
 .settings .caption.probe.warn {
-  color: #c27c0e;
+  color: var(--orange);
 }
 .settings button[aria-disabled='true'] {
   opacity: 0.4;
   cursor: default;
 }
 .settings .caption.probe.passed {
-  color: #2e9b55;
+  color: var(--green);
 }
 .rules li {
   align-items: center;
@@ -1015,7 +1033,7 @@ form.setting-row input {
   gap: 4px;
   padding: 8px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: var(--group);
   box-shadow: 0 0 0 0.5px var(--line);
   text-align: left;
@@ -1027,7 +1045,7 @@ form.setting-row input {
   width: 100%;
   height: 72px;
   object-fit: cover;
-  border-radius: 5px;
+  border-radius: var(--radius-control);
 }
 .source-title {
   display: -webkit-box;
@@ -1065,7 +1083,7 @@ form.setting-row input {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
 }
 .image-viewer-bar {
   position: absolute;
@@ -1136,7 +1154,7 @@ form.setting-row input {
   padding: 7px 10px;
   background: transparent;
   box-shadow: none;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   font-weight: 500;
   text-align: left;
 }
@@ -1161,7 +1179,7 @@ form.setting-row input {
   margin-top: 2px;
 }
 .history.compact .history-item {
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   padding-right: 4px;
 }
 .history.compact .history-item:hover {
@@ -1203,7 +1221,7 @@ form.setting-row input {
   display: block;
   margin-top: 2px;
   font-size: 11px;
-  color: #d94b47;
+  color: var(--red);
 }
 /* Settings › 扩展 */
 .ext-item {
@@ -1254,10 +1272,10 @@ form.setting-row input {
   background: var(--muted);
 }
 .dot.connected {
-  background: #34c759;
+  background: var(--green);
 }
 .dot.error {
-  background: #d94b47;
+  background: var(--red);
 }
 .ext-actions {
   display: flex;
@@ -1359,7 +1377,7 @@ form.setting-row input {
   font-size: 11px;
 }
 .ch-label .warn {
-  color: #c77c00;
+  color: var(--orange);
 }
 .ch-head {
   display: flex;

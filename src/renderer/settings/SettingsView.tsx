@@ -9,56 +9,119 @@ import { api } from '../api'
 import { MemoryPage } from './MemoryPage'
 import { ExtensionsPage } from './ExtensionsPage'
 import { PerceptionPage } from './PerceptionPage'
+import { TimelinePage } from './TimelinePage'
 import { ShortcutsSection } from './Shortcuts'
 
-// Icon tiles mirror the System Settings sidebar.
-const tabs = [
-  {
-    name: '模型',
-    tile: '#0A84FF',
-    icon: 'M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z',
-  },
-  {
-    name: '权限',
-    tile: '#8E8E93',
-    icon: 'M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4',
-  },
-  {
-    name: '宠物',
-    tile: '#34A853',
-    icon: 'M12 21c-4 0-7-2-7-5s3-6 7-6 7 3 7 6-3 5-7 5zM7 4v3M17 4v3',
-  },
-  {
-    name: '快捷键',
-    tile: '#636366',
-    icon: 'M3 7h18v10H3zM7 11h.01M11 11h.01M15 11h.01M8 14h8',
-  },
-  {
-    name: '扩展',
-    tile: '#AF52DE',
-    icon: 'M14 4a2 2 0 1 1 4 0v2h2v4h-2a2 2 0 1 0 0 4h2v4h-4v-2a2 2 0 1 0-4 0v2H6v-4H4a2 2 0 1 1 0-4h2V6h4V4z',
-  },
+type Page =
+  | 'pet'
+  | 'shortcuts'
+  | 'model'
+  | 'permissions'
+  | 'memory'
+  | 'topics'
+  | 'pending'
+  | 'timeline'
+  | 'capture'
+  | 'raw'
+  | 'mcp'
+  | 'skills'
+  | 'privacy'
+interface NavItem {
+  page: Page
+  name: string
+  icon?: string
+}
+interface NavGroup {
+  name: string
+  icon: string
+  children: NavItem[]
+}
+/** Single-color line icons on a 24px grid, drawn at 16px. */
+const icons = {
+  pet: 'M5 9V4l4 3h6l4-3v5c0 6-3 10-7 10S5 15 5 9zM9.5 12h.01M14.5 12h.01M11 15h2',
+  keyboard: 'M3 6h18v12H3zM7 10h.01M11 10h.01M15 10h.01M8 14h8',
+  model: 'M12 3l8 4.5v9L12 21l-8-4.5v-9zM12 12l8-4.5M12 12v9M12 12L4 7.5',
+  shield: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z',
+  memory:
+    'M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 6 1V5a2 2 0 0 0-3-1zM15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-6 1',
+  perception:
+    'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
+  puzzle:
+    'M14 4a2 2 0 1 1 4 0v2h2v4h-2a2 2 0 1 0 0 4h2v4h-4v-2a2 2 0 1 0-4 0v2H6v-4H4a2 2 0 1 1 0-4h2V6h4V4z',
+  lock: 'M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4',
+  chevron: 'M9 6l6 6-6 6',
+}
+const nav: (NavItem | NavGroup)[] = [
+  { page: 'pet', name: '宠物', icon: icons.pet },
+  { page: 'shortcuts', name: '快捷键', icon: icons.keyboard },
+  { page: 'model', name: '模型', icon: icons.model },
+  { page: 'permissions', name: '权限', icon: icons.shield },
   {
     name: '记忆',
-    tile: '#FF9F0A',
-    icon: 'M4 5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-2zM4 17a2 2 0 0 1 2-2h12M8 7h6',
+    icon: icons.memory,
+    children: [
+      { page: 'memory', name: '画像与习惯' },
+      { page: 'topics', name: '主题' },
+      { page: 'pending', name: '待确认' },
+    ],
   },
   {
     name: '感知',
-    tile: '#30B0C7',
-    icon: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
+    icon: icons.perception,
+    children: [
+      { page: 'timeline', name: '时间线' },
+      { page: 'capture', name: '采集设置' },
+      { page: 'raw', name: '原始记录' },
+    ],
   },
   {
-    name: '隐私',
-    tile: '#5E5CE6',
-    icon: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z',
+    name: '扩展',
+    icon: icons.puzzle,
+    children: [
+      { page: 'mcp', name: 'MCP 服务器' },
+      { page: 'skills', name: '技能' },
+    ],
   },
+  { page: 'privacy', name: '对话与隐私', icon: icons.lock },
 ]
+const groupOf = (page: Page) =>
+  nav.find((n) => 'children' in n && n.children.some((c) => c.page === page))
+    ?.name
+const titleOf = (page: Page): string[] => {
+  for (const n of nav)
+    if ('children' in n) {
+      const c = n.children.find((c) => c.page === page)
+      if (c) return [n.name, c.name]
+    } else if (n.page === page) return [n.name]
+  return []
+}
+/** Pages that edit the settings form and need its 保存 button. */
+const formPages: Page[] = ['pet', 'shortcuts', 'model', 'permissions']
+
+function Glyph({ d, size = 16 }: { d: string; size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d={d} />
+    </svg>
+  )
+}
 
 const accessLabel = { allow: '允许', ask: '询问', deny: '禁止' } as const
 
 export function SettingsView() {
-  const [tab, setTab] = useState('模型')
+  const [tab, setTab] = useState<Page>('model')
+  /** Expanded sidebar groups; the one holding the open page always shows. */
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [pets, setPets] = useState<PetSkin[]>([])
   const [settings, setSettings] = useState<PublicSettings>()
   const [key, setKey] = useState('')
@@ -172,62 +235,109 @@ export function SettingsView() {
   return (
     <div className="settings-shell">
       <aside data-tauri-drag-region="deep">
-        {tabs.map(({ name, tile, icon }) => (
-          <button
-            key={name}
-            className={tab === name ? 'selected' : ''}
-            onClick={() => setTab(name)}
-          >
-            <span className="tile" style={{ background: tile }}>
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.4"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d={icon} />
-              </svg>
-            </span>
-            {name}
-          </button>
-        ))}
+        <nav aria-label="设置">
+          {nav.map((n) => {
+            if (!('children' in n))
+              return (
+                <button
+                  key={n.page}
+                  className={`nav-item ${tab === n.page ? 'selected' : ''}`}
+                  aria-current={tab === n.page ? 'page' : undefined}
+                  onClick={() => setTab(n.page)}
+                >
+                  <Glyph d={n.icon!} />
+                  {n.name}
+                </button>
+              )
+            const open = expanded.has(n.name) || groupOf(tab) === n.name
+            return (
+              <div key={n.name} className="nav-group">
+                <button
+                  className="nav-item"
+                  aria-expanded={open}
+                  onClick={() => {
+                    // Opening a group also opens its first page; closing just folds it.
+                    const next = new Set(expanded)
+                    if (open && groupOf(tab) !== n.name) next.delete(n.name)
+                    else if (!open) {
+                      next.add(n.name)
+                      setTab(n.children[0]!.page)
+                    } else next.delete(n.name)
+                    setExpanded(next)
+                  }}
+                >
+                  <Glyph d={n.icon} />
+                  {n.name}
+                  <span className={`nav-chevron ${open ? 'open' : ''}`}>
+                    <Glyph d={icons.chevron} size={12} />
+                  </span>
+                </button>
+                {open && (
+                  <div className="nav-children">
+                    {n.children.map((c) => (
+                      <button
+                        key={c.page}
+                        className={`nav-item child ${tab === c.page ? 'selected' : ''}`}
+                        aria-current={tab === c.page ? 'page' : undefined}
+                        onClick={() => setTab(c.page)}
+                      >
+                        {c.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </nav>
       </aside>
       <div className="settings-main">
         <header className="settings-title" data-tauri-drag-region="deep">
-          <h2>{tab}</h2>
+          {titleOf(tab).length > 1 && (
+            <span className="crumb">{titleOf(tab)[0]}</span>
+          )}
+          <h2>{titleOf(tab).at(-1)}</h2>
         </header>
-        {tab === '记忆' && (
+        {(tab === 'memory' || tab === 'topics' || tab === 'pending') && (
           <div className="settings">
-            <MemoryPage />
+            <MemoryPage
+              section={
+                tab === 'memory'
+                  ? 'kept'
+                  : tab === 'topics'
+                    ? 'topics'
+                    : 'pending'
+              }
+            />
           </div>
         )}
-        {tab === '扩展' && (
+        {tab === 'timeline' && (
           <div className="settings">
-            <ExtensionsPage />
+            <TimelinePage />
           </div>
         )}
-        {tab === '感知' && (
+        {(tab === 'capture' || tab === 'raw') && (
           <div className="settings">
-            <PerceptionPage />
+            <PerceptionPage section={tab} />
+          </div>
+        )}
+        {(tab === 'mcp' || tab === 'skills') && (
+          <div className="settings">
+            <ExtensionsPage section={tab} />
           </div>
         )}
         <form
           className="settings"
-          hidden={tab === '记忆' || tab === '扩展' || tab === '感知'}
+          hidden={!formPages.includes(tab) && tab !== 'privacy'}
           onSubmit={save}
         >
-          <section hidden={tab !== '快捷键'}>
+          <section hidden={tab !== 'shortcuts'}>
             <ShortcutsSection
               value={settings.shortcuts}
               onChange={(shortcuts) => setSettings({ ...settings, shortcuts })}
             />
           </section>
-          <section hidden={tab !== '模型'} className="group">
+          <section hidden={tab !== 'model'} className="group">
             <label>
               模型协议
               <select
@@ -266,7 +376,7 @@ export function SettingsView() {
               <input
                 list="model-options"
                 value={settings.model.smallModel}
-                placeholder="留空则用上面的模型"
+                placeholder="留空则用对话模型，可以填更便宜的"
                 onChange={(e) => model('smallModel', e.target.value)}
               />
             </label>
@@ -325,19 +435,13 @@ export function SettingsView() {
               </span>
             </div>
           </section>
-          {tab === '模型' && missingModel && (
+          {tab === 'model' && missingModel && (
             <p className="caption probe warn">
               模型列表里没有「{settings.model.model.trim()}
               」，你的账号可能用不了它。
             </p>
           )}
-          {tab === '模型' && (
-            <p className="caption">
-              「后台小模型」用来整理记忆，走同一个地址和
-              Key；可以填更便宜的模型。
-            </p>
-          )}
-          {tab === '模型' && probe && (
+          {tab === 'model' && probe && (
             <p
               className={`caption probe ${probe.kind === 'error' ? 'failed' : probe.kind === 'ok' ? 'passed' : ''}`}
               role="status"
@@ -345,7 +449,7 @@ export function SettingsView() {
               {probe.text}
             </p>
           )}
-          <section hidden={tab !== '权限'} className="group">
+          <section hidden={tab !== 'permissions'} className="group">
             <label>
               权限模式
               <select
@@ -374,7 +478,9 @@ export function SettingsView() {
               />
             </label>
             <div className="setting-row">
-              <span>自动快照</span>
+              <span title="改动 ~/.familiar 里的工作目录、记忆、对话后用 git 记一次，改错删错能回滚">
+                自动快照
+              </span>
               <div className="segmented">
                 {([true, false] as const).map((on) => (
                   <button
@@ -427,21 +533,11 @@ export function SettingsView() {
                   ))}
                 </ul>
               ) : (
-                <p className="muted">
-                  还没有目录规则。对话中批准访问某个目录时选「总是允许这个目录」，会记在这里。
-                </p>
+                <p className="muted">审批时选「总是允许这个目录」会记在这里</p>
               )}
             </details>
           </section>
-          {tab === '权限' && (
-            <p className="caption">
-              自动快照：Familiar 每次改动 ~/.familiar
-              里的工作目录、记忆、对话后用 git
-              记录一次，改错、删错能回滚；settings.json、mcp.json 等配置不进
-              git。关掉后不再记录，已有的 .git 原样保留。
-            </p>
-          )}
-          <section hidden={tab !== '宠物'}>
+          <section hidden={tab !== 'pet'}>
             <div className="pet-grid">
               {pets.map((p) => (
                 <button
@@ -534,7 +630,9 @@ export function SettingsView() {
                 </div>
               </div>
               <div className="setting-row">
-                <span>点击别处时</span>
+                <span title="等你允许或输入框里有草稿时不收；面板里按 Esc 也能收起">
+                  点击别处时
+                </span>
                 <div className="segmented">
                   {([true, false] as const).map((hide) => (
                     <button
@@ -553,14 +651,8 @@ export function SettingsView() {
                 </div>
               </div>
             </div>
-            <p className="caption">
-              「自动收起」：点到其他应用后，聊天面板和胶囊一起收起，只留宠物；等你允许或输入框里有没发出的字时不收。聊天面板里按
-              Esc 也能一步收起。
-              <br />
-              跟随系统的「减少动态效果」，开启后宠物保持静止，气泡和胶囊不播放动效。
-            </p>
           </section>
-          <section hidden={tab !== '隐私'}>
+          <section hidden={tab !== 'privacy'}>
             <div className="group">
               <div className="setting-row">
                 <span>对话记录</span>
@@ -573,7 +665,7 @@ export function SettingsView() {
                 </button>
               </div>
               <div className="setting-row">
-                <span>清空全部对话</span>
+                <span title="移到废纸篓，可以恢复">清空全部对话</span>
                 {clearing ? (
                   <span className="row-actions">
                     <button
@@ -604,15 +696,11 @@ export function SettingsView() {
                 )}
               </div>
             </div>
-            <p className="caption">
-              每个对话是一个 Markdown
-              文件，可以直接打开阅读。删除和清空都会移到废纸篓，可以恢复。
-            </p>
             <p role="status" className="caption">
               {notice}
             </p>
           </section>
-          <div className="form-actions" hidden={tab === '隐私'}>
+          <div className="form-actions" hidden={!formPages.includes(tab)}>
             <p role="status">{notice}</p>
             <button className="primary" type="submit">
               保存

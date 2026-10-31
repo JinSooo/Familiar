@@ -1,10 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type {
-  Extensions,
-  McpCandidate,
-  McpServerStatus,
-  SkillInfo,
-} from '../../shared'
+import type { Extensions, McpCandidate, SkillInfo } from '../../shared'
 import { api } from '../api'
 import { Switch } from './Switch'
 
@@ -18,8 +13,48 @@ const stateLabel = {
   off: '已停用',
 } as const
 
-/** Settings › 扩展: MCP servers and skills. */
-export function ExtensionsPage() {
+export type ExtensionSection = 'mcp' | 'skills'
+
+/** Chevron at the end of a row that opens its detail page. */
+function Chevron() {
+  return (
+    <svg
+      className="chevron"
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M9 6l6 6-6 6" />
+    </svg>
+  )
+}
+
+/** A detail page's title row: back, then its own name. */
+function DetailHeader(props: { title: string; back: () => void }) {
+  return (
+    <div className="subpage-head">
+      <button
+        type="button"
+        className="icon"
+        aria-label="返回"
+        title="返回"
+        onClick={props.back}
+      >
+        ‹
+      </button>
+      <h3>{props.title}</h3>
+    </div>
+  )
+}
+
+/** Settings › 扩展: MCP servers and skills, each a list that opens into its details. */
+export function ExtensionsPage({ section }: { section: ExtensionSection }) {
   const [data, setData] = useState<Extensions>()
   const [disabled, setDisabled] = useState<string[]>([])
   const [notice, setNotice] = useState('')
@@ -27,6 +62,8 @@ export function ExtensionsPage() {
   const [mcpOffer, setMcpOffer] = useState<McpCandidate[]>()
   const [skillOffer, setSkillOffer] =
     useState<(SkillInfo & { from: string; exists: boolean })[]>()
+  /** The server name or skill path whose details are open. */
+  const [open, setOpen] = useState<string>()
   const load = useCallback((connect = false) => {
     setBusy(connect)
     Promise.all([api.getExtensions(connect), api.getSettings()])
@@ -38,6 +75,7 @@ export function ExtensionsPage() {
       .finally(() => setBusy(false))
   }, [])
   useEffect(() => load(true), [load])
+  useEffect(() => setOpen(undefined), [section])
   const act = (work: Promise<unknown>, after?: () => void) =>
     work
       .then(() => {
@@ -56,63 +94,105 @@ export function ExtensionsPage() {
     setDisabled(next)
   }
   if (!data) return <p role="status">{notice || '读取扩展…'}</p>
-
-  const server = (s: McpServerStatus) => (
-    <li key={s.name} className="ext-item">
-      <div className="ext-main">
-        <span className="ext-title">
-          <i className={`dot ${s.state}`} aria-hidden="true" />
-          {s.name}
-          <small className="muted">
-            {stateLabel[s.state]}
-            {s.state === 'connected' ? ` · ${s.tools.length} 个工具` : ''}
-          </small>
-        </span>
-        <span className="muted ext-sub" title={s.target}>
-          {s.error ? s.error : s.target}
-        </span>
-        {s.state === 'connected' && s.tools.length > 0 && (
-          <span className="muted ext-sub" title={s.tools.join('、')}>
-            {s.tools.join('、')}
-          </span>
-        )}
-      </div>
-      <span className="row-actions">
-        {s.target && (
-          <div className="segmented">
-            {(['allow', 'ask', 'off'] as const).map((a) => (
-              <button
-                type="button"
-                key={a}
-                className={s.access === a ? 'selected' : ''}
-                onClick={() => act(api.setMcpAccess(s.name, a))}
-              >
-                {accessLabel[a]}
-              </button>
-            ))}
-          </div>
-        )}
-        {s.state === 'error' && s.target && (
-          <button type="button" onClick={() => act(api.reconnectMcp(s.name))}>
-            重连
-          </button>
-        )}
-        <button
-          type="button"
-          title="从配置里移除"
-          onClick={() => act(api.removeMcp(s.name))}
-        >
-          移除
-        </button>
-      </span>
-    </li>
+  const status = notice && (
+    <p role="status" className="caption">
+      {notice}
+    </p>
   )
 
-  return (
-    <div className="ext-page">
-      <div className="section-head">
-        <h3 className="memory-heading">MCP 服务器</h3>
-        <span className="row-actions">
+  if (section === 'mcp') {
+    const detail = data.mcp.find((s) => s.name === open)
+    if (detail)
+      return (
+        <div className="ext-page">
+          <DetailHeader title={detail.name} back={() => setOpen(undefined)} />
+          <div className="group">
+            <div className="setting-row">
+              <span>状态</span>
+              <span className="ext-state">
+                <i className={`dot ${detail.state}`} aria-hidden="true" />
+                {stateLabel[detail.state]}
+                {detail.state === 'error' && detail.target && (
+                  <button
+                    type="button"
+                    onClick={() => act(api.reconnectMcp(detail.name))}
+                  >
+                    重连
+                  </button>
+                )}
+              </span>
+            </div>
+            {detail.error && (
+              <div className="setting-row">
+                <span className="error">{detail.error}</span>
+              </div>
+            )}
+            {detail.target && (
+              <div className="setting-row">
+                <span>权限</span>
+                <div className="segmented">
+                  {(['allow', 'ask', 'off'] as const).map((a) => (
+                    <button
+                      type="button"
+                      key={a}
+                      className={detail.access === a ? 'selected' : ''}
+                      title={
+                        a === 'ask'
+                          ? '每次用它的工具先问你'
+                          : a === 'allow'
+                            ? '直接用，工具在服务器那边执行，不受沙箱约束'
+                            : undefined
+                      }
+                      onClick={() => act(api.setMcpAccess(detail.name, a))}
+                    >
+                      {accessLabel[a]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {detail.target && (
+              <div className="setting-row">
+                <span>启动方式</span>
+                <code className="ext-target" title={detail.target}>
+                  {detail.target}
+                </code>
+              </div>
+            )}
+          </div>
+          <h3 className="memory-heading">
+            工具{detail.tools.length ? ` · ${detail.tools.length}` : ''}
+          </h3>
+          <ul className="group memory-list">
+            {detail.tools.length ? (
+              detail.tools.map((t) => (
+                <li key={t} className="ext-item">
+                  <code>{t}</code>
+                </li>
+              ))
+            ) : (
+              <li className="memory-item muted">
+                {detail.state === 'connected' ? '没有工具' : '连上后显示'}
+              </li>
+            )}
+          </ul>
+          <div className="page-actions">
+            <button
+              type="button"
+              className="danger-quiet"
+              onClick={() =>
+                act(api.removeMcp(detail.name), () => setOpen(undefined))
+              }
+            >
+              从配置里移除
+            </button>
+          </div>
+          {status}
+        </div>
+      )
+    return (
+      <div className="ext-page">
+        <div className="page-actions">
           <button
             type="button"
             onClick={() =>
@@ -124,7 +204,11 @@ export function ExtensionsPage() {
           >
             导入…
           </button>
-          <button type="button" onClick={() => api.revealMcp()}>
+          <button
+            type="button"
+            title={data.mcpFile}
+            onClick={() => api.revealMcp()}
+          >
             编辑配置文件
           </button>
           <button
@@ -134,108 +218,136 @@ export function ExtensionsPage() {
           >
             {busy ? '连接中…' : '刷新'}
           </button>
-        </span>
-      </div>
-      <ul className="group memory-list">
-        {data.mcp.length ? (
-          data.mcp.map(server)
-        ) : (
-          <li className="memory-item muted">
-            还没有。可以从 Cursor、Codex 等导入，或直接编辑配置文件。
-          </li>
-        )}
-      </ul>
-      {mcpOffer && (
-        <Picker
-          title="从其他工具导入 MCP 服务器"
-          empty="没有在 Cursor、Codex、Claude Desktop、Claude Code 里找到可导入的服务器。"
-          items={mcpOffer.map((c) => ({
-            key: `${c.source}/${c.name}`,
-            label: c.name,
-            detail: `${c.source} · ${c.target}`,
-            disabled: c.exists,
-          }))}
-          onCancel={() => setMcpOffer(undefined)}
-          onImport={(keys) =>
-            act(
-              api.importMcp(
-                mcpOffer
-                  .filter((c) => keys.includes(`${c.source}/${c.name}`))
-                  .map(({ name, entry }) => ({ name, entry })),
-              ),
-              () => setMcpOffer(undefined),
-            )
-          }
-        />
-      )}
-      <p className="caption">
-        配置在 {data.mcpFile}（和 Claude Desktop
-        同格式，可直接改）。新加的服务器默认「询问」：每次用它的工具先问你，审批时可以选「总是允许这个服务器」；完全访问模式下直接放行。MCP
-        工具由服务器自己执行，不受 Familiar 的沙箱约束。
-      </p>
-
-      <div className="section-head">
-        <h3 className="memory-heading">技能</h3>
-        <span className="row-actions">
-          <button
-            type="button"
-            onClick={() =>
-              api
-                .skillCandidates()
-                .then(setSkillOffer)
-                .catch((e: unknown) => setNotice(failure(e)))
+        </div>
+        {mcpOffer && (
+          <Picker
+            title="从其他工具导入"
+            empty="没有在 Cursor、Codex、Claude Desktop、Claude Code 里找到可导入的服务器。"
+            items={mcpOffer.map((c) => ({
+              key: `${c.source}/${c.name}`,
+              label: c.name,
+              detail: `${c.source} · ${c.target}`,
+              disabled: c.exists,
+            }))}
+            onCancel={() => setMcpOffer(undefined)}
+            onImport={(keys) =>
+              act(
+                api.importMcp(
+                  mcpOffer
+                    .filter((c) => keys.includes(`${c.source}/${c.name}`))
+                    .map(({ name, entry }) => ({ name, entry })),
+                ),
+                () => setMcpOffer(undefined),
+              )
             }
-          >
-            导入…
-          </button>
-        </span>
-      </div>
-      <ul className="group memory-list">
-        {data.skills.length ? (
-          data.skills.map((s) => {
-            const on = !disabled.includes(s.name)
-            return (
-              <li key={s.path} className="ext-item">
-                <div className="ext-main">
-                  <span className="ext-title">
-                    {s.name}
-                    <small className="muted">
-                      {s.source === 'shared' ? '~/.agents 共享' : '已导入'}
-                    </small>
-                  </span>
-                  <span className="muted ext-sub" title={s.description}>
-                    {s.description || '（没有描述）'}
-                  </span>
-                </div>
-                <span className="row-actions">
-                  {s.source === 'imported' && (
-                    <button
-                      type="button"
-                      onClick={() => act(api.removeSkill(s.path))}
-                    >
-                      删除
-                    </button>
-                  )}
-                  <Switch
-                    on={on}
-                    label={`启用技能 ${s.name}`}
-                    onChange={(v) =>
-                      toggleSkill(s.name, v).catch((e: unknown) =>
-                        setNotice(failure(e)),
-                      )
-                    }
-                  />
-                </span>
-              </li>
-            )
-          })
-        ) : (
-          <li className="memory-item muted">还没有技能。</li>
+          />
         )}
-      </ul>
+        <ul className="group memory-list">
+          {data.mcp.length ? (
+            data.mcp.map((s) => (
+              <li key={s.name}>
+                <button
+                  type="button"
+                  className="ext-row"
+                  onClick={() => setOpen(s.name)}
+                >
+                  <i className={`dot ${s.state}`} aria-hidden="true" />
+                  <span className="ext-main">
+                    <span className="ext-title">{s.name}</span>
+                    <span className="muted ext-sub">
+                      {s.error ??
+                        (s.state === 'connected'
+                          ? `${s.tools.length} 个工具`
+                          : stateLabel[s.state])}
+                    </span>
+                  </span>
+                  <span className="muted ext-badge">
+                    {accessLabel[s.access]}
+                  </span>
+                  <Chevron />
+                </button>
+              </li>
+            ))
+          ) : (
+            <li className="memory-item muted">还没有服务器。</li>
+          )}
+        </ul>
+        {status}
+      </div>
+    )
+  }
+
+  const skill = data.skills.find((s) => s.path === open)
+  if (skill) {
+    const on = !disabled.includes(skill.name)
+    return (
+      <div className="ext-page">
+        <DetailHeader title={skill.name} back={() => setOpen(undefined)} />
+        <div className="group">
+          <div className="setting-row">
+            <span>启用</span>
+            <Switch
+              on={on}
+              label={`启用技能 ${skill.name}`}
+              onChange={(v) =>
+                toggleSkill(skill.name, v).catch((e: unknown) =>
+                  setNotice(failure(e)),
+                )
+              }
+            />
+          </div>
+          <div className="setting-row">
+            <span>来源</span>
+            <span className="muted">
+              {skill.source === 'shared' ? '~/.agents 共享' : '已导入'}
+            </span>
+          </div>
+          <div className="setting-row">
+            <span>位置</span>
+            <code className="ext-target" title={skill.path}>
+              {skill.path}
+            </code>
+          </div>
+        </div>
+        <h3 className="memory-heading">描述</h3>
+        <div className="group ext-description">
+          {skill.description || <span className="muted">没有描述</span>}
+        </div>
+        {skill.source === 'imported' && (
+          <div className="page-actions">
+            <button
+              type="button"
+              className="danger-quiet"
+              onClick={() =>
+                act(api.removeSkill(skill.path), () => setOpen(undefined))
+              }
+            >
+              删除
+            </button>
+          </div>
+        )}
+        {status}
+      </div>
+    )
+  }
+  return (
+    <div className="ext-page">
+      <div className="page-actions">
+        <button
+          type="button"
+          onClick={() =>
+            api
+              .skillCandidates()
+              .then(setSkillOffer)
+              .catch((e: unknown) => setNotice(failure(e)))
+          }
+        >
+          导入…
+        </button>
+      </div>
       {skillOffer && (
         <Picker
-          title="导入技能"
+          title="从 Claude Code、Codex 导入"
           empty="~/.claude/skills 和 ~/.codex/skills 里没有找到技能。"
           items={skillOffer.map((s) => ({
             key: s.path,
@@ -254,13 +366,33 @@ export function ExtensionsPage() {
           }}
         />
       )}
-      <p className="caption">
-        ~/.agents/skills 里的技能直接可用；从 Claude Code、Codex 导入的会复制到
-        ~/.familiar/skills。模型平时只看到名字和描述，用到时才读完整说明。
-      </p>
-      <p role="status" className="caption">
-        {notice}
-      </p>
+      <ul className="group memory-list">
+        {data.skills.length ? (
+          data.skills.map((s) => (
+            <li key={s.path}>
+              <button
+                type="button"
+                className="ext-row"
+                onClick={() => setOpen(s.path)}
+              >
+                <span className="ext-main">
+                  <span className="ext-title">{s.name}</span>
+                  <span className="muted ext-sub">
+                    {s.description || '没有描述'}
+                  </span>
+                </span>
+                <span className="muted ext-badge">
+                  {disabled.includes(s.name) ? '已停用' : ''}
+                </span>
+                <Chevron />
+              </button>
+            </li>
+          ))
+        ) : (
+          <li className="memory-item muted">还没有技能。</li>
+        )}
+      </ul>
+      {status}
     </div>
   )
 }

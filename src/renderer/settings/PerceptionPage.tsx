@@ -25,11 +25,13 @@ const clearOptions = [
 ] as const
 const time = (at: number) => new Date(at).toTimeString().slice(0, 5)
 
-/** The settings window's 感知 tab: Computer History's switch, permissions and history. */
-export function PerceptionPage() {
+export type PerceptionSection = 'capture' | 'raw'
+
+/** Settings › 感知: Computer History's switch, apps and sites, and the raw record. */
+export function PerceptionPage({ section }: { section: PerceptionSection }) {
   const [perception, setPerception] = useState<Perception>()
   const [status, setStatus] = useState<PerceptionStatus>()
-  const [view, setView] = useState<'main' | 'choose' | 'raw'>('main')
+  const [choosing, setChoosing] = useState(false)
   const [clearing, setClearing] = useState<(typeof clearOptions)[number]>()
   const [notice, setNotice] = useState('')
 
@@ -62,15 +64,14 @@ export function PerceptionPage() {
       .catch((e: unknown) => setNotice(failure(e)))
   }
 
-  if (view === 'choose')
+  if (section === 'capture' && choosing)
     return (
       <Choose
         perception={perception}
         save={save}
-        back={() => setView('main')}
+        back={() => setChoosing(false)}
       />
     )
-  if (view === 'raw') return <Raw back={() => setView('main')} />
 
   const state = !perception.enabled
     ? ''
@@ -83,15 +84,78 @@ export function PerceptionPage() {
             ? `正在记录${status.lastEventAt ? ` · 最近一次 ${time(status.lastEventAt)}` : ''}`
             : '启动中…'))
 
+  if (section === 'raw')
+    return (
+      <>
+        <div className="group">
+          <div className="setting-row">
+            <div className="ch-label">
+              <span>清除原始记录</span>
+              <span className="muted">加密存在本机，48 小时后自动删除</span>
+            </div>
+            <select
+              aria-label="清除记录"
+              value=""
+              onChange={(e) =>
+                setClearing(clearOptions[Number(e.target.value)])
+              }
+            >
+              <option value="" disabled>
+                选择范围
+              </option>
+              {clearOptions.map(([, label], i) => (
+                <option key={label} value={i}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+          {clearing && (
+            <div className="setting-row">
+              <span>
+                清除{clearing[1]}的原始记录？跨进这段时间的历史条目整条删除。
+              </span>
+              <span className="row-actions">
+                <button
+                  type="button"
+                  className="danger"
+                  onClick={() => {
+                    const [minutes, label] = clearing
+                    setClearing(undefined)
+                    api
+                      .perceptionClear(minutes)
+                      .then(() => setNotice(`已清除${label}的记录`))
+                      .catch((e: unknown) => setNotice(failure(e)))
+                  }}
+                >
+                  清除
+                </button>
+                <button type="button" onClick={() => setClearing(undefined)}>
+                  取消
+                </button>
+              </span>
+            </div>
+          )}
+        </div>
+        {notice && (
+          <p role="status" className="caption">
+            {notice}
+          </p>
+        )}
+        <Raw />
+      </>
+    )
   return (
     <>
       <div className="group">
         <div className="setting-row">
           <div className="ch-label">
             <span>记录电脑活动</span>
-            <span className="muted">
-              记下你在电脑上做的事，让它知道你在忙什么、接着帮你。不截图，不碰摄像头和麦克风。
-            </span>
+            {!perception.enabled && (
+              <span className="muted">
+                不截图；整理时过滤后的文字会发给模型
+              </span>
+            )}
             {state && (
               <span className={status.trusted === false ? 'warn' : 'muted'}>
                 {state}
@@ -139,77 +203,17 @@ export function PerceptionPage() {
                 : ''}
             </span>
           </div>
-          <button type="button" onClick={() => setView('choose')}>
+          <button type="button" onClick={() => setChoosing(true)}>
             选择…
           </button>
         </div>
       </div>
 
-      <p className="caption">
-        整理出的历史在「记忆」页的时间线里。整理时会把过滤后的活动发给你在「模型」页选的模型，推测出的长期信息只进待确认。
-      </p>
-
-      <h3 className="memory-heading">原始记录</h3>
-      <div className="group">
-        <div className="setting-row">
-          <div className="ch-label">
-            <span>最近一小时</span>
-            <span className="muted">
-              解密后只在这里显示，看它到底记下了什么
-            </span>
-          </div>
-          <button type="button" onClick={() => setView('raw')}>
-            查看…
-          </button>
-        </div>
-        <div className="setting-row">
-          <span>清除</span>
-          <select
-            aria-label="清除记录"
-            value=""
-            onChange={(e) => setClearing(clearOptions[Number(e.target.value)])}
-          >
-            <option value="" disabled>
-              选择范围
-            </option>
-            {clearOptions.map(([, label], i) => (
-              <option key={label} value={i}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </div>
-        {clearing && (
-          <div className="setting-row">
-            <span>
-              清除{clearing[1]}的原始记录？跨进这段时间的历史条目整条删除。
-            </span>
-            <span className="row-actions">
-              <button
-                type="button"
-                className="danger"
-                onClick={() => {
-                  const [minutes, label] = clearing
-                  setClearing(undefined)
-                  api
-                    .perceptionClear(minutes)
-                    .then(() => setNotice(`已清除${label}的记录`))
-                    .catch((e: unknown) => setNotice(failure(e)))
-                }}
-              >
-                清除
-              </button>
-              <button type="button" onClick={() => setClearing(undefined)}>
-                取消
-              </button>
-            </span>
-          </div>
-        )}
-      </div>
-      <p className="caption">原始记录加密存在本机，48 小时后自动删除。</p>
-      <p role="status" className="caption">
-        {notice}
-      </p>
+      {notice && (
+        <p role="status" className="caption">
+          {notice}
+        </p>
+      )}
     </>
   )
 }
@@ -339,9 +343,6 @@ function Choose(props: {
           </details>
         )}
       </div>
-      <p className="caption">
-        默认所有应用都会记录窗口和文字。「不记录」的应用什么都不留，连名字也不记；「只留本机」的应用照常记录，但整理时不发给模型。密码框、浏览器隐私窗口一律不读。
-      </p>
 
       <h3 className="memory-heading">排除网站</h3>
       <div className="group">
@@ -415,7 +416,7 @@ function collapse(events: PerceptionEvent[]) {
 }
 
 /** The raw events of the last hour, as stored (decrypted for display only). */
-function Raw(props: { back: () => void }) {
+function Raw() {
   const [events, setEvents] = useState<PerceptionEvent[]>()
   const [error, setError] = useState('')
   useEffect(() => {
@@ -426,7 +427,7 @@ function Raw(props: { back: () => void }) {
   }, [])
   return (
     <>
-      <SubpageHeader title="最近一小时的原始记录" back={props.back} />
+      <h3 className="memory-heading">最近一小时</h3>
       {!events ? (
         <p role="status">{error || '读取…'}</p>
       ) : (

@@ -43,7 +43,7 @@ FAMILIAR_KEYCHAIN_SERVICE 可覆盖钥匙串服务名，默认 com.allinpet.fami
 | app:quit                                 | quit                                                                              |
 
 session:changed、agent:event 发 all；宠物状态/手势/大小/皮肤/拖动和胶囊发 pet；
-chat:view 发 chat。app-activated 广播 appearance:changed。
+chat:view 发 chat。
 chat-window 信号是聊天可见/聚焦状态的来源；pet-drag move/end 发 right/left/none。
 
 ## 验证记录
@@ -82,6 +82,6 @@ done 在气泡计时结束后仍保留，直到聊天显示/聚焦或新回合/�
 共享协议注释仍描述旧 host 形式，本任务按要求未改契约文件。
 旧 Electron 拖动末尾点击连击由壳/界面接管；现有 pet-drag 信号只有方向，没有“未移动点击”
 信息，因此 agent 保留每日 wave，胶囊通过 overlay:capsule 控制。若需恢复原三击 poked，
-集成者须在界面处理或另行扩展契约。系统强调色在 ready 和 app-activated 时刷新。
+集成者须在界面处理或另行扩展契约。
 
 工作区 Git 快照沿用旧业务行为，仅对所配置工作目录创建快照；本项目未提交。

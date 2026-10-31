@@ -218,9 +218,7 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
             tauri::WindowEvent::CloseRequested { .. } => h.exit(0),
             tauri::WindowEvent::Moved(_) if label == "chat" => settle_chat(&h),
             tauri::WindowEvent::Focused(focused) => {
-                if *focused {
-                    crate::agent::signal(&h, serde_json::json!({"name":"app-activated"}));
-                } else if label != "settings" {
+                if !*focused && label != "settings" {
                     report_blur(&h);
                 }
                 if label == "chat" {

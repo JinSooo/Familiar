@@ -83,7 +83,6 @@ import {
   dataDir,
   conversationsDir,
   refreshProxy,
-  accent,
   idleSeconds,
   reveal,
 } from './system'
@@ -643,7 +642,6 @@ async function request(
       return
     case IPC.ready:
       requireSender(window, ['pet', 'chat', 'settings', 'main'])
-      emit(IPC.appearance, await accent(), window as WindowLabel)
       emit(IPC.session, session, window as WindowLabel)
       if (window === 'pet') {
         emit(IPC.petState, state, 'pet')
@@ -888,7 +886,6 @@ const signalSchema = z.object({
         }),
       ),
     }),
-    z.object({ name: z.literal('app-activated') }),
     z.object({ name: z.literal('blurred') }),
     z.object({
       name: z.literal('pet-drag'),
@@ -934,9 +931,7 @@ async function handle(line: string) {
         }
       } else if (signal.name === 'shortcut-status') {
         shortcutFailures = signal.failed
-      } else if (signal.name === 'app-activated')
-        broadcast(IPC.appearance, await accent())
-      else if (signal.name === 'blurred') {
+      } else if (signal.name === 'blurred') {
         // Stay put while something still needs the user here.
         if (getSettings().chatAutoHide && !pendingApprovals.size && !hasDraft)
           dismissChat()

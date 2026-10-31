@@ -82,6 +82,7 @@ function Recorder({
       className={`shortcut ${recording ? 'recording' : ''}`}
       onClick={() => setRecording(!recording)}
       onBlur={() => setRecording(false)}
+      title="点一下再按新的组合键；Esc 取消，Delete 清除"
     >
       {recording ? '按下新的组合键…' : value ? prettyShortcut(value) : '未设置'}
     </button>
@@ -133,11 +134,6 @@ export function ShortcutsSection({
           )
         })}
       </div>
-      <p className="caption">
-        全局快捷键在任何应用里都能用。点按钮后按下新的组合键，Esc 取消，Delete
-        清除；改完点「保存」生效。和其他应用（比如 ChatGPT 的
-        ⌥空格）冲突时，后注册的一方可能不生效。
-      </p>
     </>
   )
 }

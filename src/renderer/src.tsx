@@ -6,9 +6,6 @@ import { api } from './api'
 import './style.css'
 const kind = new URLSearchParams(location.search).get('window')
 document.body.className = `${kind}-window`
-api.onAppearance((accent) =>
-  document.documentElement.style.setProperty('--accent', accent),
-)
 createRoot(document.getElementById('root')!).render(
   kind === 'pet' ? (
     <Overlay />

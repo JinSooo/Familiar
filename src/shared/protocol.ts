@@ -32,8 +32,6 @@ export type ShellSignal =
       name: 'shortcut-status'
       failed: { action: ShortcutAction; accelerator: string; error: string }[]
     }
-  /** The app became active; refresh things like the accent colour. */
-  | { name: 'app-activated' }
   /** The user went to another app: the pet or chat lost focus and no Familiar window has it. */
   | { name: 'blurred' }
   /** Pet overlay drag progress, for the running-left/right animation. */

@@ -179,7 +179,6 @@ export const IPC = {
   sessionGet: 'session:get',
   sessionNew: 'session:new',
   capsule: 'overlay:capsule',
-  appearance: 'appearance:changed',
   settingsOpen: 'settings:open',
   // Tauri migration (see protocol.ts): Rust → pet webview cursor position for hit testing.
   petCursor: 'pet:cursor',
@@ -245,7 +244,6 @@ export interface FamiliarAPI {
   openSettings(): void
   capsule(open: boolean): void
   onCapsule(callback: (open: boolean) => void): () => void
-  onAppearance(callback: (accent: string) => void): () => void
   stop(): void
   approve(id: string, decision: ApprovalChoice): void
   hit(inside: boolean): void

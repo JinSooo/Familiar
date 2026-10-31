@@ -129,31 +129,6 @@ export function proxyFor(url: string) {
     ? (proxies.https ?? proxies.http)
     : proxies.http
 }
-export async function accent(): Promise<string> {
-  try {
-    const value = Number(
-      (
-        await exec('/usr/bin/defaults', ['read', '-g', 'AppleAccentColor'])
-      ).stdout.trim(),
-    )
-    return (
-      (
-        {
-          '-1': '#8E8E93',
-          0: '#FF3B30',
-          1: '#FF9500',
-          2: '#FFCC00',
-          3: '#34C759',
-          4: '#0A66D8',
-          5: '#AF52DE',
-          6: '#FF2D55',
-        } as Record<number, string>
-      )[value] ?? '#0A66D8'
-    )
-  } catch {
-    return '#0A66D8'
-  }
-}
 export async function idleSeconds(): Promise<number> {
   const output = (await exec('/usr/sbin/ioreg', ['-c', 'IOHIDSystem'])).stdout
   return Number(output.match(/"HIDIdleTime"\s*=\s*(\d+)/)?.[1] ?? 0) / 1e9

@@ -36,7 +36,6 @@ export const api: FamiliarAPI = {
   openSettings: () => send(IPC.settingsOpen),
   capsule: (open) => send(IPC.capsule, open),
   onCapsule: (cb) => subscribe(IPC.capsule, cb),
-  onAppearance: (cb) => subscribe(IPC.appearance, cb),
   typing: (hasText) => send(IPC.typing, hasText),
   animationFinished: () => send(IPC.petFinished),
   onSize: (cb) => subscribe(IPC.petSize, cb),

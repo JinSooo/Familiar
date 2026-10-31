@@ -3,36 +3,42 @@
   font-size: 13px;
   color-scheme: light dark;
   color: var(--text);
-  --accent: #0a66d8;
-  --text: #1d1d1f;
-  --muted: #6e6e73;
-  --glass: rgba(253, 251, 247, 0.88);
-  --surface: rgba(246, 246, 246, 0.45);
-  --group: #fff;
-  --line: rgba(0, 0, 0, 0.12);
-  --settings: rgba(245, 245, 247, 0.55);
-  /* Status colors: the system palette, one of each. */
-  --red: #d94b47;
-  --orange: #c27c0e;
-  --green: #2e9b55;
+  --accent: #5b57d1;
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
+  --text: #23211e;
+  --muted: #77736c;
+  --glass: rgba(252, 250, 246, 0.94);
+  --surface: #f4f2ee;
+  --group: #fffefc;
+  --line: rgba(60, 50, 40, 0.11);
+  --settings: #f7f5f1;
+  --sidebar: #efece6;
+  --hover: rgba(60, 50, 40, 0.06);
+  /* Status colors, one of each. */
+  --red: #cf4a3f;
+  --orange: #b9770e;
+  --green: #2f8f55;
   /* Corners: controls, cards, and floating things (capsule, bubble, panel). */
-  --radius-control: 7px;
-  --radius-card: 12px;
-  --radius-float: 16px;
+  --radius-control: 8px;
+  --radius-card: 10px;
+  --radius-float: 14px;
   --focus: color-mix(in srgb, var(--accent) 55%, transparent);
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --text: #f0f0f0;
-    --muted: #aaa9ad;
-    --glass: rgba(39, 38, 36, 0.9);
-    --surface: rgba(30, 30, 32, 0.45);
-    --group: #303032;
-    --line: rgba(255, 255, 255, 0.14);
-    --settings: rgba(36, 36, 38, 0.55);
-    --red: #ff6961;
-    --orange: #ffb340;
-    --green: #4cd964;
+    --accent: #7873e6;
+    --text: #ecebe8;
+    --muted: #a19d96;
+    --glass: rgba(33, 32, 30, 0.95);
+    --surface: #1d1c1a;
+    --group: #2a2926;
+    --line: rgba(255, 250, 240, 0.1);
+    --settings: #22211f;
+    --sidebar: #1b1a18;
+    --hover: rgba(255, 250, 240, 0.06);
+    --red: #f07167;
+    --orange: #f2b04c;
+    --green: #5bc584;
   }
 }
 * {
@@ -64,13 +70,16 @@ button {
   border-radius: var(--radius-control);
   padding: 6px 12px;
   background: var(--group);
-  box-shadow: 0 0 0 0.5px var(--line);
+  box-shadow: inset 0 0 0 1px var(--line);
 }
 button:hover {
-  filter: brightness(0.96);
+  background: color-mix(in srgb, var(--group), var(--text) 5%);
 }
 button:active {
-  transform: scale(0.96);
+  transform: translateY(0.5px);
+}
+.primary:hover {
+  background: color-mix(in srgb, var(--accent), black 8%);
 }
 button:disabled {
   opacity: 0.4;
@@ -84,13 +93,13 @@ summary:focus-visible {
   outline: 1.5px solid var(--focus);
   outline-offset: 1px;
 }
-/* A selected sidebar item already shows where you are; no second frame on top. */
+/* A selected sidebar item already shows where you are; keep the ring inside it. */
 .settings-shell aside button.selected:focus-visible {
-  outline-color: color-mix(in srgb, white 45%, transparent);
   outline-offset: -2px;
 }
 .primary {
   background: var(--accent);
+  box-shadow: none;
   color: white;
 }
 .muted {
@@ -431,38 +440,61 @@ summary:focus-visible {
   font-size: 13px;
 }
 .settings-shell aside {
-  width: 200px;
+  width: 208px;
   flex-shrink: 0;
   padding: 48px 10px 12px;
-  background: rgba(180, 180, 180, 0.1);
+  background: var(--sidebar);
+  border-right: 0.5px solid var(--line);
+  overflow: auto;
 }
 .settings-shell aside button {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   text-align: left;
   width: 100%;
-  height: 28px;
+  height: 30px;
   margin: 1px 0;
-  padding: 0 6px;
+  padding: 0 10px;
   border-radius: var(--radius-control);
   background: transparent;
   box-shadow: none;
+  color: var(--muted);
   font-size: 13px;
 }
-.settings-shell aside button.selected {
-  background: var(--accent);
-  color: white;
+.settings-shell aside button:hover {
+  filter: none;
+  background: var(--hover);
+  color: var(--text);
 }
-.settings-shell aside .tile {
-  width: 20px;
-  height: 20px;
-  border-radius: var(--radius-control);
+.settings-shell aside button:active {
+  transform: none;
+}
+.settings-shell aside button.selected {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 500;
+}
+.settings-shell aside button[aria-expanded] {
+  color: var(--text);
+}
+.nav-chevron {
+  margin-left: auto;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  flex-shrink: 0;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+.nav-chevron.open {
+  transform: rotate(90deg);
+}
+.nav-children {
+  margin: 0 0 4px 17px;
+  padding-left: 9px;
+  border-left: 1px solid var(--line);
+}
+.settings-shell aside .nav-item.child {
+  height: 28px;
+  padding-left: 10px;
 }
 .settings-main {
   flex: 1;
@@ -479,9 +511,22 @@ summary:focus-visible {
   align-items: center;
   padding: 0 24px;
 }
+.settings-title {
+  gap: 8px;
+}
+.settings-title .crumb {
+  color: var(--muted);
+  font-size: 15px;
+}
+.settings-title .crumb::after {
+  content: '/';
+  margin-left: 8px;
+  opacity: 0.5;
+}
 .settings-title h2 {
   margin: 0;
   font-size: 15px;
+  font-weight: 600;
 }
 .settings {
   flex: 1;
@@ -491,7 +536,7 @@ summary:focus-visible {
 .group {
   background: var(--group);
   border-radius: var(--radius-card);
-  box-shadow: 0 0 0 0.5px var(--line);
+  border: 1px solid var(--line);
   margin-bottom: 16px;
   padding: 0 12px;
 }
@@ -1532,4 +1577,68 @@ form.setting-row input {
 /* An inline action in a row's status line (暂停 / 继续). */
 .ch-label .link {
   font-size: inherit;
+}
+/* A page's own toolbar, above its first card. */
+.page-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.danger-quiet {
+  color: var(--red);
+}
+/* A list row that opens a detail page. */
+.ext-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 0;
+  text-align: left;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+  border-bottom: 1px solid var(--line);
+}
+.memory-list > li:last-child > .ext-row {
+  border-bottom: 0;
+}
+.ext-row:hover {
+  background: transparent;
+}
+.ext-row:hover .ext-title {
+  color: var(--accent);
+}
+.ext-row:active {
+  transform: none;
+}
+.ext-row .ext-main {
+  flex: 1;
+}
+.ext-badge {
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.chevron {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.ext-target {
+  max-width: 62%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--muted);
+}
+.ext-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ext-description {
+  padding: 12px;
+  line-height: 1.6;
 }

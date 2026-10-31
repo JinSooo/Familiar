@@ -1642,3 +1642,102 @@ form.setting-row input {
   padding: 12px;
   line-height: 1.6;
 }
+/* The menu bar panel (left click on the tray icon). */
+.tray-panel {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 12px 8px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--settings) 82%, transparent);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.tray-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 4px;
+}
+.tray-who {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.tray-who strong {
+  font-size: 15px;
+}
+.tray-who .muted {
+  font-size: 12px;
+}
+.tray-watch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 4px;
+  padding: 8px 10px;
+  border-radius: var(--radius-card);
+  background: var(--group);
+  border: 1px solid var(--line);
+  font-size: 12px;
+}
+.tray-watch .link {
+  margin-left: auto;
+  padding: 0;
+  font-size: 12px;
+}
+.dot.on {
+  background: var(--green);
+}
+.dot.paused,
+.dot.warn {
+  background: var(--orange);
+}
+.tray-heading {
+  margin: 12px 4px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.tray-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tray-list li {
+  display: grid;
+  grid-template-columns: 38px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 4px;
+  border-radius: var(--radius-control);
+  font-size: 12.5px;
+}
+.tray-list li:hover {
+  background: var(--hover);
+}
+.tray-list time {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.tray-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tray-apps {
+  display: flex;
+  gap: 3px;
+}
+.tray-apps img {
+  width: 14px;
+  height: 14px;
+}
+.tray-list li.tray-empty {
+  display: block;
+  padding: 8px 4px;
+}

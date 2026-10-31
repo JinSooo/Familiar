@@ -10,6 +10,56 @@ tauri_panel! {
     // Borderless NSWindows refuse key status, which swallowed first clicks and blocked typing.
     // Not main-capable: a non-activating panel that may become main spends a click on that.
     panel!(ChatPanel { config: { can_become_key_window: true } })
+    // The menu bar panel: key so it can tell when the user clicks elsewhere and hide.
+    panel!(TrayPanel { config: { can_become_key_window: true } })
+}
+
+const PANEL_SIZE: (f64, f64) = (320., 440.);
+/// When the menu bar panel last hid itself on losing focus, in ms since the epoch. A click on the
+/// tray icon while the panel is open first takes its focus away; that click must not reopen it.
+static PANEL_HIDDEN_AT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Shows the menu bar panel under the tray icon, or hides it when it is already up.
+pub fn toggle_panel(app: &tauri::AppHandle, icon: tauri::Rect) -> tauri::Result<()> {
+    let Some(w) = app.get_webview_window("panel") else {
+        return Ok(());
+    };
+    if w.is_visible()? {
+        w.hide()?;
+        return Ok(());
+    }
+    if now_ms().saturating_sub(PANEL_HIDDEN_AT.load(std::sync::atomic::Ordering::Relaxed)) < 300 {
+        return Ok(());
+    }
+    // The icon's rect is in physical pixels of the screen it is on; that screen decides the scale.
+    let at = icon.position.to_physical::<f64>(1.);
+    let size = icon.size.to_physical::<f64>(1.);
+    let monitor = w.available_monitors()?.into_iter().find(|m| {
+        let p = m.position();
+        let s = m.size();
+        at.x >= p.x as f64
+            && at.x < (p.x + s.width as i32) as f64
+            && at.y >= p.y as f64
+            && at.y < (p.y + s.height as i32) as f64
+    });
+    let scale = monitor.as_ref().map(|m| m.scale_factor()).unwrap_or(2.);
+    let x = (at.x + size.width / 2.) / scale - PANEL_SIZE.0 / 2.;
+    let y = (at.y + size.height) / scale + 6.;
+    w.set_position(clamp(&w, x, y, PANEL_SIZE.0, PANEL_SIZE.1)?)?;
+    match app.get_webview_panel("panel") {
+        Ok(panel) => panel.show_and_make_key(),
+        Err(_) => {
+            w.show()?;
+            w.set_focus()?;
+        }
+    }
+    Ok(())
 }
 
 pub struct Paths {
@@ -198,6 +248,54 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
                 .build(),
         )
         .build()?;
+    let tray_panel = WebviewWindowBuilder::new(app, "panel", url("panel"))
+        .title("Familiar")
+        .inner_size(PANEL_SIZE.0, PANEL_SIZE.1)
+        .transparent(true)
+        .decorations(false)
+        .resizable(false)
+        .skip_taskbar(true)
+        .visible(false)
+        .accept_first_mouse(true)
+        .effects(
+            EffectsBuilder::new()
+                .effect(Effect::Popover)
+                .state(EffectState::Active)
+                .radius(12.)
+                .build(),
+        )
+        .build()?
+        .to_panel::<TrayPanel>()?;
+    tray_panel.set_level(PanelLevel::PopUpMenu.value());
+    tray_panel.set_collection_behavior(
+        CollectionBehavior::new()
+            .move_to_active_space()
+            .full_screen_auxiliary()
+            .value(),
+    );
+    tray_panel
+        .set_style_mask(
+            StyleMask::empty()
+                .borderless()
+                .nonactivating_panel()
+                .value(),
+        )
+        .map_err(|e| std::io::Error::other(format!("Tray panel style mask: {e:?}")))?;
+    {
+        let h = app.clone();
+        app.get_webview_window("panel")
+            .unwrap()
+            .on_window_event(move |event| {
+                if let tauri::WindowEvent::Focused(false) = event {
+                    if let Some(w) = h.get_webview_window("panel") {
+                        if w.is_visible().unwrap_or(false) {
+                            PANEL_HIDDEN_AT.store(now_ms(), std::sync::atomic::Ordering::Relaxed);
+                            let _ = w.hide();
+                        }
+                    }
+                }
+            });
+    }
     for label in ["pet", "chat", "settings", "main"] {
         let w = app.get_webview_window(label).unwrap();
         let h = app.clone();

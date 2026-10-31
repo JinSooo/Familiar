@@ -3,7 +3,7 @@ use serde_json::Value;
 use tauri::{
     image::Image,
     menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu},
-    tray::TrayIconBuilder,
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle,
 };
 
@@ -76,7 +76,21 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         .icon(Image::from_bytes(include_bytes!("../icons/tray.png"))?)
         .icon_as_template(true)
         .tooltip("Familiar")
-        .show_menu_on_left_click(true)
+        // Left click opens the status panel; the menu (quick actions) stays on right click.
+        .show_menu_on_left_click(false)
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                rect,
+                ..
+            } = event
+            {
+                if let Err(e) = crate::windows::toggle_panel(tray.app_handle(), rect) {
+                    eprintln!("Tray panel: {e}");
+                }
+            }
+        })
         .build(app)?;
     rebuild(app, &[], "", "medium", "off")
 }

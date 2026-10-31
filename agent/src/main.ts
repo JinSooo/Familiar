@@ -257,6 +257,7 @@ function refreshState() {
   if (next !== state) {
     state = next
     emit(IPC.petState, state, 'pet')
+    emit(IPC.petState, state, 'panel')
   }
 }
 function setCapsule(open: boolean) {
@@ -641,7 +642,12 @@ async function request(
       refreshState()
       return
     case IPC.ready:
-      requireSender(window, ['pet', 'chat', 'settings', 'main'])
+      requireSender(window, ['pet', 'chat', 'settings', 'main', 'panel'])
+      if (window === 'panel') {
+        emit(IPC.petState, state, 'panel')
+        emit(IPC.petSkin, currentSkin(getSettings().pet.id), 'panel')
+        return
+      }
       emit(IPC.session, session, window as WindowLabel)
       if (window === 'pet') {
         emit(IPC.petState, state, 'pet')
@@ -659,7 +665,7 @@ async function request(
       }
       return
     case IPC.memoryList: {
-      requireSender(window, ['settings'])
+      requireSender(window, ['settings', 'panel'])
       const { store } = await memory()
       return (await store.list()).map(({ seen, ...entry }): MemoryItem => ({
         ...entry,
@@ -791,7 +797,7 @@ async function request(
       await removeSkill(z.string().parse(input))
       return
     case IPC.perceptionStatus:
-      requireSender(window, ['settings'])
+      requireSender(window, ['settings', 'panel'])
       return perceptionStatus()
     case IPC.perceptionRecent:
       requireSender(window, ['settings'])
@@ -804,7 +810,7 @@ async function request(
       memoryChanged()
       return
     case IPC.perceptionIcons:
-      requireSender(window, ['settings'])
+      requireSender(window, ['settings', 'panel'])
       return appIcons(z.array(z.string()).max(100).parse(input))
     case IPC.perceptionSummarize:
       requireSender(window, ['settings'])
@@ -832,7 +838,7 @@ async function request(
       return getSettings().perception
     }
     case IPC.perceptionPause: {
-      requireSender(window, ['tray', 'settings'])
+      requireSender(window, ['tray', 'settings', 'panel'])
       const settings = publicSettings()
       const paused =
         z.boolean().optional().parse(input) ?? !settings.perception.paused
@@ -859,7 +865,7 @@ async function request(
 const requestSchema = z.object({
   kind: z.literal('request'),
   id: z.number().int(),
-  window: z.enum(['pet', 'chat', 'settings', 'main', 'tray']),
+  window: z.enum(['pet', 'chat', 'settings', 'main', 'panel', 'tray']),
   channel: z.string(),
   args: z.array(z.unknown()),
 })

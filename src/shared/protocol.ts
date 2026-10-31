@@ -11,7 +11,7 @@ import type { ShortcutAction } from './index'
  * - Sidecar → webviews: `emit` messages; Rust re-emits them as Tauri events named `channel`.
  */
 
-export type WindowLabel = 'pet' | 'chat' | 'settings' | 'main'
+export type WindowLabel = 'pet' | 'chat' | 'settings' | 'main' | 'panel'
 
 /** Rust → sidecar */
 export type ShellToAgent =

@@ -70,6 +70,7 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
         .shadow(false)
         .resizable(false)
         .skip_taskbar(true)
+        .accept_first_mouse(true)
         .visible(false)
         .build()?;
     let mut position = LogicalPosition::new(0., 0.);
@@ -146,6 +147,7 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
         .title("设置")
         .inner_size(760., 600.)
         .min_inner_size(680., 500.)
+        .accept_first_mouse(true)
         .visible(false)
         .title_bar_style(tauri::TitleBarStyle::Overlay)
         .hidden_title(true)
@@ -160,6 +162,7 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
         .title("Familiar")
         .inner_size(1040., 760.)
         .min_inner_size(720., 520.)
+        .accept_first_mouse(true)
         .visible(false)
         .title_bar_style(tauri::TitleBarStyle::Overlay)
         .hidden_title(true)

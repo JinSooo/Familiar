@@ -98,11 +98,19 @@ async function work(currentId: string, force: boolean): Promise<ReflectResult> {
           transcript(conversation.messages, from, settings.pet.name),
           await existingMemories(store, today(last)),
         )
-        const applied = await applyReflection(store, reflection, {
-          id: summary.id,
-          day: today(last),
-          time: last.toTimeString().slice(0, 5),
-        })
+        const applied = await applyReflection(
+          store,
+          reflection,
+          {
+            id: summary.id,
+            day: today(last),
+            time: last.toTimeString().slice(0, 5),
+          },
+          {
+            // With Computer History on, the timeline is written per period, from activity and conversations together.
+            timeline: !settings.perception.enabled,
+          },
+        )
         result.pending += applied.pending
         result.promoted += applied.promoted
         result.timeline += applied.timeline ? 1 : 0

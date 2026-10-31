@@ -37,6 +37,10 @@ export interface MemoryMeta {
   seen?: string[]
   /** Timeline entries written from Computer History: the period they cover and its apps. */
   activity?: ActivityMeta
+  /** Timeline entries written from a conversation: its id, so the entry can open it again. */
+  conversation?: string
+  /** A rolled-up timeline line: every conversation the lines merged into it came from. */
+  conversations?: string[]
 }
 export interface ActivityMeta {
   title: string
@@ -427,6 +431,8 @@ export class MemoryStore {
     day: string,
     text: string,
     activity?: ActivityMeta,
+    conversation?: string,
+    conversations?: string[],
   ): Promise<MemoryEntry> {
     return this.serial(async () => {
       const entry: MemoryEntry = {
@@ -440,6 +446,8 @@ export class MemoryStore {
         ...(activity
           ? { activity: { ...activity, title: checked(activity.title) } }
           : {}),
+        ...(conversation ? { conversation } : {}),
+        ...(conversations?.length ? { conversations } : {}),
       }
       await this.append(entry)
       return entry
@@ -467,7 +475,12 @@ export class MemoryStore {
   }
 
   /** Replaces finer timeline files with one coarser summary (the old files stay in git history). */
-  rollUp(into: string, from: string[], lines: string[]): Promise<void> {
+  rollUp(
+    into: string,
+    from: string[],
+    lines: string[],
+    conversations: string[] = [],
+  ): Promise<void> {
     return this.serial(async () => {
       // Check everything before removing anything; `from` may include `into` itself.
       const texts = lines.map(checked)
@@ -487,6 +500,7 @@ export class MemoryStore {
           text,
           category: 'timeline',
           key: into,
+          ...(conversations.length ? { conversations } : {}),
         })
     })
   }

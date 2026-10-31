@@ -416,6 +416,10 @@ export interface MemoryItem {
   evidence?: string
   /** Pending: how many conversations showed it. */
   seen?: number
+  /** A timeline entry written from a conversation: its id, so the entry can open it again. */
+  conversation?: string
+  /** A rolled-up (week or month) timeline line: every conversation it was merged from. */
+  conversations?: string[]
   /** A Computer History entry: its title, period and the apps used. */
   activity?: {
     title: string

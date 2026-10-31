@@ -185,6 +185,28 @@ describe('segments', () => {
   })
 })
 
+describe('talkText', () => {
+  const m = (role: 'user' | 'assistant', content: string, minutes: number) => ({
+    role,
+    content,
+    createdAt: at(minutes),
+  })
+  test('keeps only what was said inside the period', async () => {
+    const { talkText } = await import('../src/perception/summarize')
+    const messages = [
+      m('user', '早些时候', 0),
+      m('assistant', '好的', 5),
+      m('user', '这段时间里的问题', 12),
+      m('assistant', '这段时间里的回答', 14),
+      m('user', '之后的话', 25),
+    ]
+    expect(talkText(messages, at(10), at(20), '小黑')).toBe(
+      '用户：这段时间里的问题\n\n小黑：这段时间里的回答',
+    )
+    expect(talkText(messages, at(30), at(40), '小黑')).toBe('')
+  })
+})
+
 describe('history periods', () => {
   test('periods follow the clock', async () => {
     const { periodEnd } = await import('../src/perception/summarize')

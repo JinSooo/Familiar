@@ -110,9 +110,35 @@ describe('reflection', () => {
       ['pending', '用户住在杭州'],
       ['timeline', '09:30 问了杭州天气'],
     ])
+    // The timeline line remembers which conversation it came from, so it can be reopened.
+    expect(entries[1]!.conversation).toBe('c1')
+    expect(entries[0]!.conversation).toBeUndefined()
     // The conversation goes in the prompt, marked as data.
     const prompt = JSON.stringify(model.doGenerateCalls[0]!.prompt)
     expect(prompt).toContain('<conversation>')
+  })
+
+  test('with the timeline off, only the candidates are stored', async () => {
+    const s = store()
+    const reflection = {
+      candidates: [
+        {
+          target: 'profile' as const,
+          text: '用户住在杭州',
+          confidence: 0.8,
+          evidence: '我在杭州',
+        },
+      ],
+      summary: '问了杭州天气',
+    }
+    const applied = await applyReflection(
+      s,
+      reflection,
+      { id: 'c1', day: '2026-10-27', time: '09:30' },
+      { timeline: false },
+    )
+    expect(applied).toEqual({ pending: 1, promoted: 0, timeline: false })
+    expect((await s.list()).map((e) => e.category)).toEqual(['pending'])
   })
 
   test('transcript starts two messages before the new part', () => {
@@ -170,6 +196,34 @@ describe('timeline roll-up', () => {
       '2026-10.md',
       '2026-11-10.md',
     ])
+  })
+
+  test('merged lines keep the conversations they came from, through week and month', async () => {
+    const s = store()
+    await s.appendTimeline('2026-09-28', '10:00 修了宠物拖动', undefined, 'c1')
+    await s.appendTimeline('2026-09-29', '11:00 聊了 Rust', undefined, 'c2')
+    await s.appendTimeline('2026-09-30', '21:00 读 AI SDK 文档')
+    await s.appendTimeline('2026-11-10', '09:00 今天的事', undefined, 'c9')
+    await compressTimeline(s, undefined, new Date(2026, 10, 10))
+    const month = (await s.list()).filter((e) => e.key === '2026-10')
+    expect(month).toHaveLength(3)
+    // The week and the month are both rolled up in one pass, so the ids survive two merges.
+    for (const e of month) {
+      expect(e.conversation).toBeUndefined()
+      expect(e.conversations).toEqual(['c1', 'c2'])
+    }
+    // A day that is still open is not merged and keeps its own single id.
+    const today = (await s.list()).find((e) => e.key === '2026-11-10')!
+    expect(today.conversation).toBe('c9')
+    expect(today.conversations).toBeUndefined()
+  })
+
+  test('a roll-up of days without conversations adds no ids', async () => {
+    const s = store()
+    await s.appendTimeline('2026-09-28', '10:00 修了宠物拖动')
+    await compressTimeline(s, undefined, new Date(2026, 10, 10))
+    const [line] = (await s.list()).filter((e) => e.key === '2026-10')
+    expect(line!.conversations).toBeUndefined()
   })
 
   test('long weeks are summarized by the model', async () => {

@@ -123,6 +123,8 @@ export async function applyReflection(
   store: MemoryStore,
   reflection: Reflection,
   conversation: { id: string; day: string; time: string },
+  // `timeline: false` keeps the summary out of the timeline: Computer History writes it then.
+  options: { timeline?: boolean } = {},
 ): Promise<{ pending: number; promoted: number; timeline: boolean }> {
   let pending = 0
   let promoted = 0
@@ -149,11 +151,17 @@ export async function applyReflection(
     }
   }
   let timeline = false
-  if (reflection.summary && !stale(reflection.summary))
+  if (
+    options.timeline !== false &&
+    reflection.summary &&
+    !stale(reflection.summary)
+  )
     try {
       await store.appendTimeline(
         conversation.day,
         `${conversation.time} ${reflection.summary}`,
+        undefined,
+        conversation.id,
       )
       timeline = true
     } catch (error) {

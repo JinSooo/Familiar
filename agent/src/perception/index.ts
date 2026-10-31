@@ -11,6 +11,7 @@ import type {
   PerceptionEvent,
   PerceptionStatus,
 } from '../../../src/shared'
+import { listConversations, loadConversation } from '../conversations'
 import { openMemory } from '../memory'
 import { backgroundModel } from '../memory/jobs'
 import { getSettings } from '../settings'
@@ -18,7 +19,7 @@ import { dataDir, readKey, writeKey } from '../system'
 import { ensureWorkspace, snapshot } from '../workspace'
 import { admit } from './activity'
 import { keepHours, PerceptionBuffer } from './buffer'
-import { periodEnd, summarizeWindow } from './summarize'
+import { periodEnd, summarizeWindow, talkText } from './summarize'
 
 const exec = promisify(execFile)
 const keyAccount = 'perception-buffer-key'
@@ -151,6 +152,23 @@ export async function grantAccess() {
   ])
 }
 
+/** Conversations that have messages in [from, to), with what was said there. */
+async function conversationsBetween(from: number, to: number) {
+  const petName = getSettings().pet.name
+  const found: { id: string; text: string }[] = []
+  for (const c of await listConversations()) {
+    if (c.updatedAt < from) continue
+    const text = talkText(
+      (await loadConversation(c.id)).messages,
+      from,
+      to,
+      petName,
+    )
+    if (text) found.push({ id: c.id, text })
+  }
+  return found
+}
+
 const stateFile = () => join(dataDir, 'perception-summary.json')
 async function summarizedUntil(): Promise<number> {
   try {
@@ -205,6 +223,7 @@ async function summarize(force: boolean) {
           settings: p,
           from,
           to,
+          conversations: conversationsBetween,
         })
       } catch (error) {
         failing = { from, runs: failing.from === from ? failing.runs + 1 : 1 }

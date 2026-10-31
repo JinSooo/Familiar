@@ -135,10 +135,28 @@ export async function compressTimeline(
             // Day lines start with a time; keep which day they were.
             .map((e) => (day.test(key) ? `${key.slice(5)} ${e.text}` : e.text)),
         )
+      // The merged lines are rewritten by the model and carry no metadata of their own, so the
+      // conversations behind them are collected here and kept on every new line.
+      const conversations = [
+        ...new Set(
+          entries
+            .filter(
+              (e) =>
+                e.category === 'timeline' &&
+                plan.from.includes(e.key!) &&
+                e.status === 'confirmed',
+            )
+            .flatMap((e) => [
+              ...(e.conversation ? [e.conversation] : []),
+              ...(e.conversations ?? []),
+            ]),
+        ),
+      ]
       await store.rollUp(
         plan.into,
         plan.from,
         await summarize(model, kind, lines),
+        conversations,
       )
       done++
     }

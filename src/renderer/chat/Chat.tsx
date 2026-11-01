@@ -1,7 +1,7 @@
 import { Markdown, PlainText } from './Markdown'
 import { ImageViewer, SourceCards } from './Visual'
-import { needsTimeDivider, formatMessageTime } from './content'
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { needsTimeDivider, formatMessageTime, replyParts } from './content'
+import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../shared-ui/Icon'
 import type { ChatView, PetState, Session } from '../../shared'
 import { History, errorText } from './History'
@@ -20,6 +20,16 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
   useEffect(() => api.onState(setState), [])
   const [view, setView] = useState<ChatView>('chat')
   const [openError, setOpenError] = useState('')
+  /** The user message being edited, by index. */
+  const [editing, setEditing] = useState<number>()
+  const [actionError, setActionError] = useState('')
+  const act = (work: Promise<unknown>, fallback: string) => {
+    setActionError('')
+    work.catch((e) => setActionError(errorText(e, fallback)))
+  }
+  /** The user message a reply answers: the nearest one before it. */
+  const askedBefore = (i: number) =>
+    session.messages.findLastIndex((m, k) => k < i && m.role === 'user')
   useEffect(() => api.onView(setView), [])
   // Esc steps out: history → chat, then the whole panel and capsule close at once.
   useEffect(() => {
@@ -128,7 +138,11 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
           </div>
         </header>
         {view === 'history' && !big ? (
-          <History currentId={session.id} onOpened={() => setView('chat')} />
+          <History
+            currentId={session.id}
+            running={session.running}
+            onOpened={() => setView('chat')}
+          />
         ) : (
           <>
             <section
@@ -168,7 +182,7 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
                 </div>
               )}
               {session.messages.map((m, i) => (
-                <Fragment key={i}>
+                <div className="turn" key={i}>
                   {m.content &&
                     needsTimeDivider(
                       session.messages[i - 1]?.createdAt,
@@ -178,38 +192,75 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
                         {formatMessageTime(m.createdAt, Date.now())}
                       </div>
                     )}
-                  <ToolSteps
-                    tools={session.tools.filter((t) => t.turn === i)}
-                  />
-                  {m.content && (
-                    <article
-                      className={`message ${m.role}`}
-                      title={new Date(m.createdAt).toLocaleString('zh-CN', {
-                        hour12: false,
-                      })}
-                    >
-                      {m.role === 'assistant' ? (
-                        <Markdown content={m.content} />
-                      ) : (
-                        <PlainText content={m.content} />
-                      )}
-                    </article>
-                  )}
-                  {m.attachments?.length ? (
-                    <Attachments
-                      items={m.attachments}
-                      align={m.role === 'user' ? 'end' : 'start'}
+                  {m.role === 'assistant' ? (
+                    <Reply
+                      message={m}
+                      tools={session.tools.filter((t) => t.turn === i)}
                     />
-                  ) : null}
-                  {m.role === 'assistant' && m.sources?.length ? (
-                    <SourceCards sources={m.sources} />
-                  ) : null}
-                  {m.error && (
-                    <p className="error" role="alert">
-                      {m.error}
-                    </p>
+                  ) : editing === i ? (
+                    <EditMessage
+                      text={m.content}
+                      onCancel={() => setEditing(undefined)}
+                      onSend={(text) => {
+                        setEditing(undefined)
+                        act(api.resend(i, text), '重新发送失败')
+                      }}
+                    />
+                  ) : (
+                    <>
+                      {m.content && (
+                        <article
+                          className="message user"
+                          title={stamp(m.createdAt)}
+                        >
+                          <PlainText content={m.content} />
+                        </article>
+                      )}
+                      {m.attachments?.length ? (
+                        <Attachments items={m.attachments} align="end" />
+                      ) : null}
+                    </>
                   )}
-                </Fragment>
+                  {m.error && (
+                    <div className="error-row">
+                      <p className="error" role="alert">
+                        {m.error}
+                      </p>
+                      {!session.running && askedBefore(i) >= 0 && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            act(api.resend(askedBefore(i)), '重试失败')
+                          }
+                        >
+                          重试
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {!session.running &&
+                    editing !== i &&
+                    (m.content || m.attachments?.length) && (
+                      <MessageActions
+                        align={m.role === 'user' ? 'end' : 'start'}
+                        text={m.content}
+                        onEdit={
+                          m.role === 'user' ? () => setEditing(i) : undefined
+                        }
+                        onRegenerate={
+                          m.role === 'assistant' && askedBefore(i) >= 0
+                            ? () =>
+                                act(api.resend(askedBefore(i)), '重新生成失败')
+                            : // A message left without a reply (branched off there) can be answered.
+                              m.role === 'user' &&
+                                i === session.messages.length - 1
+                              ? () => act(api.resend(i), '回复失败')
+                              : undefined
+                        }
+                        onBranch={() => act(api.branch(i), '分支失败')}
+                      />
+                    )}
+                </div>
               ))}
               {session.approvals.map((a) => (
                 <article className="approval" key={a.id}>
@@ -239,6 +290,11 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
                   )}
                 </article>
               ))}
+              {actionError && (
+                <p className="error" role="alert">
+                  {actionError}
+                </p>
+              )}
               {session.running && <p className="muted status">{status}</p>}
               <div ref={bottom} />
             </section>
@@ -266,11 +322,173 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
         <History
           compact
           currentId={session.id}
+          running={session.running}
           onOpened={() => setView('chat')}
         />
       </aside>
       {surface}
     </div>
+  )
+}
+
+const glyphs = {
+  copy: 'M9 9h11v11H9zM5 15H4V4h11v1',
+  check: 'M5 12l5 5L20 7',
+  edit: 'M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z',
+  regenerate: 'M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7',
+  branch:
+    'M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9',
+}
+function Glyph({ d }: { d: string }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d={d} />
+    </svg>
+  )
+}
+
+/** Copy, edit, regenerate and branch for one message; shown while the pointer is over it. */
+function MessageActions({
+  align,
+  text,
+  onEdit,
+  onRegenerate,
+  onBranch,
+}: {
+  align: 'start' | 'end'
+  text: string
+  onEdit?: () => void
+  onRegenerate?: () => void
+  onBranch: () => void
+}) {
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    if (!copied) return
+    const timer = setTimeout(() => setCopied(false), 1500)
+    return () => clearTimeout(timer)
+  }, [copied])
+  const button = (label: string, d: string, onClick: () => void) => (
+    <button
+      type="button"
+      className="icon"
+      data-tip={label}
+      aria-label={label}
+      onClick={onClick}
+    >
+      <Glyph d={d} />
+    </button>
+  )
+  return (
+    <div className={`message-actions ${align}`}>
+      {text &&
+        button(
+          copied ? '已复制' : '复制',
+          copied ? glyphs.check : glyphs.copy,
+          () =>
+            void navigator.clipboard
+              .writeText(text)
+              .then(() => setCopied(true))
+              .catch(console.error),
+        )}
+      {onEdit && button('编辑后重新发送', glyphs.edit, onEdit)}
+      {onRegenerate && button('重新生成', glyphs.regenerate, onRegenerate)}
+      {button('从这里分支成新对话', glyphs.branch, onBranch)}
+    </div>
+  )
+}
+
+/** A user message opened for editing; sending drops what came after it and runs again. */
+function EditMessage({
+  text,
+  onSend,
+  onCancel,
+}: {
+  text: string
+  onSend: (text: string) => void
+  onCancel: () => void
+}) {
+  const [value, setValue] = useState(text)
+  const send = () => value.trim() && onSend(value.trim())
+  return (
+    <div className="message-edit">
+      <textarea
+        autoFocus
+        value={value}
+        rows={Math.min(8, value.split('\n').length + 1)}
+        aria-label="修改消息"
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            e.stopPropagation()
+            onCancel()
+          }
+          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+            e.preventDefault()
+            send()
+          }
+        }}
+      />
+      <div className="message-edit-actions">
+        <span className="muted">之后的内容会被替换</span>
+        <button type="button" onClick={onCancel}>
+          取消
+        </button>
+        <button
+          type="button"
+          className="primary"
+          disabled={!value.trim()}
+          onClick={send}
+        >
+          发送
+        </button>
+      </div>
+    </div>
+  )
+}
+
+const stamp = (at: number) =>
+  new Date(at).toLocaleString('zh-CN', { hour12: false })
+
+/** A reply in the order it happened: text, tool steps, source cards and made files interleaved. */
+function Reply({
+  message,
+  tools,
+}: {
+  message: Session['messages'][number]
+  tools: Session['tools']
+}) {
+  const parts = replyParts(
+    message.content,
+    tools,
+    message.sources ?? [],
+    message.attachments ?? [],
+  )
+  return parts.map((part, k) =>
+    part.kind === 'text' ? (
+      <article
+        key={k}
+        className="message assistant"
+        title={stamp(message.createdAt)}
+      >
+        <Markdown content={part.text} />
+      </article>
+    ) : part.kind === 'tools' ? (
+      <ToolSteps key={k} tools={part.tools} />
+    ) : part.kind === 'sources' ? (
+      <SourceCards key={k} sources={part.sources} />
+    ) : (
+      <Attachments key={k} items={part.files} />
+    ),
   )
 }
 

@@ -129,3 +129,117 @@ describe('files on disk', () => {
     )
   })
 })
+
+describe('reply order', () => {
+  // User report: sources all sat under the reply and tool steps all sat above it, not where
+  // they happened. Each one now records how much of the reply text came before it.
+  test('tool steps, sources and files show where they happened, also after a save', async () => {
+    const { emptySession, reduceSession } = await import('../src/session')
+    const { replyParts } = await import('../../src/renderer/chat/content')
+    let s: Session = {
+      ...emptySession(),
+      id: 'c',
+      messages: [
+        { role: 'user', content: '查一下再画', createdAt: 1 },
+        { role: 'assistant', content: '', createdAt: 2 },
+      ],
+    }
+    const events: Parameters<typeof reduceSession>[1][] = [
+      { type: 'text-delta', text: '我先搜一下。' },
+      {
+        type: 'tool-call',
+        id: 't1',
+        toolName: 'web_search',
+        input: { query: 'react' },
+      },
+      { type: 'tool-result', id: 't1', output: '' },
+      { type: 'sources', sources: [{ url: 'https://a.com', title: 'A' }] },
+      { type: 'text-delta', text: '搜到了，现在画图。' },
+      {
+        type: 'attachment',
+        attachment: {
+          path: 'c/cat.png',
+          name: 'cat.png',
+          mediaType: 'image/png',
+        },
+      },
+      { type: 'text-delta', text: '画好了。' },
+    ]
+    for (const e of events) s = reduceSession(s, e)
+    const back = parse(
+      'c',
+      serialize(
+        {
+          id: 'c',
+          title: 't',
+          createdAt: 1,
+          updatedAt: 2,
+          messages: s.messages,
+          tools: s.tools,
+        },
+        '小黑',
+      ),
+    )
+    const reply = back.messages[1]!
+    const order = replyParts(
+      reply.content,
+      back.tools,
+      reply.sources ?? [],
+      reply.attachments ?? [],
+    ).map((p) => (p.kind === 'text' ? p.text : p.kind))
+    expect(order).toEqual([
+      '我先搜一下。',
+      'tools',
+      'sources',
+      '搜到了，现在画图。',
+      'files',
+      '画好了。',
+    ])
+  })
+
+  test('older transcripts without positions keep steps first and sources last', async () => {
+    const { replyParts } = await import('../../src/renderer/chat/content')
+    const order = replyParts(
+      '回答',
+      [{ id: 'x', name: '搜索', done: true }],
+      [{ url: 'https://a.com', title: 'A' }],
+      [],
+    ).map((p) => p.kind)
+    expect(order).toEqual(['tools', 'text', 'sources'])
+  })
+})
+
+describe('resending', () => {
+  // User report: a failed reply could not be sent again, and nothing could be rolled back.
+  test('rewinding to a message drops it, what followed and their tool rows', async () => {
+    const { rewind } = await import('../src/session')
+    const s: Session = {
+      ...session('r', [
+        { role: 'user', content: '第一句', createdAt: 1 },
+        { role: 'assistant', content: '好', createdAt: 2 },
+        {
+          role: 'user',
+          content: '第二句',
+          createdAt: 3,
+          attachments: [
+            { path: 'r/a.png', name: 'a.png', mediaType: 'image/png' },
+          ],
+        },
+        { role: 'assistant', content: '', createdAt: 4, error: '断了' },
+      ]),
+      tools: [
+        { id: 'a', name: '搜索', done: true, turn: 1 },
+        { id: 'b', name: '搜索', done: true, turn: 3 },
+      ],
+    }
+    const back = rewind(s, 2)
+    expect(back.message.content).toBe('第二句')
+    expect(back.message.attachments?.[0]?.name).toBe('a.png')
+    expect(back.session.messages.map((m) => m.content)).toEqual([
+      '第一句',
+      '好',
+    ])
+    expect(back.session.tools.map((t) => t.id)).toEqual(['a'])
+    expect(() => rewind(s, 1)).toThrow()
+  })
+})

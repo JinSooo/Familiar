@@ -51,7 +51,9 @@ pub fn toggle_panel(app: &tauri::AppHandle, icon: tauri::Rect) -> tauri::Result<
     let scale = monitor.as_ref().map(|m| m.scale_factor()).unwrap_or(2.);
     let x = (at.x + size.width / 2.) / scale - PANEL_SIZE.0 / 2.;
     let y = (at.y + size.height) / scale + 6.;
-    w.set_position(clamp(&w, x, y, PANEL_SIZE.0, PANEL_SIZE.1)?)?;
+    // The page sizes the window to its content, so keep whatever height it set last.
+    let height = w.outer_size()?.to_logical::<f64>(w.scale_factor()?).height;
+    w.set_position(clamp(&w, x, y, PANEL_SIZE.0, height)?)?;
     match app.get_webview_panel("panel") {
         Ok(panel) => panel.show_and_make_key(),
         Err(_) => {

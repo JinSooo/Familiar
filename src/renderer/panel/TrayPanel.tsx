@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { getCurrentWindow } from '@tauri-apps/api/window'
+import { LogicalSize } from '@tauri-apps/api/dpi'
 import type {
   ConversationSummary,
   MemoryItem,
@@ -9,6 +11,7 @@ import type {
 import { api } from '../api'
 import { PetAvatar } from '../pet/PetAvatar'
 import { Icon } from '../shared-ui/Icon'
+import { prettyShortcut } from '../settings/Shortcuts'
 
 const stateLabel: Record<PetState, string> = {
   idle: '空闲',
@@ -27,6 +30,9 @@ const today = () => {
 }
 /** Rows the panel shows before pointing to the timeline page. */
 const shownCount = 4
+/** Window width, and the tallest the window grows before the page scrolls. */
+const panelWidth = 320
+const maxHeight = 600
 const clock = (at: number) => new Date(at).toTimeString().slice(0, 5)
 const duration = (minutes: number) =>
   minutes < 60
@@ -43,6 +49,7 @@ function view(item: MemoryItem): { time: string; title: string } {
 /** The menu bar panel: how the pet is doing, what today looked like, and the way back in. */
 export function TrayPanel() {
   const [name, setName] = useState('')
+  const [summon, setSummon] = useState('')
   const [state, setState] = useState<PetState>('idle')
   const [perception, setPerception] = useState<PerceptionStatus>()
   const [enabled, setEnabled] = useState(false)
@@ -60,6 +67,7 @@ export function TrayPanel() {
       .getSettings()
       .then((s) => {
         setName(s.pet.name)
+        setSummon(s.shortcuts.summon)
         setEnabled(s.perception.enabled)
         if (s.perception.enabled)
           void api.usageToday().then(setUsage).catch(console.error)
@@ -129,6 +137,25 @@ export function TrayPanel() {
       .catch(console.error)
   }, [items, usage, icons])
 
+  // The window takes the height of what it shows, so there is no empty space under it.
+  const body = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = body.current
+    if (!el) return
+    let last = 0
+    const fit = () => {
+      const height = Math.min(Math.ceil(el.scrollHeight), maxHeight)
+      if (height === last) return
+      last = height
+      void getCurrentWindow()
+        .setSize(new LogicalSize(panelWidth, height))
+        .catch(console.error)
+    }
+    const observer = new ResizeObserver(fit)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
   const watching = !enabled
     ? { tone: 'off', text: '感知未开启' }
     : perception?.paused
@@ -144,134 +171,145 @@ export function TrayPanel() {
 
   return (
     <main className="tray-panel">
-      <header className="tray-head">
-        <PetAvatar key={opened} size={44} />
-        <div className="tray-who">
-          <strong>{name}</strong>
-          <span className="muted">{stateLabel[state]}</span>
-        </div>
-        <button
-          type="button"
-          className={`tray-watch-dot ${watching.tone}`}
-          title={watching.text}
-          aria-label={watching.text}
-          disabled={!canPause}
-          onClick={() =>
-            canPause &&
-            void api.perceptionPause(!perception.paused).catch(console.error)
-          }
-        >
-          <i className={`dot ${watching.tone}`} aria-hidden="true" />
-        </button>
-      </header>
-
-      <div className="tray-actions">
-        <button
-          type="button"
-          title="新对话"
-          onClick={() => {
-            api.newSession()
-          }}
-        >
-          <Icon name="new" />
-          新对话
-        </button>
-        <button
-          type="button"
-          title="在大窗口打开"
-          onClick={() => api.openMainWindow()}
-        >
-          <Icon name="window" />
-          大窗口
-        </button>
-        <button type="button" title="设置" onClick={() => api.openSettings()}>
-          <Icon name="settings" />
-          设置
-        </button>
-      </div>
-
-      {last && (
-        <button
-          type="button"
-          className="tray-card tray-resume"
-          onClick={() =>
-            void api
-              .openConversation(last.id)
-              .then(() => api.openMainWindow())
-              .catch(console.error)
-          }
-        >
-          <span className="muted">继续上次</span>
-          <strong>{last.title}</strong>
-          {last.preview && <span className="tray-preview">{last.preview}</span>}
-        </button>
-      )}
-
-      {pending > 0 && (
-        <button
-          type="button"
-          className="tray-card tray-pending"
-          onClick={() => api.openSettings('pending')}
-        >
-          <span>
-            有 <strong>{pending}</strong> 条判断等你确认
-          </span>
-          <span className="muted">去看看 ›</span>
-        </button>
-      )}
-
-      {usage && usage.activeMinutes > 0 && (
-        <section>
-          <h3 className="tray-heading">
-            今天活跃 <span>{duration(usage.activeMinutes)}</span>
-          </h3>
-          <ul className="tray-usage">
-            {usage.apps.slice(0, 3).map((a) => (
-              <li key={a.bundleId}>
-                {icons[a.bundleId] ? (
-                  <img src={icons[a.bundleId]} alt="" />
-                ) : (
-                  <span className="tray-usage-blank" />
-                )}
-                <span className="tray-usage-name">{a.name}</span>
-                <span className="tray-usage-bar">
-                  <i style={{ width: `${(a.minutes / top) * 100}%` }} />
-                </span>
-                <span className="muted">{duration(a.minutes)}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      <section className="tray-today">
-        <h3 className="tray-heading">今天</h3>
-        <ol className="tray-list">
-          {items?.slice(0, shownCount).map((item) => {
-            const v = view(item)
-            return (
-              <li key={item.id}>
-                <time>{v.time}</time>
-                <span className="tray-title" title={item.text}>
-                  {v.title}
-                </span>
-              </li>
-            )
-          })}
-          {items && !items.length && (
-            <li className="tray-empty muted">还没有整理出的活动</li>
-          )}
-        </ol>
-        {items && items.length > shownCount && (
+      <div className="tray-body" ref={body}>
+        <header className="tray-head">
+          <PetAvatar key={opened} size={44} />
+          <div className="tray-who">
+            <strong>
+              {name}
+              <button
+                type="button"
+                className={`tray-watch-dot ${watching.tone}`}
+                title={watching.text}
+                aria-label={watching.text}
+                disabled={!canPause}
+                onClick={() =>
+                  canPause &&
+                  void api
+                    .perceptionPause(!perception.paused)
+                    .catch(console.error)
+                }
+              >
+                <i className={`dot ${watching.tone}`} aria-hidden="true" />
+              </button>
+            </strong>
+            <span className="muted">{stateLabel[state]}</span>
+          </div>
           <button
             type="button"
-            className="link tray-more"
-            onClick={() => api.openSettings('timeline')}
+            className="icon"
+            title="在大窗口打开"
+            aria-label="在大窗口打开"
+            onClick={() => api.openMainWindow()}
           >
-            还有 {items.length - shownCount} 条 · 在设置里查看
+            <Icon name="window" />
+          </button>
+          <button
+            type="button"
+            className="icon"
+            title="设置"
+            aria-label="设置"
+            onClick={() => api.openSettings()}
+          >
+            <Icon name="settings" />
+          </button>
+        </header>
+
+        <button
+          type="button"
+          className="tray-ask"
+          onClick={() => api.newSession()}
+        >
+          <Icon name="new" />
+          <span>和{name}说点什么…</span>
+          {summon && <kbd>{prettyShortcut(summon)}</kbd>}
+        </button>
+
+        {last && (
+          <button
+            type="button"
+            className="tray-card tray-resume"
+            onClick={() =>
+              void api
+                .openConversation(last.id)
+                .then(() => api.openMainWindow())
+                .catch(console.error)
+            }
+          >
+            <span className="muted">继续上次</span>
+            <strong>{last.title}</strong>
+            {last.preview && (
+              <span className="tray-preview">{last.preview}</span>
+            )}
           </button>
         )}
-      </section>
+
+        {pending > 0 && (
+          <button
+            type="button"
+            className="tray-card tray-pending"
+            onClick={() => api.openSettings('pending')}
+          >
+            <span>
+              有 <strong>{pending}</strong> 条判断等你确认
+            </span>
+            <span className="muted">去看看 ›</span>
+          </button>
+        )}
+
+        {usage && usage.activeMinutes > 0 && (
+          <section>
+            <h3 className="tray-heading">
+              今天活跃 <span>{duration(usage.activeMinutes)}</span>
+            </h3>
+            <ul className="tray-usage">
+              {usage.apps.slice(0, 3).map((a) => (
+                <li key={a.bundleId}>
+                  {icons[a.bundleId] ? (
+                    <img src={icons[a.bundleId]} alt="" />
+                  ) : (
+                    <span className="tray-usage-blank" />
+                  )}
+                  <span className="tray-usage-name">{a.name}</span>
+                  <span className="tray-usage-bar">
+                    <i style={{ width: `${(a.minutes / top) * 100}%` }} />
+                  </span>
+                  <span className="muted">{duration(a.minutes)}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        <section className="tray-today">
+          <h3 className="tray-heading">今天</h3>
+          <ol className="tray-list">
+            {items?.slice(0, shownCount).map((item) => {
+              const v = view(item)
+              return (
+                <li key={item.id}>
+                  <time>{v.time}</time>
+                  <span className="tray-title" title={item.text}>
+                    {v.title}
+                  </span>
+                </li>
+              )
+            })}
+            {items && !items.length && (
+              <li className="tray-empty muted">还没有整理出的活动</li>
+            )}
+          </ol>
+          {items && items.length > shownCount && (
+            <button
+              type="button"
+              className="link tray-more"
+              onClick={() => api.openSettings('timeline')}
+            >
+              还有 {items.length - shownCount} 条 · 在设置里查看
+            </button>
+          )}
+        </section>
+      </div>
     </main>
   )
 }

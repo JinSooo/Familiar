@@ -41,6 +41,29 @@ export function beginTurn(
     bubble: '',
   }
 }
+/**
+ * The conversation cut back to before message `index` (a user message): what is resent from
+ * there, with its files, and the session without it and anything after.
+ */
+export function rewind(
+  session: Session,
+  index: number,
+): { session: Session; message: Session['messages'][number] } {
+  const message = session.messages[index]
+  if (!message || message.role !== 'user')
+    throw new Error('只能从你发的消息重新开始')
+  return {
+    message,
+    session: {
+      ...session,
+      messages: session.messages.slice(0, index),
+      tools: session.tools.filter((t) => t.turn < index),
+      approvals: [],
+      error: '',
+      bubble: '',
+    },
+  }
+}
 export function reduceSession(session: Session, event: AgentEvent): Session {
   const next = { ...session }
   if (event.type === 'text-delta') {
@@ -51,11 +74,19 @@ export function reduceSession(session: Session, event: AgentEvent): Session {
     )
     next.bubble += event.text
   }
+  // Tool rows, files and source cards remember where the reply text was, to show in order.
+  const at = session.messages.at(-1)?.content.length ?? 0
   if (event.type === 'attachment') {
     const last = session.messages.length - 1
     next.messages = session.messages.map((m, i) =>
       i === last && m.role === 'assistant'
-        ? { ...m, attachments: [...(m.attachments ?? []), event.attachment] }
+        ? {
+            ...m,
+            attachments: [
+              ...(m.attachments ?? []),
+              { ...event.attachment, at },
+            ],
+          }
         : m,
     )
   }
@@ -67,6 +98,7 @@ export function reduceSession(session: Session, event: AgentEvent): Session {
         name: toolDescription(event.toolName, event.input),
         done: false,
         turn: session.messages.length - 1,
+        at,
       },
     ]
   if (event.type === 'tool-result')
@@ -78,9 +110,9 @@ export function reduceSession(session: Session, event: AgentEvent): Session {
     next.messages = session.messages.map((m, i) => {
       if (i !== last || m.role !== 'assistant') return m
       const known = new Set((m.sources ?? []).map((s) => s.url))
-      const added = event.sources.filter(
-        (s) => !known.has(s.url) && known.add(s.url),
-      )
+      const added = event.sources
+        .filter((s) => !known.has(s.url) && known.add(s.url))
+        .map((s) => ({ ...s, at }))
       return { ...m, sources: [...(m.sources ?? []), ...added].slice(0, 20) }
     })
   }

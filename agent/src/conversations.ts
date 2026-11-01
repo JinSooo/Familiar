@@ -29,7 +29,7 @@ interface MessageMeta {
   role: 'user' | 'assistant'
   at: number
   attachments?: Attachment[]
-  tools?: { name: string; done: boolean }[]
+  tools?: { name: string; done: boolean; at?: number }[]
   error?: string
   sources?: Source[]
 }
@@ -95,7 +95,7 @@ export function serialize(
   const body = conversation.messages.map((m, i) => {
     const tools = conversation.tools
       .filter((t) => t.turn === i)
-      .map(({ name, done }) => ({ name, done }))
+      .map(({ name, done, at }) => ({ name, done, at }))
     const meta: MessageMeta = {
       role: m.role,
       at: m.createdAt,
@@ -187,6 +187,7 @@ export function parse(id: string, text: string): StoredConversation {
         name: String(t.name),
         done: Boolean(t.done),
         turn,
+        ...(Number.isInteger(t.at) && t.at! >= 0 ? { at: t.at } : {}),
       })
   }
   const time = (key: string, fallback: number) => {

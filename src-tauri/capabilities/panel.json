@@ -1,0 +1,5 @@
+{
+  "identifier": "familiar-panel-window",
+  "windows": ["panel"],
+  "permissions": ["core:window:allow-set-size"]
+}

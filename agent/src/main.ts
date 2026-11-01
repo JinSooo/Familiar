@@ -10,7 +10,9 @@ import {
   attachmentSchema,
   settingsSchema,
   type AgentEvent,
+  type Attachment,
   type PetState,
+  type Session,
 } from '../../src/shared'
 import type {
   AgentToShell,
@@ -30,6 +32,7 @@ import {
   reduceSession,
   shouldExpand,
   bubbleTimeout,
+  rewind,
 } from './session'
 import { runAgent, resolveApproval } from './agent'
 import { listModels, testModel } from './agent/probe'
@@ -52,6 +55,7 @@ import {
 import {
   attachmentFile,
   maxAttachmentBytes,
+  readAttachment,
   saveAttachment,
 } from './attachments'
 import { petDimensions, resolveState } from './pet-logic'
@@ -354,6 +358,7 @@ const uploadSchema = z
     }),
   )
   .max(10)
+const messageText = z.string().trim().max(100000)
 async function run(
   window: WindowLabel | 'tray',
   input: unknown,
@@ -361,17 +366,11 @@ async function run(
 ) {
   if (controller) throw new Error('已有对话正在运行')
   const uploads = uploadSchema.parse(files ?? [])
-  const text = z
-    .string()
-    .trim()
-    .max(100000)
-    .parse(input ?? '')
+  const text = messageText.parse(input ?? '')
   if (!text && !uploads.length) throw new Error('消息是空的')
   if (session.messages.length >= 498) throw new Error('请开启新对话')
   clearTimeout(bubbleTimer)
   if (window === 'pet') restartIfIdle()
-  expandedTurn = window === 'chat' || window === 'main'
-  turnWindow = window
   // The conversation id exists before the files are written beside it.
   if (!session.id) session = { ...session, id: newConversationId() }
   const attachments = []
@@ -379,6 +378,84 @@ async function run(
     attachments.push(
       await saveAttachment(session.id, u.name, Buffer.from(u.data, 'base64')),
     )
+  await turn(window, text, attachments)
+}
+/**
+ * Runs again from one of the user's messages: it and everything after it go, and it is sent
+ * again, edited when `input` is given, with the files it had. Retry, regenerate and edit.
+ */
+async function resend(
+  window: WindowLabel | 'tray',
+  index: unknown,
+  input: unknown,
+) {
+  if (controller) throw new Error('已有对话正在运行')
+  const at = z.number().int().min(0).parse(index)
+  const { session: before, message } = rewind(session, at)
+  const text = optionalArg(messageText).parse(input) ?? message.content
+  if (!text && !message.attachments?.length) throw new Error('消息是空的')
+  clearTimeout(bubbleTimer)
+  session = before
+  await turn(window, text, message.attachments ?? [])
+}
+/**
+ * A new conversation holding this one up to and including message `index`; its files are
+ * copied so either can be deleted on its own. The copy opens; the original stays as it was.
+ */
+async function branch(index: unknown) {
+  if (controller) throw new Error('先停止正在进行的对话')
+  const at = z
+    .number()
+    .int()
+    .min(0)
+    .max(session.messages.length - 1)
+    .parse(index)
+  if (!session.id) throw new Error('这个对话还没有内容')
+  persist()
+  const id = newConversationId()
+  const messages = []
+  for (const m of session.messages.slice(0, at + 1)) {
+    const attachments = []
+    for (const a of m.attachments ?? []) {
+      try {
+        const copy = await saveAttachment(
+          id,
+          a.name,
+          await readAttachment(a),
+          a.mediaType,
+        )
+        attachments.push(a.at === undefined ? copy : { ...copy, at: a.at })
+      } catch {
+        // A file already gone stays gone in the copy too.
+      }
+    }
+    messages.push({
+      ...m,
+      ...(m.attachments ? { attachments } : {}),
+    })
+  }
+  const copy: Session = {
+    ...emptySession(),
+    id,
+    updatedAt: Date.now(),
+    messages,
+    tools: session.tools
+      .filter((t) => t.turn <= at)
+      .map((t) => ({ ...t, id: `${id}-${t.id}` })),
+  }
+  await saveConversation(copy, getSettings().pet.name)
+  clearTimeout(bubbleTimer)
+  session = copy
+  openedAt = Date.now()
+  publishSession()
+}
+async function turn(
+  window: WindowLabel | 'tray',
+  text: string,
+  attachments: Attachment[],
+) {
+  expandedTurn = window === 'chat' || window === 'main'
+  turnWindow = window
   session = beginTurn(
     session,
     text,
@@ -613,6 +690,12 @@ async function request(
     case IPC.agentRun:
       requireSender(window, ['chat', 'pet', 'main'])
       return run(window, input, args[1])
+    case IPC.agentResend:
+      requireSender(window, ['chat', 'main'])
+      return resend(window, input, args[1])
+    case IPC.conversationsBranch:
+      requireSender(window, ['chat', 'main'])
+      return branch(input)
     case IPC.agentStop:
       requireSender(window, ['chat', 'pet', 'main'])
       controller?.abort()

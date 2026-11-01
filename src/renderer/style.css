@@ -752,17 +752,6 @@ summary:focus-visible {
   flex-shrink: 0;
   white-space: nowrap;
 }
-.form-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-}
-.form-actions p {
-  margin: 0;
-  font-size: 12px;
-  color: var(--muted);
-}
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -1667,10 +1656,6 @@ form.setting-row input {
 /* The menu bar panel (left click on the tray icon). */
 .tray-panel {
   height: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 14px 12px 10px;
   border-radius: 12px;
   background: color-mix(
     in srgb,
@@ -1680,11 +1665,21 @@ form.setting-row input {
   box-shadow: inset 0 0 0 1px var(--line);
   overflow: auto;
 }
+/* Measured to size the window, so it holds the padding and never stretches. */
+.tray-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 16px 14px 14px;
+}
 .tray-head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 4px;
+  gap: 4px;
+  padding: 0 0 0 4px;
+}
+.tray-head > :first-child {
+  margin-right: 6px;
 }
 .tray-who {
   display: flex;
@@ -1694,6 +1689,9 @@ form.setting-row input {
   flex: 1;
 }
 .tray-who strong {
+  display: flex;
+  align-items: center;
+  gap: 2px;
   font-size: 15px;
 }
 .tray-who .muted {
@@ -1701,8 +1699,8 @@ form.setting-row input {
 }
 /* Recording state as one dot; hover says what it is, click pauses or resumes. */
 .tray-watch-dot {
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   padding: 0;
   display: grid;
   place-items: center;
@@ -1718,8 +1716,8 @@ form.setting-row input {
   cursor: default;
 }
 .tray-watch-dot .dot {
-  width: 9px;
-  height: 9px;
+  width: 7px;
+  height: 7px;
 }
 .tray-watch-dot.on .dot {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 22%, transparent);
@@ -1731,22 +1729,30 @@ form.setting-row input {
 .dot.warn {
   background: var(--orange);
 }
-.tray-actions {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-}
-.tray-actions button {
+.tray-ask {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 8px 4px;
-  font-size: 11.5px;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 10px 9px 12px;
+  border-radius: var(--radius-float);
+  text-align: left;
+  font-size: 13px;
   color: var(--muted);
+  background: var(--group);
 }
-.tray-actions button:hover {
+.tray-ask:hover {
   color: var(--text);
+}
+.tray-ask span {
+  flex: 1;
+}
+.tray-ask kbd {
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--hover);
+  font: inherit;
+  font-size: 11px;
 }
 .tray-card {
   display: flex;
@@ -1786,7 +1792,7 @@ form.setting-row input {
 .tray-heading {
   display: flex;
   justify-content: space-between;
-  margin: 0 4px 6px;
+  margin: 0 4px 8px;
   font-size: 11px;
   font-weight: 600;
   color: var(--muted);
@@ -1801,7 +1807,7 @@ form.setting-row input {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 12px;
 }
 .tray-usage li {
   display: grid;
@@ -1860,7 +1866,8 @@ form.setting-row input {
   line-height: 1.4;
 }
 .tray-more {
-  margin: 2px 4px 0;
+  display: block;
+  margin: 6px auto 0;
   padding: 0;
   font-size: 12px;
 }
@@ -1982,4 +1989,110 @@ form.setting-row input {
   width: 26px;
   height: 26px;
   margin-left: -6px;
+}
+/* One message and its pieces; the action row shows while the pointer is over it. */
+.turn {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.turn:empty {
+  display: none;
+}
+.message-actions {
+  display: flex;
+  gap: 2px;
+  margin-top: -6px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.message-actions.end {
+  justify-content: flex-end;
+}
+.turn:hover .message-actions,
+.message-actions:focus-within {
+  opacity: 1;
+}
+.message-actions .icon {
+  width: 24px;
+  height: 24px;
+}
+.message-actions .icon:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+/* What each button does, shown at once (the system tooltip waits about a second). */
+.message-actions .icon {
+  position: relative;
+}
+.message-actions .icon::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--text);
+  color: var(--group);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s;
+}
+.message-actions .icon:hover::after,
+.message-actions .icon:focus-visible::after {
+  opacity: 1;
+}
+/* Keep the outermost tips inside the conversation instead of past its edge. */
+.message-actions.start .icon:first-child::after {
+  left: 0;
+  transform: none;
+}
+.message-actions.end .icon:last-child::after {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+.error-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.error-row .error {
+  margin: 0;
+}
+.error-row button {
+  flex-shrink: 0;
+  padding: 2px 10px;
+  font-size: 12px;
+}
+.message-edit {
+  align-self: flex-end;
+  width: min(100%, 520px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.message-edit textarea {
+  width: 100%;
+  resize: vertical;
+  padding: 8px 12px;
+  border-radius: var(--radius-float);
+  font: inherit;
+  line-height: 1.55;
+}
+.message-edit-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  font-size: 12px;
+}
+.message-edit-actions .muted {
+  margin-right: auto;
 }

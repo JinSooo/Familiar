@@ -31,10 +31,13 @@ export function History({
   currentId,
   onOpened,
   compact = false,
+  running = false,
 }: {
   currentId: string
   onOpened: () => void
   compact?: boolean
+  /** Read again when a turn ends: an edited first message changes the title, a reply the preview. */
+  running?: boolean
 }) {
   const [query, setQuery] = useState('')
   const [items, setItems] = useState<ConversationSummary[]>()
@@ -55,7 +58,7 @@ export function History({
       stale = true
       clearTimeout(timer)
     }
-  }, [query, version, currentId])
+  }, [query, version, currentId, running])
   const now = Date.now()
   let lastGroup = ''
   return (

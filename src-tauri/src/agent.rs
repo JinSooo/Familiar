@@ -41,7 +41,7 @@ impl Agent {
                 sender,
                 // A conversation turn and a ChatGPT sign-in (the user is in the browser) take as long
                 // as they take; the agent times those out itself.
-                deadline: (!["agent:run", "chatgpt:sign-in"].contains(&channel))
+                deadline: (!["agent:run", "agent:resend", "chatgpt:sign-in"].contains(&channel))
                     .then(|| Instant::now() + Duration::from_secs(30)),
             },
         );
@@ -336,6 +336,10 @@ mod tests {
         let run_id = run["id"].as_u64().unwrap();
         let short_id = short["id"].as_u64().unwrap();
         let sign_in_id = sign_in["id"].as_u64().unwrap();
+        // Regression: a retry showed "timed out after 30s" under a reply that took longer.
+        let (resend, _) = state.enqueue("main".into(), "agent:resend", vec![]);
+        let resend_id = resend["id"].as_u64().unwrap();
+        assert!(state.pending.lock().unwrap()[&resend_id].deadline.is_none());
         assert!(state.pending.lock().unwrap()[&run_id].deadline.is_none());
         assert!(state.pending.lock().unwrap()[&sign_in_id]
             .deadline

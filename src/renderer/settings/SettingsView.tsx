@@ -1,10 +1,9 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type {
   ChatGptStatus,
   ModelDraft,
   PetSkin,
   PublicSettings,
-  SettingsUpdate,
 } from '../../shared'
 import { api } from '../api'
 import { openUrl } from '@tauri-apps/plugin-opener'
@@ -103,14 +102,17 @@ const titleOf = (page: Page): string[] => {
     } else if (n.page === page) return [n.name]
   return []
 }
-/** Pages that edit the settings form and need its 保存 button. */
+/** Pages that edit the settings form; every change there saves on its own. */
 const formPages: Page[] = [
   'general',
   'pet',
   'shortcuts',
   'model',
   'permissions',
+  'privacy',
 ]
+/** How long typing pauses before a text field saves. */
+const typingDelay = 600
 
 function Glyph({ d, size = 16 }: { d: string; size?: number }) {
   return (
@@ -201,16 +203,93 @@ export function SettingsView() {
     return () => window.removeEventListener('focus', refresh)
   }, [])
   useEffect(() => {
-    if (notice !== '已保存') return
+    if (notice !== '对话已移到废纸篓') return
     const timer = setTimeout(() => setNotice(''), 2000)
     return () => clearTimeout(timer)
   }, [notice])
+  /** A text field's save waiting for typing to pause; leaving the window saves it at once. */
+  const typing = useRef<{
+    timer: ReturnType<typeof setTimeout>
+    run: () => void
+  }>(undefined)
+  const flush = () => {
+    const pending = typing.current
+    typing.current = undefined
+    if (!pending) return
+    clearTimeout(pending.timer)
+    pending.run()
+  }
+  useEffect(() => {
+    window.addEventListener('blur', flush)
+    return () => window.removeEventListener('blur', flush)
+  }, [])
   if (!settings) return <p role="status">{notice || '读取设置…'}</p>
+  /** Saves what is on screen; keys only when given, so a half-typed one never reaches the keychain. */
+  async function persist(
+    next: PublicSettings,
+    keys: { apiKey?: string; imageKey?: string } = {},
+  ) {
+    // Required fields wait until they are filled in again.
+    if (!next.pet.name.trim() || !next.workspacePath.trim()) return
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { apiKeySet, ...publicModel } = next.model
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { apiKeySet: imageKeySet, ...publicImage } = next.imageModel
+    try {
+      const saved = await api.saveSettings({
+        ...next,
+        model: {
+          ...publicModel,
+          ...(keys.apiKey ? { apiKey: keys.apiKey } : {}),
+        },
+        imageModel: {
+          ...publicImage,
+          ...(keys.imageKey ? { apiKey: keys.imageKey } : {}),
+        },
+      })
+      // Only the key flags come back: anything typed while saving stays on screen.
+      setSettings(
+        (s) =>
+          s && {
+            ...s,
+            model: { ...s.model, apiKeySet: saved.model.apiKeySet },
+            imageModel: {
+              ...s.imageModel,
+              apiKeySet: saved.imageModel.apiKeySet,
+            },
+          },
+      )
+      if (saved.model.protocol !== 'chatgpt' && !presetOf(saved.model))
+        setSavedRelay(saved.model)
+      if (keys.apiKey) setKey('')
+      if (keys.imageKey) setImageKey('')
+      setNotice('')
+    } catch {
+      setNotice('保存失败，请检查设置或钥匙串是否可用。')
+    }
+  }
+  /** Shows a change and saves it: right away for a pick, after a pause for typing. */
+  const change = (next: PublicSettings, wait = 0) => {
+    setSettings(next)
+    clearTimeout(typing.current?.timer)
+    typing.current = undefined
+    const run = () => void persist(next)
+    if (!wait) return run()
+    typing.current = { timer: setTimeout(flush, wait), run }
+  }
+  const saveKeys = () => {
+    if (key || imageKey) void persist(settings, { apiKey: key, imageKey })
+  }
   const model = <K extends keyof PublicSettings['model']>(
     field: K,
     value: PublicSettings['model'][K],
   ) => {
-    setSettings({ ...settings, model: { ...settings.model, [field]: value } })
+    change(
+      { ...settings, model: { ...settings.model, [field]: value } },
+      field === 'baseURL' || field === 'model' || field === 'smallModel'
+        ? typingDelay
+        : 0,
+    )
     // A result for different settings would mislead; the list stays useful while picking.
     setProbe(undefined)
     if (field !== 'model') setModels(undefined)
@@ -226,7 +305,7 @@ export function SettingsView() {
   const preset = viaChatGpt ? undefined : presetOf(settings.model)
   const pickProvider = (id: string) => {
     if (id === 'chatgpt') {
-      setSettings({
+      change({
         ...settings,
         model: { ...settings.model, protocol: 'chatgpt', baseURL: '' },
       })
@@ -235,7 +314,7 @@ export function SettingsView() {
       return
     }
     const next = providerPresets.find((p) => p.id === id)
-    setSettings({
+    change({
       ...settings,
       model: {
         ...settings.model,
@@ -310,36 +389,6 @@ export function SettingsView() {
     models?.length && settings.model.model.trim()
       ? !models.includes(settings.model.model.trim())
       : false
-  async function save(event: FormEvent) {
-    event.preventDefault()
-    if (!settings) return
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { apiKeySet, ...publicModel } = settings.model
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { apiKeySet: imageKeySet, ...publicImage } = settings.imageModel
-    const update: SettingsUpdate = {
-      ...settings,
-      model: {
-        ...publicModel,
-        ...(key ? { apiKey: key } : {}),
-      },
-      imageModel: {
-        ...publicImage,
-        ...(imageKey ? { apiKey: imageKey } : {}),
-      },
-    }
-    try {
-      const saved = await api.saveSettings(update)
-      setSettings(saved)
-      if (saved.model.protocol !== 'chatgpt' && !presetOf(saved.model))
-        setSavedRelay(saved.model)
-      setKey('')
-      setImageKey('')
-      setNotice('已保存')
-    } catch {
-      setNotice('保存失败，请检查设置或钥匙串是否可用。')
-    }
-  }
   return (
     <div className="settings-shell">
       <aside data-tauri-drag-region="deep">
@@ -436,8 +485,14 @@ export function SettingsView() {
         )}
         <form
           className="settings"
-          hidden={!formPages.includes(tab) && tab !== 'privacy'}
-          onSubmit={save}
+          hidden={!formPages.includes(tab)}
+          onSubmit={(e) => {
+            // Return in a field saves it now instead of after the pause.
+            e.preventDefault()
+            clearTimeout(typing.current?.timer)
+            typing.current = undefined
+            void persist(settings, { apiKey: key, imageKey })
+          }}
         >
           <section hidden={tab !== 'general'}>
             <div className="group">
@@ -470,7 +525,7 @@ export function SettingsView() {
                   on={settings.showPetOnLaunch}
                   label="启动时显示宠物"
                   onChange={(on) =>
-                    setSettings({ ...settings, showPetOnLaunch: on })
+                    change({ ...settings, showPetOnLaunch: on })
                   }
                 />
               </div>
@@ -487,7 +542,7 @@ export function SettingsView() {
                         settings.chatAutoHide === hide ? 'selected' : ''
                       }
                       onClick={() =>
-                        setSettings({ ...settings, chatAutoHide: hide })
+                        change({ ...settings, chatAutoHide: hide })
                       }
                     >
                       {hide ? '自动收起' : '保持显示'}
@@ -508,7 +563,7 @@ export function SettingsView() {
                   aria-label="聊天面板和菜单栏"
                   value={Math.round(settings.panelOpacity * 100)}
                   onChange={(e) =>
-                    setSettings({
+                    change({
                       ...settings,
                       panelOpacity: Number(e.target.value) / 100,
                     })
@@ -525,7 +580,7 @@ export function SettingsView() {
                   aria-label="设置和大窗口"
                   value={Math.round(settings.windowOpacity * 100)}
                   onChange={(e) =>
-                    setSettings({
+                    change({
                       ...settings,
                       windowOpacity: Number(e.target.value) / 100,
                     })
@@ -553,7 +608,7 @@ export function SettingsView() {
           <section hidden={tab !== 'shortcuts'}>
             <ShortcutsSection
               value={settings.shortcuts}
-              onChange={(shortcuts) => setSettings({ ...settings, shortcuts })}
+              onChange={(shortcuts) => change({ ...settings, shortcuts })}
             />
           </section>
           <section hidden={tab !== 'model'} className="group">
@@ -692,6 +747,7 @@ export function SettingsView() {
                   }
                   value={key}
                   onChange={(e) => setKey(e.target.value)}
+                  onBlur={saveKeys}
                 />
               </label>
             )}
@@ -746,13 +802,16 @@ export function SettingsView() {
                   value={settings.imageModel.model}
                   placeholder="留空则不生图，例如 gpt-image-2"
                   onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      imageModel: {
-                        ...settings.imageModel,
-                        model: e.target.value,
+                    change(
+                      {
+                        ...settings,
+                        imageModel: {
+                          ...settings.imageModel,
+                          model: e.target.value,
+                        },
                       },
-                    })
+                      typingDelay,
+                    )
                   }
                 />
               </label>
@@ -762,13 +821,16 @@ export function SettingsView() {
                   value={settings.imageModel.baseURL}
                   placeholder="https://api.openai.com/v1"
                   onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      imageModel: {
-                        ...settings.imageModel,
-                        baseURL: e.target.value,
+                    change(
+                      {
+                        ...settings,
+                        imageModel: {
+                          ...settings.imageModel,
+                          baseURL: e.target.value,
+                        },
                       },
-                    })
+                      typingDelay,
+                    )
                   }
                 />
               </label>
@@ -784,6 +846,7 @@ export function SettingsView() {
                   }
                   value={imageKey}
                   onChange={(e) => setImageKey(e.target.value)}
+                  onBlur={saveKeys}
                 />
               </label>
             </div>
@@ -808,7 +871,7 @@ export function SettingsView() {
               <select
                 value={settings.permissionMode}
                 onChange={(e) =>
-                  setSettings({
+                  change({
                     ...settings,
                     permissionMode: e.target
                       .value as PublicSettings['permissionMode'],
@@ -826,7 +889,10 @@ export function SettingsView() {
                 required
                 value={settings.workspacePath}
                 onChange={(e) =>
-                  setSettings({ ...settings, workspacePath: e.target.value })
+                  change(
+                    { ...settings, workspacePath: e.target.value },
+                    typingDelay,
+                  )
                 }
               />
             </label>
@@ -843,7 +909,7 @@ export function SettingsView() {
                       settings.workspaceSnapshots === on ? 'selected' : ''
                     }
                     onClick={() =>
-                      setSettings({ ...settings, workspaceSnapshots: on })
+                      change({ ...settings, workspaceSnapshots: on })
                     }
                   >
                     {on ? '开' : '关'}
@@ -898,7 +964,7 @@ export function SettingsView() {
                   className={`pet-card ${p.id === settings.pet.id ? 'selected' : ''}`}
                   key={p.id}
                   onClick={() =>
-                    setSettings({
+                    change({
                       ...settings,
                       pet: { ...settings.pet, id: p.id },
                     })
@@ -935,10 +1001,13 @@ export function SettingsView() {
                   maxLength={40}
                   value={settings.pet.name}
                   onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      pet: { ...settings.pet, name: e.target.value },
-                    })
+                    change(
+                      {
+                        ...settings,
+                        pet: { ...settings.pet, name: e.target.value },
+                      },
+                      typingDelay,
+                    )
                   }
                 />
               </label>
@@ -951,7 +1020,7 @@ export function SettingsView() {
                       key={size}
                       className={settings.pet.size === size ? 'selected' : ''}
                       onClick={() =>
-                        setSettings({
+                        change({
                           ...settings,
                           pet: { ...settings.pet, size },
                         })
@@ -971,7 +1040,7 @@ export function SettingsView() {
                       key={speed}
                       className={settings.pet.speed === speed ? 'selected' : ''}
                       onClick={() =>
-                        setSettings({
+                        change({
                           ...settings,
                           pet: { ...settings.pet, speed },
                         })
@@ -1028,16 +1097,12 @@ export function SettingsView() {
                 )}
               </div>
             </div>
+          </section>
+          {notice && (
             <p role="status" className="caption">
               {notice}
             </p>
-          </section>
-          <div className="form-actions" hidden={!formPages.includes(tab)}>
-            <p role="status">{notice}</p>
-            <button className="primary" type="submit">
-              保存
-            </button>
-          </div>
+          )}
         </form>
       </div>
     </div>

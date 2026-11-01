@@ -20,3 +20,12 @@ describe('optional IPC arguments', () => {
     expect(() => text.parse(5)).toThrow()
   })
 })
+
+describe('resend text', () => {
+  // User report: 重试 failed with "expected string, received null"; no new text arrives as null.
+  test('a retry without new text reads as none', async () => {
+    const text = optionalArg(z.string().trim().max(100000))
+    expect(text.parse(null)).toBeUndefined()
+    expect(text.parse(' 改过 ')).toBe('改过')
+  })
+})

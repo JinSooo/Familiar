@@ -155,6 +155,8 @@ export const attachmentSchema = z.object({
   path: z.string().regex(/^[0-9A-Za-z-]{1,64}\/[^/\\]{1,200}$/),
   name: z.string().min(1).max(200),
   mediaType: z.string().min(1).max(100),
+  /** On a reply's own file: how much of the reply text came before it, so it shows in place. */
+  at: z.number().int().min(0).optional(),
 })
 export type Attachment = z.infer<typeof attachmentSchema>
 export const messageSchema = z.object({
@@ -168,6 +170,8 @@ export interface Source {
   title: string
   /** A picture from the page (og:image or first large image), when it was read. */
   image?: string
+  /** How much of the reply text came before it; none means after the text (older transcripts). */
+  at?: number
 }
 export type AgentEvent =
   | { type: 'text-delta'; text: string }
@@ -194,6 +198,8 @@ export const IPC = {
   settingsSave: 'settings:save',
   agentRun: 'agent:run',
   agentStop: 'agent:stop',
+  /** Runs again from a user message (retry, regenerate, edit); later messages go. */
+  agentResend: 'agent:resend',
   agentEvent: 'agent:event',
   approval: 'agent:approval',
   petState: 'pet:state',
@@ -228,6 +234,8 @@ export const IPC = {
   // Conversation history (Markdown files in ~/.familiar/conversations).
   conversationsList: 'conversations:list',
   conversationsOpen: 'conversations:open',
+  /** A copy of the current conversation up to a message, opened in its place. */
+  conversationsBranch: 'conversations:branch',
   conversationsDelete: 'conversations:delete',
   conversationsClear: 'conversations:clear',
   conversationsReveal: 'conversations:reveal',
@@ -286,6 +294,10 @@ export interface FamiliarAPI {
   saveSettings(settings: SettingsUpdate): Promise<PublicSettings>
   /** Sends a message; files are { name, data (base64) } and go with it. */
   run(text: string, files?: { name: string; data: string }[]): Promise<void>
+  /** Runs again from user message `index`, with new text when given; what came after goes. */
+  resend(index: number, text?: string): Promise<void>
+  /** Continues in a new conversation copied up to message `index`. */
+  branch(index: number): Promise<void>
   getSession(): Promise<Session>
   onSession(callback: (session: Session) => void): () => void
   newSession(): void
@@ -528,8 +540,17 @@ export interface Session {
   })[]
   running: boolean
   approvals: Approval[]
-  /** `turn` is the index of the assistant message the call belongs to. */
-  tools: { id: string; name: string; done: boolean; turn: number }[]
+  /**
+   * `turn` is the index of the assistant message the call belongs to; `at` is how much of its
+   * text came before the call (none: before all of it, as older transcripts show).
+   */
+  tools: {
+    id: string
+    name: string
+    done: boolean
+    turn: number
+    at?: number
+  }[]
   error: string
   origin: 'capsule' | 'chat'
   bubble: string

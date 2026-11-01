@@ -4,6 +4,7 @@ import { LogicalSize } from '@tauri-apps/api/dpi'
 import type {
   ConversationSummary,
   MemoryItem,
+  Reminder,
   PerceptionStatus,
   PetState,
   UsageToday,
@@ -33,6 +34,22 @@ const shownCount = 4
 /** Window width, and the tallest the window grows before the page scrolls. */
 const panelWidth = 320
 const maxHeight = 600
+const reminderTime = (at: number) => {
+  const d = new Date(at)
+  const now = new Date()
+  const tomorrow = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate() + 1,
+  )
+  const prefix =
+    d.toDateString() === now.toDateString()
+      ? ''
+      : d.toDateString() === tomorrow.toDateString()
+        ? '明天 '
+        : `${d.getMonth() + 1}月${d.getDate()}日 `
+  return prefix + d.toTimeString().slice(0, 5)
+}
 const clock = (at: number) => new Date(at).toTimeString().slice(0, 5)
 const duration = (minutes: number) =>
   minutes < 60
@@ -57,6 +74,7 @@ export function TrayPanel() {
   const [pending, setPending] = useState(0)
   const [usage, setUsage] = useState<UsageToday>()
   const [last, setLast] = useState<ConversationSummary>()
+  const [next, setNext] = useState<Reminder>()
   const [icons, setIcons] = useState<Record<string, string>>({})
   /** Bumped on every open: the window loads at launch, possibly before the pet skin is known. */
   const [opened, setOpened] = useState(0)
@@ -75,6 +93,12 @@ export function TrayPanel() {
       })
       .catch(console.error)
     void api.perceptionStatus().then(setPerception).catch(console.error)
+    void api
+      .proactiveStatus()
+      .then((s) =>
+        setNext(s.reminders.find((r) => !r.done && r.kind === 'reminder')),
+      )
+      .catch(console.error)
     void api
       .listConversations()
       .then((list) => setLast(list.find((c) => c.messages > 0)))
@@ -241,6 +265,17 @@ export function TrayPanel() {
             {last.preview && (
               <span className="tray-preview">{last.preview}</span>
             )}
+          </button>
+        )}
+
+        {next && (
+          <button
+            type="button"
+            className="tray-card tray-pending"
+            onClick={() => api.openSettings('proactive')}
+          >
+            <span className="tray-reminder">{next.text}</span>
+            <span className="muted">{reminderTime(next.at)}</span>
           </button>
         )}
 

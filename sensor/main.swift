@@ -10,6 +10,7 @@
 // screenshots. Secure text fields are never read. Excluded apps are not observed at all.
 import AppKit
 import ApplicationServices
+import CoreAudio
 
 setvbuf(stdout, nil, _IOLBF, 0)
 
@@ -34,6 +35,49 @@ if arguments.count == 4 && arguments[1] == "--icon" {
   guard let png = bitmap.representation(using: .png, properties: [:]),
     (try? png.write(to: URL(fileURLWithPath: arguments[3]))) != nil
   else { exit(1) }
+  exit(0)
+}
+
+// `familiar-sensor --context`: whether now is a bad moment to speak up, as one JSON line, then
+// exit. Window bounds and owners need no Screen Recording permission; titles are not read.
+if arguments.count == 2 && arguments[1] == "--context" {
+  var fullscreen = false
+  if let front = NSWorkspace.shared.frontmostApplication,
+    let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+      as? [[String: Any]]
+  {
+    let screens = NSScreen.screens.map { $0.frame.size }
+    for w in windows where (w[kCGWindowOwnerPID as String] as? pid_t) == front.processIdentifier
+      && (w[kCGWindowLayer as String] as? Int) == 0
+    {
+      guard let b = w[kCGWindowBounds as String] as? [String: CGFloat] else { continue }
+      let size = CGSize(width: b["Width"] ?? 0, height: b["Height"] ?? 0)
+      if screens.contains(where: { $0 == size }) { fullscreen = true }
+      break
+    }
+  }
+  // The default input device running for any process: a call, a recording, dictation.
+  var device = AudioDeviceID(0)
+  var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+  var address = AudioObjectPropertyAddress(
+    mSelector: kAudioHardwarePropertyDefaultInputDevice,
+    mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+  var microphone = false
+  if AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &device)
+    == noErr
+  {
+    var running = UInt32(0)
+    size = UInt32(MemoryLayout<UInt32>.size)
+    address.mSelector = kAudioDevicePropertyDeviceIsRunningSomewhere
+    if AudioObjectGetPropertyData(device, &address, 0, nil, &size, &running) == noErr {
+      microphone = running != 0
+    }
+  }
+  let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
+  let data = try! JSONSerialization.data(withJSONObject: [
+    "fullscreen": fullscreen, "microphone": microphone, "front": front,
+  ])
+  print(String(data: data, encoding: .utf8)!)
   exit(0)
 }
 

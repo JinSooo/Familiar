@@ -140,7 +140,13 @@ export async function summarizeWindow(input: {
     from: number,
     to: number,
   ) => Promise<{ id: string; text: string }[]>
-}): Promise<{ ran: boolean; timeline: number; pending: number }> {
+}): Promise<{
+  ran: boolean
+  timeline: number
+  pending: number
+  /** What the period was about, when the model could tell. */
+  digest?: { title: string; summary: string }
+}> {
   const events = await input.buffer.read(input.from, input.to)
   const list = segments(events, input.settings, input.to)
   const talks = (await input.conversations?.(input.from, input.to)) ?? []
@@ -188,5 +194,12 @@ export async function summarizeWindow(input: {
     } catch (error) {
       console.error('Skipped a perception history entry:', error)
     }
-  return { ran: true, timeline, pending: applied.pending + applied.promoted }
+  return {
+    ran: true,
+    timeline,
+    pending: applied.pending + applied.promoted,
+    ...(digest.title && digest.summary
+      ? { digest: { title: digest.title, summary: digest.summary } }
+      : {}),
+  }
 }

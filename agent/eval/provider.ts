@@ -7,6 +7,7 @@
  * - kind=recall: builds a throwaway memory from `memories` and prints what the index finds.
  * - kind=perception: one real Computer History summary of `activity` (segment lines as
  *   describe() writes them) with the background model.
+ * - kind=proactive: one real speak-or-not decision for `facts`, with `context` and `recent`.
  */
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -36,6 +37,19 @@ if (vars.kind === 'recall') {
   const index = new MemoryIndex(store, join(dir, 'index.sqlite'))
   const hits = await index.search(vars.query!)
   process.stdout.write(JSON.stringify({ hits: hits.map((h) => h.text) }))
+} else if (vars.kind === 'proactive') {
+  const { loadSettings } = await import('../src/settings')
+  const { backgroundModel } = await import('../src/memory/jobs')
+  const { decide } = await import('../src/proactive/decide')
+  await loadSettings()
+  const decision = await decide({
+    model: backgroundModel(),
+    name: '小黑',
+    facts: vars.facts!.trim(),
+    context: vars.context?.trim() || '相处：和主人刚认识不久。你现在精神不错。',
+    recent: vars.recent?.trim() ?? '',
+  })
+  process.stdout.write(JSON.stringify(decision))
 } else if (vars.kind === 'perception') {
   const { loadSettings } = await import('../src/settings')
   const { backgroundModel } = await import('../src/memory/jobs')

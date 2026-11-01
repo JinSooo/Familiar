@@ -15,6 +15,8 @@ import {
 import { runAgentCore } from './core'
 import { createModel } from './provider'
 import { createPersona } from './persona'
+import { createReminderTools, reminderInstructions } from '../proactive/state'
+import { proactiveChanged } from '../proactive'
 import { agentError } from './errors'
 export { resolveApproval } from './approvals'
 
@@ -55,6 +57,7 @@ export async function runAgent(
         ...createMemoryTools(memory),
         ...createWebTools(settings),
         ...createSkillTools(skills),
+        ...createReminderTools(() => void proactiveChanged()),
         ...images,
         ...external,
       },
@@ -63,7 +66,7 @@ export async function runAgent(
         workspacePath,
         settings.permissionMode,
         settings.pet.name,
-      )}\n\n${await memoryInstructions(memory.store)}\n\n${webInstructions}\n\n${skillInstructions(skills)}${'generate_image' in images ? `\n\n${imageInstructions}` : ''}`,
+      )}\n现在是 ${new Date().toLocaleString('zh-CN', { hour12: false, weekday: 'long' })}。\n\n${await memoryInstructions(memory.store)}\n\n${reminderInstructions}\n\n${webInstructions}\n\n${skillInstructions(skills)}${'generate_image' in images ? `\n\n${imageInstructions}` : ''}`,
       workspacePath,
       decide: (call) => decideToolCall(call, settings),
       snapshot,

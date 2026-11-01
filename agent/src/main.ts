@@ -59,6 +59,18 @@ import {
   saveAttachment,
 } from './attachments'
 import { petDimensions, resolveState } from './pet-logic'
+import {
+  checkNow,
+  noteConversation,
+  noticeActivity,
+  proactiveChanged,
+  proactiveStatus,
+  respond,
+  resumeProactive,
+  startProactive,
+  stopProactive,
+} from './proactive'
+import { updateReminders } from './proactive/reminders'
 import { mentions, openMemory } from './memory'
 import { recordFeedback } from './memory/feedback'
 import { reflectDue } from './memory/jobs'
@@ -72,6 +84,7 @@ import {
   perceptionStatus,
   todayUsage,
   recentEvents,
+  onActivityDigest,
   startPerception,
   stopPerception,
   summarizeDue,
@@ -340,9 +353,18 @@ function rebuildTray() {
         : 'on',
   })
 }
+/** The pet window grows while a proactive bubble shows: its reason and buttons need the room. */
+function sizePet() {
+  const size = petDimensions(getSettings().pet.size)
+  ui({
+    type: 'pet-size',
+    ...size,
+    height: size.height + (session.proactive ? 90 : 0),
+  })
+}
 function updatePet() {
   const settings = getSettings()
-  ui({ type: 'pet-size', ...petDimensions(settings.pet.size) })
+  sizePet()
   // Every window shows the pet (the chat header avatar too), so skin changes go to all.
   emit(IPC.petSkin, currentSkin(settings.pet.id), 'all')
   emit(IPC.petSize, settings.pet.size, 'pet')
@@ -378,6 +400,7 @@ async function run(
     attachments.push(
       await saveAttachment(session.id, u.name, Buffer.from(u.data, 'base64')),
     )
+  noteConversation()
   await turn(window, text, attachments)
 }
 /**
@@ -751,7 +774,9 @@ async function request(
       }
       return
     case IPC.settingsOpen: {
-      const page = optionalArg(z.enum(['timeline', 'pending'])).parse(input)
+      const page = optionalArg(
+        z.enum(['timeline', 'pending', 'proactive']),
+      ).parse(input)
       if (page) emit(IPC.settingsPage, page, 'settings')
       ui({ type: 'show-settings' })
       return
@@ -1021,6 +1046,52 @@ async function request(
       rebuildTray()
       return getSettings().perception
     }
+    case IPC.proactiveStatus:
+      requireSender(window, ['settings', 'panel'])
+      return proactiveStatus()
+    case IPC.proactiveRespond: {
+      requireSender(window, ['pet', 'chat', 'main'])
+      const id = z.string().parse(input)
+      const choice = z.enum(['ok', 'later', 'quiet']).parse(args[1])
+      const answered = await respond(id, choice)
+      const message = session.proactive
+      session = { ...session, proactive: undefined }
+      sizePet()
+      // 好: the line becomes part of the conversation, so the reply has something to answer.
+      if (choice === 'ok' && answered && message && !controller) {
+        const now = Date.now()
+        // After a long pause the line starts a fresh conversation, as the capsule would.
+        restartIfIdle()
+        session = {
+          ...session,
+          id: session.id || newConversationId(new Date(now)),
+          updatedAt: now,
+          messages: [
+            ...session.messages,
+            { role: 'assistant', content: message.text, createdAt: now },
+          ],
+        }
+        persist()
+        showChat()
+      } else publishSession()
+      return
+    }
+    case IPC.proactiveCheck:
+      requireSender(window, ['settings'])
+      return checkNow()
+    case IPC.proactiveResume:
+      requireSender(window, ['settings', 'panel'])
+      return resumeProactive()
+    case IPC.reminderCancel: {
+      requireSender(window, ['settings'])
+      const id = z.string().parse(input)
+      await updateReminders((list) => ({
+        list: list.filter((r) => r.id !== id),
+        result: undefined,
+      }))
+      void proactiveChanged()
+      return
+    }
     case IPC.perceptionPause: {
       requireSender(window, ['tray', 'settings', 'panel'])
       const settings = publicSettings()
@@ -1190,13 +1261,39 @@ async function start() {
   applyOpacity()
   if (!getSettings().showPetOnLaunch) setPetVisible(false)
   startPerception((status) => broadcast(IPC.perceptionChanged, status))
+  onActivityDigest((digest) => void noticeActivity(digest))
+  startProactive({
+    busy: () => Boolean(controller) || capsuleOpen || chatVisible || hasDraft,
+    say: (message) => {
+      clearTimeout(bubbleTimer)
+      session = { ...session, proactive: message }
+      sizePet()
+      emit(IPC.petGesture, 'wave', 'pet')
+      publishSession()
+    },
+    changed: (status) => {
+      // A bubble the user did not answer in time goes away.
+      if (
+        session.proactive &&
+        status.history.find((m) => m.id === session.proactive?.id)?.response
+      ) {
+        session = { ...session, proactive: undefined }
+        sizePet()
+        publishSession()
+      }
+      broadcast(IPC.proactiveChanged, status)
+    },
+  })
   const proxyTimer = setInterval(() => {
     void refreshProxy()
   }, 60000)
   const idleTimer = setInterval(() => {
     void idleSeconds()
       .then((seconds) => {
-        activity.sleeping = seconds >= 600
+        // Energy, simple version (docs/design.md §9): late at night it dozes off sooner.
+        const hour = new Date().getHours()
+        const late = hour >= 23 || hour < 6
+        activity.sleeping = seconds >= (late ? 120 : 600)
         refreshState()
       })
       .catch(console.error)
@@ -1219,6 +1316,7 @@ async function start() {
     controller?.abort()
     void closeMcp()
     stopPerception()
+    stopProactive()
     clearTimeout(bubbleTimer)
     for (const timer of [proxyTimer, idleTimer, stateTimer, reflectTimer])
       clearInterval(timer)

@@ -12,6 +12,7 @@ import { MemoryPage } from './MemoryPage'
 import { ExtensionsPage } from './ExtensionsPage'
 import { PerceptionPage } from './PerceptionPage'
 import { TimelinePage } from './TimelinePage'
+import { ProactivePage } from './ProactivePage'
 import { ShortcutsSection } from './Shortcuts'
 import { Switch } from './Switch'
 import { presetOf, providerPresets } from '../../shared/presets'
@@ -22,6 +23,7 @@ type Page =
   | 'shortcuts'
   | 'model'
   | 'permissions'
+  | 'proactive'
   | 'memory'
   | 'topics'
   | 'pending'
@@ -55,6 +57,7 @@ const icons = {
   puzzle:
     'M14 4a2 2 0 1 1 4 0v2h2v4h-2a2 2 0 1 0 0 4h2v4h-4v-2a2 2 0 1 0-4 0v2H6v-4H4a2 2 0 1 1 0-4h2V6h4V4z',
   lock: 'M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4',
+  bell: 'M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0',
   chevron: 'M9 6l6 6-6 6',
 }
 const nav: (NavItem | NavGroup)[] = [
@@ -63,6 +66,7 @@ const nav: (NavItem | NavGroup)[] = [
   { page: 'shortcuts', name: '快捷键', icon: icons.keyboard },
   { page: 'model', name: '模型', icon: icons.model },
   { page: 'permissions', name: '权限', icon: icons.shield },
+  { page: 'proactive', name: '主动', icon: icons.bell },
   {
     name: '记忆',
     icon: icons.memory,
@@ -109,6 +113,7 @@ const formPages: Page[] = [
   'shortcuts',
   'model',
   'permissions',
+  'proactive',
   'privacy',
 ]
 /** How long typing pauses before a text field saves. */
@@ -604,6 +609,12 @@ export function SettingsView() {
                 </button>
               </div>
             </div>
+          </section>
+          <section hidden={tab !== 'proactive'}>
+            <ProactivePage
+              value={settings.proactive}
+              onChange={(proactive) => change({ ...settings, proactive })}
+            />
           </section>
           <section hidden={tab !== 'shortcuts'}>
             <ShortcutsSection

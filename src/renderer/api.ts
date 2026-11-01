@@ -111,6 +111,13 @@ export const api: FamiliarAPI = {
   perceptionPause: (paused) => request(IPC.perceptionPause, paused),
   savePerception: (perception) => request(IPC.perceptionSave, perception),
   onPerceptionChanged: (cb) => subscribe(IPC.perceptionChanged, cb),
+  proactiveStatus: () => request(IPC.proactiveStatus),
+  respondProactive: (id, response) =>
+    request(IPC.proactiveRespond, id, response),
+  resumeProactive: () => request(IPC.proactiveResume),
+  checkProactive: () => request(IPC.proactiveCheck),
+  cancelReminder: (id) => request(IPC.reminderCancel, id),
+  onProactiveChanged: (cb) => subscribe(IPC.proactiveChanged, cb),
   petMenu: (x, y) => {
     void invoke('pet_menu', { x, y }).catch(console.error)
   },

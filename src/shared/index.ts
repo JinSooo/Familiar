@@ -84,6 +84,42 @@ export const settingsSchema = z.object({
       summaryMinutes: z.number().int().min(5).max(60).default(30),
     })
     .prefault({}),
+  /** Speaking up on its own (docs/design.md §8). Reminders the user asked for ignore the budget. */
+  proactive: z
+    .object({
+      enabled: z.boolean().default(true),
+      /**
+       * How much it speaks up. auto: learned from how the user answers and how often they talk
+       * to it; the others set a pace that feedback still moves a little.
+       */
+      level: z.enum(['auto', 'quiet', 'normal', 'chatty']).default('auto'),
+      quiet: z
+        .object({
+          enabled: z.boolean().default(false),
+          /** "HH:MM", local time; may wrap past midnight. */
+          from: z
+            .string()
+            .regex(/^\d{2}:\d{2}$/)
+            .default('23:00'),
+          to: z
+            .string()
+            .regex(/^\d{2}:\d{2}$/)
+            .default('08:00'),
+        })
+        .prefault({}),
+      triggers: z
+        .object({
+          longWork: z.boolean().default(true),
+          back: z.boolean().default(true),
+          firstToday: z.boolean().default(true),
+          /** Something in what the user is doing that memory or past talks can help with. */
+          activity: z.boolean().default(true),
+          followUp: z.boolean().default(true),
+          lateNight: z.boolean().default(true),
+        })
+        .prefault({}),
+    })
+    .prefault({}),
 })
 export type Settings = z.infer<typeof settingsSchema>
 export type PublicSettings = Omit<Settings, 'model' | 'imageModel'> & {
@@ -285,10 +321,19 @@ export const IPC = {
   perceptionSave: 'perception:save',
   perceptionIcons: 'perception:icons',
   perceptionChanged: 'perception:changed',
+  proactiveStatus: 'proactive:status',
+  /** The user's answer to a proactive bubble. */
+  proactiveRespond: 'proactive:respond',
+  proactiveChanged: 'proactive:changed',
+  /** Ends 别烦我 early. */
+  proactiveResume: 'proactive:resume',
+  /** Look for something to say now instead of at the next minute. */
+  proactiveCheck: 'proactive:check',
+  reminderCancel: 'reminder:cancel',
 } as const
 export type DragAction = 'start' | 'move' | 'end'
 /** Settings pages other windows can open directly. */
-export type SettingsPage = 'timeline' | 'pending'
+export type SettingsPage = 'timeline' | 'pending' | 'proactive'
 export interface FamiliarAPI {
   getSettings(): Promise<PublicSettings>
   saveSettings(settings: SettingsUpdate): Promise<PublicSettings>
@@ -401,9 +446,60 @@ export interface FamiliarAPI {
     perception: Settings['perception'],
   ): Promise<Settings['perception']>
   onPerceptionChanged(callback: (status: PerceptionStatus) => void): () => void
+  proactiveStatus(): Promise<ProactiveStatus>
+  respondProactive(
+    id: string,
+    response: 'ok' | 'later' | 'quiet',
+  ): Promise<void>
+  resumeProactive(): Promise<void>
+  checkProactive(): Promise<void>
+  cancelReminder(id: string): Promise<void>
+  onProactiveChanged(callback: (status: ProactiveStatus) => void): () => void
 }
 
 /** One raw event from familiar-sensor, after the agent's filter. */
+/** One line of ~/.familiar/reminders.md. */
+export interface Reminder {
+  id: string
+  /** When it is due, epoch ms. */
+  at: number
+  text: string
+  /** `reminder`: the user asked for it, always shown. `follow-up`: the pet's own idea, budgeted. */
+  kind: 'reminder' | 'follow-up'
+  /** Set once it was shown (or skipped); done reminders stay a day for the list, then go. */
+  done?: number
+}
+export type ProactiveTrigger =
+  | 'reminder'
+  | 'follow-up'
+  | 'longWork'
+  | 'back'
+  | 'firstToday'
+  | 'activity'
+  | 'lateNight'
+/** A message the pet put in its bubble on its own. */
+export interface ProactiveMessage {
+  id: string
+  at: number
+  trigger: ProactiveTrigger
+  text: string
+  /** Why now, in one line, shown under the message. */
+  reason: string
+  /** What the user did with it; `ignored` when the bubble timed out. */
+  response?: 'ok' | 'later' | 'quiet' | 'ignored'
+}
+export interface ProactiveStatus {
+  /** Messages and reminders, newest first, from the last 7 days. */
+  history: ProactiveMessage[]
+  reminders: Reminder[]
+  /** Proactive messages today against today's pace (reminders not counted). */
+  usedToday: number
+  limit: number
+  /** Minutes the current pace keeps between two messages. */
+  gapMinutes: number
+  /** Set while 别烦我 holds; epoch ms when it ends. */
+  quietUntil?: number
+}
 export interface PerceptionEvent {
   at: number
   kind: 'app' | 'window' | 'idle' | 'active'
@@ -554,4 +650,6 @@ export interface Session {
   error: string
   origin: 'capsule' | 'chat'
   bubble: string
+  /** A proactive message in the bubble, waiting for 好 / 稍后 / 别烦我. */
+  proactive?: ProactiveMessage
 }

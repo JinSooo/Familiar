@@ -34,7 +34,15 @@ const names = new Set([
 ])
 
 // Familiar's own memory files, in every mode; they never take a path from the model.
-const memoryTools = new Set(['remember', 'forget', 'recall'])
+const memoryTools = new Set([
+  'remember',
+  'forget',
+  'recall',
+  // Reminders are Familiar's own file too.
+  'remind',
+  'list_reminders',
+  'cancel_reminder',
+])
 // Read-only web access: allowed in auto and full mode, asked in ask mode (shell network still asks).
 const webTools = new Set(['web_search', 'fetch_page'])
 

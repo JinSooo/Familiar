@@ -1,6 +1,6 @@
 import { bubblePlainText } from '../chat/content'
 import { useEffect, useState, type CSSProperties } from 'react'
-import type { Session } from '../../shared'
+import type { ProactiveMessage, Session } from '../../shared'
 import { api } from '../api'
 import { Pet } from '../pet/Pet'
 import { scales } from '../pet/logic'
@@ -28,6 +28,37 @@ export function Bubble({
       {text}
       <span className="tail" />
     </button>
+  )
+}
+/** A line the pet said on its own: why now, and 好 / 稍后 / 别烦我. Clicking the text is 好. */
+function ProactiveBubble({ message }: { message: ProactiveMessage }) {
+  const answer = (choice: 'ok' | 'later' | 'quiet') =>
+    void api.respondProactive(message.id, choice).catch(console.error)
+  return (
+    <div data-hit className="bubble proactive" role="status">
+      <button
+        type="button"
+        className="proactive-text"
+        onClick={() => answer('ok')}
+      >
+        {message.text}
+      </button>
+      {message.reason && (
+        <span className="proactive-why">{message.reason}</span>
+      )}
+      <div className="proactive-actions">
+        <button type="button" onClick={() => answer('ok')}>
+          好
+        </button>
+        <button type="button" onClick={() => answer('later')}>
+          稍后
+        </button>
+        <button type="button" onClick={() => answer('quiet')}>
+          别烦我
+        </button>
+      </div>
+      <span className="tail" />
+    </div>
   )
 }
 /**
@@ -120,7 +151,10 @@ export function Overlay() {
       }
     >
       <Pet />
-      {session.bubble && session.origin === 'capsule' && (
+      {session.proactive && !open && !session.running && (
+        <ProactiveBubble message={session.proactive} />
+      )}
+      {!session.proactive && session.bubble && session.origin === 'capsule' && (
         <Bubble text={bubblePlainText(session.bubble)} fading={fading} />
       )}
       {open && (

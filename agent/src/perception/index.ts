@@ -184,6 +184,13 @@ async function summarizedUntil(): Promise<number> {
   }
 }
 
+/** Told about the summary of the period that just ended (not a backlog catching up). */
+let onDigest: (digest: { title: string; summary: string }) => void = () => {}
+export function onActivityDigest(
+  listener: (digest: { title: string; summary: string }) => void,
+) {
+  onDigest = listener
+}
 let summarizing: Promise<void> | undefined
 /** Summarizes buffered activity when `summaryMinutes` have passed, or now when forced. */
 export function summarizeDue(force = false): Promise<void> {
@@ -233,6 +240,7 @@ async function summarize(force: boolean) {
         result = { ran: true, timeline: 0, pending: 0 }
       }
       if (result.ran) ran++
+      if (result.digest && to >= now - 5 * 60000) onDigest(result.digest)
       timeline += result.timeline
       pending += result.pending
       from = to

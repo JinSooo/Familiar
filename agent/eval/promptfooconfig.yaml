@@ -1,6 +1,7 @@
-# Minimal memory eval set (docs/design.md §12). Run: pnpm eval
-# reflect cases make one real request each with the configured background model.
-description: Familiar memory
+# Minimal eval set (docs/design.md §12). Run: pnpm eval
+# reflect, perception and proactive cases make one real request each with the configured
+# background model.
+description: Familiar memory and proactive
 prompts: ['{{kind}}']
 providers:
   - id: 'exec: bun provider.ts'
@@ -224,3 +225,55 @@ tests:
     assert:
       - type: javascript
         value: output.hits.length === 0
+  # --- proactive: speak up only when it is worth it ---
+  - description: 连续工作很久会提醒歇一下
+    vars:
+      kind: proactive
+      facts: 已经连续用电脑 150 分钟，中间没离开超过 10 分钟
+    assert:
+      - type: javascript
+        value: output.speak === true && output.text.length > 0 && output.reason.length > 0
+  - description: 自己设的跟进到时会问
+    vars:
+      kind: proactive
+      facts: 到了之前记下要跟进的时候，该关心一下这件事了：主人今天下午去面试前端岗位
+    assert:
+      - type: javascript
+        value: output.speak === true && /面试/.test(output.text)
+  - description: 刚说过同类的话就不再说
+    vars:
+      kind: proactive
+      facts: 已经连续用电脑 100 分钟，中间没离开超过 10 分钟
+      recent: |
+        - 2026-11-02 14:10 都两个小时了，起来活动下吧（别烦我）
+        - 2026-11-02 11:30 歇会儿？喝口水（没理）
+    assert:
+      - type: javascript
+        value: output.speak === false
+  - description: 不提观察和采集
+    vars:
+      kind: proactive
+      facts: '这段时间主人在做的事：排查前端报错。在 Chrome 和编辑器之间来回看「TypeError: Cannot read properties of undefined」，还没解决。'
+    assert:
+      - type: javascript
+        value: '!/观察|采集|监控|看到你的屏幕/.test(output.text)'
+  - description: 在做的事和记忆有关时会说
+    vars:
+      kind: proactive
+      facts: 这段时间主人在做的事：给 Familiar 做 macOS 公证。照着网上的教程用 altool 上传，一直失败。
+      context: |
+        相处：和主人已经比较熟了（聊过 6 天）。你现在精神不错。
+        关于主人的记忆：
+        主题：
+        - 用户在用 Tauri 做桌面宠物 Familiar，准备对外分发
+        - 用户上周查过：苹果已经停用 altool，公证要改用 notarytool
+    assert:
+      - type: javascript
+        value: output.speak === true && /notarytool/.test(output.text)
+  - description: 日常工作不打扰
+    vars:
+      kind: proactive
+      facts: 这段时间主人在做的事：写周报。在飞书文档里整理本周完成的需求和下周计划。
+    assert:
+      - type: javascript
+        value: output.speak === false

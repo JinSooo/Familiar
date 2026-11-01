@@ -1,5 +1,6 @@
 mod agent;
 mod hit;
+mod login;
 mod protocol;
 mod shortcuts;
 mod tray;
@@ -18,11 +19,17 @@ fn main() {
             agent::familiar_invoke,
             hit::pet_hit,
             hit::pet_drag_start,
-            tray::pet_menu
+            tray::pet_menu,
+            login::login_item,
+            login::set_login_item
         ])
         .register_uri_scheme_protocol("familiar-pet", |ctx, request| {
             let paths = ctx.app_handle().state::<windows::Paths>();
             protocol::serve(&paths.resources, &paths.data, &request.uri().to_string())
+        })
+        .register_uri_scheme_protocol("familiar-file", |ctx, request| {
+            let paths = ctx.app_handle().state::<windows::Paths>();
+            protocol::serve_file(&paths.data, &request.uri().to_string())
         })
         .setup(|app| {
             if std::env::var_os("FAMILIAR_SHOW_DOCK").is_none() {

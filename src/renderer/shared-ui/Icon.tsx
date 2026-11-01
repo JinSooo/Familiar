@@ -1,10 +1,14 @@
 export function Icon({
   name,
 }: {
-  name: 'expand' | 'collapse' | 'new' | 'settings' | 'history' | 'window'
+  name:
+    'expand' | 'collapse' | 'new' | 'settings' | 'history' | 'window' | 'attach'
 }) {
   const paths = {
     expand: 'M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7',
+    // Paper clip.
+    attach:
+      'M21 11l-8.5 8.5a5 5 0 0 1-7-7L14 4a3.3 3.3 0 0 1 4.7 4.7L10 17.4a1.7 1.7 0 0 1-2.4-2.4L15.5 7',
     // A window with a title bar: "open in the big window".
     window: 'M3 5h18v14H3zM3 9h18M6 7h.01M8.5 7h.01',
     collapse: 'M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7',

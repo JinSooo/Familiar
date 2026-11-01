@@ -14,7 +14,7 @@ tauri_panel! {
     panel!(TrayPanel { config: { can_become_key_window: true } })
 }
 
-const PANEL_SIZE: (f64, f64) = (320., 400.);
+const PANEL_SIZE: (f64, f64) = (320., 520.);
 /// When the menu bar panel last hid itself on losing focus, in ms since the epoch. A click on the
 /// tray icon while the panel is open first takes its focus away; that click must not reopen it.
 static PANEL_HIDDEN_AT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -498,15 +498,18 @@ pub fn action(app: &tauri::AppHandle, action: crate::protocol::UiAction) -> taur
             size,
             perception,
         } => crate::tray::rebuild(app, &pets, &current_pet, &size, &perception)?,
-        UiAction::PanelOpacity { value } => {
+        UiAction::PanelOpacity { value, windows } => {
+            // The windows' own blur material sits under the page, so the window itself fades.
             if value.is_finite() {
                 let value = value.clamp(0.5, 1.);
-                // The windows' own blur material sits under the page, so the window itself fades.
                 for label in ["chat", "panel"] {
                     if let Ok(panel) = app.get_webview_panel(label) {
                         panel.set_alpha_value(value);
                     }
                 }
+            }
+            if windows.is_finite() {
+                set_window_alpha(app, windows.clamp(0.5, 1.));
             }
         }
         UiAction::Quit => app.exit(0),
@@ -532,5 +535,21 @@ mod tests {
             resized_origin((1222., 833., 460., 330.), (316., 227.), true),
             (1222., 833.)
         );
+    }
+}
+
+/// The settings and big windows are ordinary NSWindows (not panels), so their alpha is set directly.
+fn set_window_alpha(app: &tauri::AppHandle, value: f64) {
+    use tauri_nspanel::objc2::msg_send;
+    use tauri_nspanel::objc2_app_kit::NSWindow;
+    for label in ["settings", "main"] {
+        let Some(w) = app.get_webview_window(label) else {
+            continue;
+        };
+        if let Ok(ptr) = w.ns_window() {
+            // SAFETY: tauri hands back the live NSWindow of this webview; called on the main thread.
+            let window = unsafe { &*(ptr as *const NSWindow) };
+            let _: () = unsafe { msg_send![window, setAlphaValue: value] };
+        }
     }
 }

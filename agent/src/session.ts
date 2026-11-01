@@ -1,4 +1,4 @@
-import type { AgentEvent, Session } from '../../src/shared'
+import type { AgentEvent, Attachment, Session } from '../../src/shared'
 import { newConversationId } from './conversations'
 export const emptySession = (): Session => ({
   id: '',
@@ -15,6 +15,7 @@ export function beginTurn(
   session: Session,
   text: string,
   origin: Session['origin'],
+  attachments: Attachment[] = [],
 ): Session {
   const now = Date.now()
   return {
@@ -25,7 +26,12 @@ export function beginTurn(
     messages: [
       // Empty replies stay (stopped or failed turns): tool rows and errors point at them by index.
       ...session.messages,
-      { role: 'user', content: text, createdAt: now },
+      {
+        role: 'user',
+        content: text,
+        createdAt: now,
+        ...(attachments.length ? { attachments } : {}),
+      },
       { role: 'assistant', content: '', createdAt: now },
     ],
     running: true,
@@ -44,6 +50,14 @@ export function reduceSession(session: Session, event: AgentEvent): Session {
         : m,
     )
     next.bubble += event.text
+  }
+  if (event.type === 'attachment') {
+    const last = session.messages.length - 1
+    next.messages = session.messages.map((m, i) =>
+      i === last && m.role === 'assistant'
+        ? { ...m, attachments: [...(m.attachments ?? []), event.attachment] }
+        : m,
+    )
   }
   if (event.type === 'tool-call')
     next.tools = [

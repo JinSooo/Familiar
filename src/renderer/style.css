@@ -1669,7 +1669,8 @@ form.setting-row input {
   height: 100%;
   display: flex;
   flex-direction: column;
-  padding: 14px 12px 8px;
+  gap: 12px;
+  padding: 14px 12px 10px;
   border-radius: 12px;
   background: color-mix(
     in srgb,
@@ -1677,6 +1678,7 @@ form.setting-row input {
     transparent
   );
   box-shadow: inset 0 0 0 1px var(--line);
+  overflow: auto;
 }
 .tray-head {
   display: flex;
@@ -1689,6 +1691,7 @@ form.setting-row input {
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+  flex: 1;
 }
 .tray-who strong {
   font-size: 15px;
@@ -1696,21 +1699,30 @@ form.setting-row input {
 .tray-who .muted {
   font-size: 12px;
 }
-.tray-watch {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 16px 0 6px;
-  padding: 10px 12px;
-  border-radius: var(--radius-card);
-  background: var(--group);
-  border: 1px solid var(--line);
-  font-size: 12px;
-}
-.tray-watch .link {
-  margin-left: auto;
+/* Recording state as one dot; hover says what it is, click pauses or resumes. */
+.tray-watch-dot {
+  width: 26px;
+  height: 26px;
   padding: 0;
-  font-size: 12px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+}
+.tray-watch-dot:hover:not(:disabled) {
+  background: var(--hover);
+}
+.tray-watch-dot:disabled {
+  opacity: 1;
+  cursor: default;
+}
+.tray-watch-dot .dot {
+  width: 9px;
+  height: 9px;
+}
+.tray-watch-dot.on .dot {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 22%, transparent);
 }
 .dot.on {
   background: var(--green);
@@ -1719,33 +1731,123 @@ form.setting-row input {
 .dot.warn {
   background: var(--orange);
 }
+.tray-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.tray-actions button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 4px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.tray-actions button:hover {
+  color: var(--text);
+}
+.tray-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 9px 12px;
+  text-align: left;
+  font-size: 12px;
+}
+.tray-card strong {
+  font-size: 13px;
+  font-weight: 500;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tray-preview {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.tray-pending {
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--accent-soft);
+  box-shadow: none;
+}
+.tray-pending strong {
+  color: var(--accent);
+}
 .tray-heading {
-  margin: 18px 4px 6px;
+  display: flex;
+  justify-content: space-between;
+  margin: 0 4px 6px;
   font-size: 11px;
   font-weight: 600;
   color: var(--muted);
 }
+.tray-heading span {
+  font-weight: 500;
+  color: var(--text);
+}
+.tray-usage {
+  margin: 0;
+  padding: 0 4px;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.tray-usage li {
+  display: grid;
+  grid-template-columns: 16px 76px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.tray-usage img,
+.tray-usage-blank {
+  width: 16px;
+  height: 16px;
+}
+.tray-usage-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tray-usage-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--hover);
+  overflow: hidden;
+}
+.tray-usage-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+}
 .tray-list {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 .tray-list li {
   display: grid;
-  grid-template-columns: 38px 1fr auto;
+  grid-template-columns: 38px 1fr;
   align-items: start;
   gap: 10px;
-  padding: 10px 6px;
+  padding: 6px 4px;
   border-radius: var(--radius-control);
   font-size: 12.5px;
 }
-.tray-list li:hover {
-  background: var(--hover);
-}
 .tray-list time {
+  padding-top: 1px;
   color: var(--muted);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
@@ -1757,33 +1859,13 @@ form.setting-row input {
   overflow: hidden;
   line-height: 1.4;
 }
-.tray-list time {
-  padding-top: 2px;
-}
 .tray-more {
-  align-self: flex-start;
-  margin: 4px 6px 4px;
+  margin: 2px 4px 0;
   padding: 0;
   font-size: 12px;
 }
-/* App icons only show while the row is hovered; the list stays quiet. */
-.tray-apps {
-  display: flex;
-  gap: 3px;
-  padding-top: 2px;
-  opacity: 0;
-  transition: opacity 0.12s;
-}
-.tray-list li:hover .tray-apps {
-  opacity: 1;
-}
-.tray-apps img {
-  width: 14px;
-  height: 14px;
-}
 .tray-list li.tray-empty {
   display: block;
-  padding: 8px 4px;
 }
 /* Settings > 宠物: the opacity slider. */
 .settings input[type='range'] {
@@ -1797,4 +1879,107 @@ form.setting-row input {
 /* Settings > 模型: the link beside API Key to where keys are made. */
 .settings .key-link {
   margin-left: 10px;
+}
+/* Files on a message: thumbnails for images, chips for the rest. */
+.attachments {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.attachments.end {
+  justify-content: flex-end;
+}
+.attachment-image {
+  padding: 0;
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--line);
+  cursor: zoom-in;
+}
+.attachment-image img {
+  display: block;
+  max-width: 220px;
+  max-height: 220px;
+  object-fit: cover;
+}
+.attachments:has(.attachment-image + .attachment-image) .attachment-image img {
+  width: 120px;
+  height: 120px;
+}
+.attachment-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 240px;
+  padding: 6px 10px 6px 6px;
+  font-size: 12px;
+  text-align: left;
+}
+.attachment-kind {
+  flex-shrink: 0;
+  min-width: 32px;
+  padding: 4px 5px;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 600;
+  text-align: center;
+}
+.attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Files waiting to be sent, above the field. */
+.composer-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.composer-file {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 200px;
+  padding: 3px 4px 3px 3px;
+  border-radius: var(--radius-control);
+  background: var(--group);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-size: 12px;
+}
+.composer-file img {
+  width: 28px;
+  height: 28px;
+  object-fit: cover;
+  border-radius: 5px;
+}
+.composer-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-file button {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  line-height: 1;
+}
+.composer-wrap.dragging .composer {
+  box-shadow:
+    0 0 0 1px var(--accent),
+    0 0 0 4px var(--accent-soft);
+}
+.composer .attach {
+  width: 26px;
+  height: 26px;
+  margin-left: -6px;
 }

@@ -87,10 +87,17 @@ export function ExtensionsPage({ section }: { section: ExtensionSection }) {
     const settings = await api.getSettings()
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { apiKeySet, ...model } = settings.model
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { apiKeySet: imageKeySet, ...imageModel } = settings.imageModel
     const next = on
       ? settings.disabledSkills.filter((n) => n !== name)
       : [...new Set([...settings.disabledSkills, name])]
-    await api.saveSettings({ ...settings, model, disabledSkills: next })
+    await api.saveSettings({
+      ...settings,
+      model,
+      imageModel,
+      disabledSkills: next,
+    })
     setDisabled(next)
   }
   if (!data) return <p role="status">{notice || '读取扩展…'}</p>

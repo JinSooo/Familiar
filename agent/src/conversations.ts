@@ -1,6 +1,19 @@
-import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises'
+import {
+  mkdir,
+  readFile,
+  readdir,
+  rename,
+  stat,
+  writeFile,
+} from 'node:fs/promises'
 import { join } from 'node:path'
-import type { ConversationSummary, Session, Source } from '../../src/shared'
+import {
+  attachmentSchema,
+  type Attachment,
+  type ConversationSummary,
+  type Session,
+  type Source,
+} from '../../src/shared'
 import { conversationsDir, moveToTrash } from './system'
 
 /**
@@ -15,6 +28,7 @@ const validId = /^[0-9A-Za-z-]{1,64}$/
 interface MessageMeta {
   role: 'user' | 'assistant'
   at: number
+  attachments?: Attachment[]
   tools?: { name: string; done: boolean }[]
   error?: string
   sources?: Source[]
@@ -40,6 +54,15 @@ const oneLine = (text: string, limit: number): string => {
     ? `${[...plain].slice(0, limit).join('')}…`
     : plain
 }
+/** Markdown as it reads: no list markers, emphasis, headings, code fences or link targets. */
+export function plainText(markdown: string): string {
+  return markdown
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/^\s{0,3}(#{1,6}\s+|[-*+]\s+|\d+\.\s+|>\s?)/gm, '')
+    .replace(/(\*\*|__|\*|_|`|~~)(?=\S)([\s\S]*?\S)\1/g, '$2')
+}
+
 export function conversationTitle(messages: Session['messages']): string {
   const first = messages.find((m) => m.role === 'user' && m.content.trim())
   return first ? oneLine(first.content, 30) : '新对话'
@@ -79,6 +102,7 @@ export function serialize(
       ...(tools.length ? { tools } : {}),
       ...(m.error ? { error: m.error } : {}),
       ...(m.sources?.length ? { sources: m.sources } : {}),
+      ...(m.attachments?.length ? { attachments: m.attachments } : {}),
     }
     // The header line is regenerated from the metadata on every save, so readers can edit the body freely.
     const header = [
@@ -86,9 +110,27 @@ export function serialize(
       ...tools.map((t) => `${t.done ? '已' : '未完成：'}${t.name}`),
       ...(m.error ? [`出错：${oneLine(m.error, 80)}`] : []),
     ].join(' · ')
-    return `<!-- familiar ${JSON.stringify(meta)} -->\n${header}\n\n${m.content}\n`
+    return `<!-- familiar ${JSON.stringify(meta)} -->\n${header}\n\n${m.content}${attachmentLinks(m.attachments)}\n`
   })
   return `${head}\n${body.join('\n')}`
+}
+
+/** Links to a message's files, so the transcript opens them in any Markdown viewer. */
+const linksStart = '\n\n<!-- familiar files -->\n'
+function attachmentLinks(list: Attachment[] | undefined): string {
+  if (!list?.length) return ''
+  const link = (a: Attachment) => {
+    const href = `files/${a.path.split('/').map(encodeURIComponent).join('/')}`
+    return a.mediaType.startsWith('image/')
+      ? `![${a.name}](${href})`
+      : `[${a.name}](${href})`
+  }
+  return linksStart + list.map(link).join('\n')
+}
+/** The body without the links block written above (metadata is the source of truth). */
+function stripAttachmentLinks(body: string): string {
+  const at = body.lastIndexOf(linksStart.trim())
+  return at === -1 ? body : body.slice(0, at).replace(/\n+$/, '')
 }
 
 export function parse(id: string, text: string): StoredConversation {
@@ -115,16 +157,22 @@ export function parse(id: string, text: string): StoredConversation {
     }
     if (meta.role !== 'user' && meta.role !== 'assistant') continue
     const chunk = (parts[i + 1] ?? '').replace(/^\n/, '')
-    const content = chunk
-      .slice(chunk.indexOf('\n') + 1)
-      .replace(/^\n/, '')
-      .replace(/\n+$/, '')
+    const attachments = (meta.attachments ?? []).filter(
+      (a) => attachmentSchema.safeParse(a).success,
+    )
+    const content = stripAttachmentLinks(
+      chunk
+        .slice(chunk.indexOf('\n') + 1)
+        .replace(/^\n/, '')
+        .replace(/\n+$/, ''),
+    )
     const turn = messages.length
     messages.push({
       role: meta.role,
       content,
       createdAt: Number(meta.at) || 0,
       ...(meta.error ? { error: String(meta.error) } : {}),
+      ...(attachments.length ? { attachments } : {}),
       ...(Array.isArray(meta.sources)
         ? {
             sources: meta.sources.filter(
@@ -224,7 +272,7 @@ export async function listConversations(
         return {
           id,
           title: c.title,
-          preview: oneLine(reply?.content || reply?.error || '', 60),
+          preview: oneLine(plainText(reply?.content || reply?.error || ''), 60),
           updatedAt: c.updatedAt,
           messages: c.messages.length,
         }
@@ -238,10 +286,25 @@ export async function listConversations(
     .sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
+/** The conversation's files folder goes to the Trash with it, when it has one. */
+async function trashFiles(id: string): Promise<void> {
+  const dir = join(conversationsDir, 'files', id)
+  try {
+    await stat(dir)
+  } catch {
+    return
+  }
+  await moveToTrash(dir)
+}
+
 export async function deleteConversation(id: string): Promise<void> {
   await moveToTrash(file(id))
+  await trashFiles(id)
 }
 
 export async function clearConversations(): Promise<void> {
-  for (const id of await ids()) await moveToTrash(file(id))
+  for (const id of await ids()) {
+    await moveToTrash(file(id))
+    await trashFiles(id)
+  }
 }

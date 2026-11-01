@@ -8,14 +8,17 @@ import type {
 } from '../../shared'
 import { api } from '../api'
 import { openUrl } from '@tauri-apps/plugin-opener'
+import { invoke } from '@tauri-apps/api/core'
 import { MemoryPage } from './MemoryPage'
 import { ExtensionsPage } from './ExtensionsPage'
 import { PerceptionPage } from './PerceptionPage'
 import { TimelinePage } from './TimelinePage'
 import { ShortcutsSection } from './Shortcuts'
+import { Switch } from './Switch'
 import { presetOf, providerPresets } from '../../shared/presets'
 
 type Page =
+  | 'general'
   | 'pet'
   | 'shortcuts'
   | 'model'
@@ -41,6 +44,7 @@ interface NavGroup {
 }
 /** Single-color line icons on a 24px grid, drawn at 16px. */
 const icons = {
+  general: 'M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6',
   pet: 'M5 9V4l4 3h6l4-3v5c0 6-3 10-7 10S5 15 5 9zM9.5 12h.01M14.5 12h.01M11 15h2',
   keyboard: 'M3 6h18v12H3zM7 10h.01M11 10h.01M15 10h.01M8 14h8',
   model: 'M12 3l8 4.5v9L12 21l-8-4.5v-9zM12 12l8-4.5M12 12v9M12 12L4 7.5',
@@ -55,6 +59,7 @@ const icons = {
   chevron: 'M9 6l6 6-6 6',
 }
 const nav: (NavItem | NavGroup)[] = [
+  { page: 'general', name: '通用', icon: icons.general },
   { page: 'pet', name: '宠物', icon: icons.pet },
   { page: 'shortcuts', name: '快捷键', icon: icons.keyboard },
   { page: 'model', name: '模型', icon: icons.model },
@@ -99,7 +104,13 @@ const titleOf = (page: Page): string[] => {
   return []
 }
 /** Pages that edit the settings form and need its 保存 button. */
-const formPages: Page[] = ['pet', 'shortcuts', 'model', 'permissions']
+const formPages: Page[] = [
+  'general',
+  'pet',
+  'shortcuts',
+  'model',
+  'permissions',
+]
 
 function Glyph({ d, size = 16 }: { d: string; size?: number }) {
   return (
@@ -119,19 +130,29 @@ function Glyph({ d, size = 16 }: { d: string; size?: number }) {
   )
 }
 
+const size = (bytes: number) =>
+  bytes < 1024 * 1024
+    ? `${Math.max(1, Math.round(bytes / 1024))} KB`
+    : bytes < 1024 ** 3
+      ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
+      : `${(bytes / 1024 ** 3).toFixed(2)} GB`
+
 const accessLabel = { allow: '允许', ask: '询问', deny: '禁止' } as const
 
 export function SettingsView() {
-  const [tab, setTab] = useState<Page>('model')
+  const [tab, setTab] = useState<Page>('general')
   /** Expanded sidebar groups; the one holding the open page always shows. */
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [pets, setPets] = useState<PetSkin[]>([])
   const [settings, setSettings] = useState<PublicSettings>()
   const [key, setKey] = useState('')
+  const [imageKey, setImageKey] = useState('')
   const [notice, setNotice] = useState('')
   const [clearing, setClearing] = useState(false)
   const [models, setModels] = useState<string[]>()
   const [chatgpt, setChatgpt] = useState<ChatGptStatus>()
+  const [loginItem, setLoginItem] = useState<'on' | 'off' | 'approval'>('off')
+  const [dataInfo, setDataInfo] = useState<{ path: string; bytes: number }>()
   /** The relay last saved, so picking 自定义中转 again brings its address back. */
   const [savedRelay, setSavedRelay] =
     useState<Pick<PublicSettings['model'], 'protocol' | 'baseURL'>>()
@@ -156,6 +177,14 @@ export function SettingsView() {
     if (settings?.model.protocol === 'chatgpt')
       api.chatgptStatus().then(setChatgpt).catch(console.error)
   }, [settings?.model.protocol])
+  // Login item and data size belong to the 通用 page; read them when it opens.
+  useEffect(() => {
+    if (tab !== 'general') return
+    void invoke<'on' | 'off' | 'approval'>('login_item')
+      .then(setLoginItem)
+      .catch(console.error)
+    void api.dataInfo().then(setDataInfo).catch(console.error)
+  }, [tab])
   // The menu bar panel can ask for a page.
   useEffect(() => api.onSettingsPage((page) => setTab(page)), [])
   // Rules are added from approval cards, so pick them up whenever the window comes back.
@@ -286,11 +315,17 @@ export function SettingsView() {
     if (!settings) return
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { apiKeySet, ...publicModel } = settings.model
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { apiKeySet: imageKeySet, ...publicImage } = settings.imageModel
     const update: SettingsUpdate = {
       ...settings,
       model: {
         ...publicModel,
         ...(key ? { apiKey: key } : {}),
+      },
+      imageModel: {
+        ...publicImage,
+        ...(imageKey ? { apiKey: imageKey } : {}),
       },
     }
     try {
@@ -299,6 +334,7 @@ export function SettingsView() {
       if (saved.model.protocol !== 'chatgpt' && !presetOf(saved.model))
         setSavedRelay(saved.model)
       setKey('')
+      setImageKey('')
       setNotice('已保存')
     } catch {
       setNotice('保存失败，请检查设置或钥匙串是否可用。')
@@ -403,6 +439,117 @@ export function SettingsView() {
           hidden={!formPages.includes(tab) && tab !== 'privacy'}
           onSubmit={save}
         >
+          <section hidden={tab !== 'general'}>
+            <div className="group">
+              <div className="setting-row">
+                <div className="ch-label">
+                  <span>开机时打开 Familiar</span>
+                  {loginItem === 'approval' && (
+                    <span className="warn">
+                      需要在系统设置 › 通用 › 登录项里允许
+                    </span>
+                  )}
+                </div>
+                <Switch
+                  on={loginItem !== 'off'}
+                  label="开机时打开 Familiar"
+                  onChange={(on) =>
+                    void invoke<'on' | 'off' | 'approval'>('set_login_item', {
+                      on,
+                    })
+                      .then(setLoginItem)
+                      .catch((e: unknown) => setNotice(failure(e)))
+                  }
+                />
+              </div>
+              <div className="setting-row">
+                <span title="关掉后启动时只有菜单栏图标，用快捷键或菜单叫出宠物">
+                  启动时显示宠物
+                </span>
+                <Switch
+                  on={settings.showPetOnLaunch}
+                  label="启动时显示宠物"
+                  onChange={(on) =>
+                    setSettings({ ...settings, showPetOnLaunch: on })
+                  }
+                />
+              </div>
+              <div className="setting-row">
+                <span title="等你允许或输入框里有草稿时不收；面板里按 Esc 也能收起">
+                  点击别处时
+                </span>
+                <div className="segmented">
+                  {([true, false] as const).map((hide) => (
+                    <button
+                      type="button"
+                      key={String(hide)}
+                      className={
+                        settings.chatAutoHide === hide ? 'selected' : ''
+                      }
+                      onClick={() =>
+                        setSettings({ ...settings, chatAutoHide: hide })
+                      }
+                    >
+                      {hide ? '自动收起' : '保持显示'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <h3 className="memory-heading">透明度</h3>
+            <div className="group">
+              <div className="setting-row">
+                <span>聊天面板和菜单栏</span>
+                <input
+                  type="range"
+                  min={50}
+                  max={100}
+                  step={5}
+                  aria-label="聊天面板和菜单栏"
+                  value={Math.round(settings.panelOpacity * 100)}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      panelOpacity: Number(e.target.value) / 100,
+                    })
+                  }
+                />
+              </div>
+              <div className="setting-row">
+                <span>设置和大窗口</span>
+                <input
+                  type="range"
+                  min={50}
+                  max={100}
+                  step={5}
+                  aria-label="设置和大窗口"
+                  value={Math.round(settings.windowOpacity * 100)}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      windowOpacity: Number(e.target.value) / 100,
+                    })
+                  }
+                />
+              </div>
+            </div>
+            <h3 className="memory-heading">数据</h3>
+            <div className="group">
+              <div className="setting-row">
+                <div className="ch-label">
+                  <span>数据目录</span>
+                  <span className="muted">
+                    {dataInfo
+                      ? `${dataInfo.path.replace(/^\/Users\/[^/]+/, '~')} · ${size(dataInfo.bytes)}`
+                      : '读取中…'}
+                  </span>
+                </div>
+                <button type="button" onClick={() => api.revealData()}>
+                  在 Finder 中打开
+                </button>
+              </div>
+            </div>
+          </section>
           <section hidden={tab !== 'shortcuts'}>
             <ShortcutsSection
               value={settings.shortcuts}
@@ -588,6 +735,57 @@ export function SettingsView() {
                   测试连接
                 </button>
               </span>
+            </div>
+          </section>
+          <section hidden={tab !== 'model'}>
+            <h3 className="memory-heading">生图</h3>
+            <div className="group">
+              <label>
+                生图模型
+                <input
+                  value={settings.imageModel.model}
+                  placeholder="留空则不生图，例如 gpt-image-2"
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      imageModel: {
+                        ...settings.imageModel,
+                        model: e.target.value,
+                      },
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Base URL
+                <input
+                  value={settings.imageModel.baseURL}
+                  placeholder="https://api.openai.com/v1"
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      imageModel: {
+                        ...settings.imageModel,
+                        baseURL: e.target.value,
+                      },
+                    })
+                  }
+                />
+              </label>
+              <label>
+                API Key
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  placeholder={
+                    settings.imageModel.apiKeySet
+                      ? '已保存在钥匙串'
+                      : '尚未设置'
+                  }
+                  value={imageKey}
+                  onChange={(e) => setImageKey(e.target.value)}
+                />
+              </label>
             </div>
           </section>
           {tab === 'model' && missingModel && (
@@ -780,44 +978,6 @@ export function SettingsView() {
                       }
                     >
                       {['慢', '正常', '快'][i]}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="setting-row">
-                <span>面板透明度</span>
-                <input
-                  type="range"
-                  min={50}
-                  max={100}
-                  step={5}
-                  aria-label="面板透明度"
-                  value={Math.round(settings.panelOpacity * 100)}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      panelOpacity: Number(e.target.value) / 100,
-                    })
-                  }
-                />
-              </div>
-              <div className="setting-row">
-                <span title="等你允许或输入框里有草稿时不收；面板里按 Esc 也能收起">
-                  点击别处时
-                </span>
-                <div className="segmented">
-                  {([true, false] as const).map((hide) => (
-                    <button
-                      type="button"
-                      key={String(hide)}
-                      className={
-                        settings.chatAutoHide === hide ? 'selected' : ''
-                      }
-                      onClick={() =>
-                        setSettings({ ...settings, chatAutoHide: hide })
-                      }
-                    >
-                      {hide ? '自动收起' : '保持显示'}
                     </button>
                   ))}
                 </div>

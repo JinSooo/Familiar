@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import type { Source } from '../../shared'
+import { api } from '../api'
 
 /**
  * Rich pieces of a reply: Mermaid diagrams, Vega-Lite charts, web images with a viewer, and
@@ -137,10 +138,17 @@ export function WebImage({ src, alt }: { src: string; alt: string }) {
 
 /** Full-window image viewer; mounted once per window. */
 export function ImageViewer() {
-  const [image, setImage] = useState<{ src: string; alt: string }>()
+  /** `path` marks a file kept with the conversation; it opens in Preview, not the browser. */
+  const [image, setImage] = useState<{
+    src: string
+    alt: string
+    path?: string
+  }>()
   useEffect(() => {
     const open = (e: Event) =>
-      setImage((e as CustomEvent<{ src: string; alt: string }>).detail)
+      setImage(
+        (e as CustomEvent<{ src: string; alt: string; path?: string }>).detail,
+      )
     window.addEventListener('familiar:image', open)
     return () => window.removeEventListener('familiar:image', open)
   }, [])
@@ -166,9 +174,15 @@ export function ImageViewer() {
       <img src={image.src} alt={image.alt} referrerPolicy="no-referrer" />
       <div className="image-viewer-bar" onClick={(e) => e.stopPropagation()}>
         <span>{image.alt}</span>
-        <button type="button" onClick={() => void openUrl(image.src)}>
-          在浏览器打开
-        </button>
+        {image.path ? (
+          <button type="button" onClick={() => api.openAttachment(image.path!)}>
+            用预览打开
+          </button>
+        ) : (
+          <button type="button" onClick={() => void openUrl(image.src)}>
+            在浏览器打开
+          </button>
+        )}
         <button type="button" onClick={() => setImage(undefined)}>
           关闭
         </button>

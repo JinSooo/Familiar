@@ -1,4 +1,6 @@
 import type { AgentEvent, Message } from '../../../src/shared'
+import { toModelMessage } from '../attachments'
+import { createImageTools, imageInstructions } from './image'
 import { getSettings } from '../settings'
 import { decideToolCall } from '../permissions'
 import { createWorkspaceTools, ensureWorkspace, snapshot } from '../workspace'
@@ -20,6 +22,7 @@ export async function runAgent(
   messages: Message[],
   onEvent: (event: AgentEvent) => void,
   signal: AbortSignal,
+  conversationId = '',
 ): Promise<void> {
   try {
     signal.throwIfAborted()
@@ -35,13 +38,24 @@ export async function runAgent(
       console.error('MCP tools unavailable', error)
       return {}
     })
-    await runAgentCore(messages, onEvent, signal, {
+    const attached = messages.at(-1)?.attachments ?? []
+    const images = conversationId
+      ? createImageTools({
+          settings,
+          conversationId: () => conversationId,
+          attached,
+          onImage: (attachment) => onEvent({ type: 'attachment', attachment }),
+        })
+      : {}
+    const modelMessages = await Promise.all(messages.map(toModelMessage))
+    await runAgentCore(modelMessages, onEvent, signal, {
       model,
       tools: {
         ...createWorkspaceTools(settings),
         ...createMemoryTools(memory),
         ...createWebTools(settings),
         ...createSkillTools(skills),
+        ...images,
         ...external,
       },
       sources: sourcesOf,
@@ -49,7 +63,7 @@ export async function runAgent(
         workspacePath,
         settings.permissionMode,
         settings.pet.name,
-      )}\n\n${await memoryInstructions(memory.store)}\n\n${webInstructions}\n\n${skillInstructions(skills)}`,
+      )}\n\n${await memoryInstructions(memory.store)}\n\n${webInstructions}\n\n${skillInstructions(skills)}${'generate_image' in images ? `\n\n${imageInstructions}` : ''}`,
       workspacePath,
       decide: (call) => decideToolCall(call, settings),
       snapshot,

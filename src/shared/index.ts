@@ -39,8 +39,21 @@ export const settingsSchema = z.object({
   workspaceSnapshots: z.boolean().default(true),
   /** Close the chat panel and capsule when the user clicks another app. */
   chatAutoHide: z.boolean().default(true),
+  /** Image generation, separate from the chat model (the ChatGPT plan route cannot make images). */
+  imageModel: z
+    .object({
+      /** Off until a model is set. */
+      model: z.string().default(''),
+      baseURL: z.string().default('https://api.openai.com/v1'),
+      apiKey: z.string().default(''),
+    })
+    .prefault({}),
   /** How opaque the floating panels (capsule, bubble, chat panel, menu bar panel) are, 0.5 to 1. */
   panelOpacity: z.number().min(0.5).max(1).default(1),
+  /** How opaque the settings and big conversation windows are, 0.5 to 1. */
+  windowOpacity: z.number().min(0.5).max(1).default(1),
+  /** Off: Familiar starts with only the menu bar icon; the pet comes back with its shortcut or menu. */
+  showPetOnLaunch: z.boolean().default(true),
   /** Global shortcuts as Tauri accelerators ("Alt+Space"); empty means none. */
   shortcuts: z
     .object({
@@ -73,11 +86,13 @@ export const settingsSchema = z.object({
     .prefault({}),
 })
 export type Settings = z.infer<typeof settingsSchema>
-export type PublicSettings = Omit<Settings, 'model'> & {
+export type PublicSettings = Omit<Settings, 'model' | 'imageModel'> & {
   model: Omit<Settings['model'], 'apiKey'> & { apiKeySet: boolean }
+  imageModel: Omit<Settings['imageModel'], 'apiKey'> & { apiKeySet: boolean }
 }
-export type SettingsUpdate = Omit<Settings, 'model'> & {
+export type SettingsUpdate = Omit<Settings, 'model' | 'imageModel'> & {
   model: Omit<Settings['model'], 'apiKey'> & { apiKey?: string }
+  imageModel: Omit<Settings['imageModel'], 'apiKey'> & { apiKey?: string }
 }
 /** Model settings as edited in the settings window; no apiKey means the saved one. */
 export type ModelDraft = SettingsUpdate['model']
@@ -134,9 +149,18 @@ export interface PetSkin {
   version: 1 | 2
   extension?: { sheetUrl: string; rows: SkinExtension['rows'] }
 }
+/** A file kept with the conversation (sent by the user or made by a tool), under conversations/files. */
+export const attachmentSchema = z.object({
+  /** Relative to conversations/files: "<conversation id>/<name>". */
+  path: z.string().regex(/^[0-9A-Za-z-]{1,64}\/[^/\\]{1,200}$/),
+  name: z.string().min(1).max(200),
+  mediaType: z.string().min(1).max(100),
+})
+export type Attachment = z.infer<typeof attachmentSchema>
 export const messageSchema = z.object({
   role: z.enum(['user', 'assistant']),
   content: z.string().max(100000),
+  attachments: z.array(attachmentSchema).max(10).optional(),
 })
 export type Message = z.infer<typeof messageSchema>
 export interface Source {
@@ -147,6 +171,8 @@ export interface Source {
 }
 export type AgentEvent =
   | { type: 'text-delta'; text: string }
+  /** A file the reply produced (a generated image). */
+  | { type: 'attachment'; attachment: Attachment }
   | { type: 'tool-call'; id: string; toolName: string; input: unknown }
   | {
       type: 'tool-approval-request'
@@ -236,8 +262,12 @@ export const IPC = {
   memoryDelete: 'memory:delete',
   memoryReflect: 'memory:reflect',
   memoryReveal: 'memory:reveal',
+  dataInfo: 'data:info',
+  dataReveal: 'data:reveal',
+  attachmentOpen: 'attachment:open',
   memoryChanged: 'memory:changed',
   perceptionStatus: 'perception:status',
+  usageToday: 'usage:today',
   perceptionRecent: 'perception:recent',
   perceptionClear: 'perception:clear',
   perceptionSummarize: 'perception:summarize',
@@ -249,16 +279,19 @@ export const IPC = {
   perceptionChanged: 'perception:changed',
 } as const
 export type DragAction = 'start' | 'move' | 'end'
+/** Settings pages other windows can open directly. */
+export type SettingsPage = 'timeline' | 'pending'
 export interface FamiliarAPI {
   getSettings(): Promise<PublicSettings>
   saveSettings(settings: SettingsUpdate): Promise<PublicSettings>
-  run(text: string): Promise<void>
+  /** Sends a message; files are { name, data (base64) } and go with it. */
+  run(text: string, files?: { name: string; data: string }[]): Promise<void>
   getSession(): Promise<Session>
   onSession(callback: (session: Session) => void): () => void
   newSession(): void
   /** Opens the settings window, on a page when one is named. */
-  openSettings(page?: 'timeline'): void
-  onSettingsPage(callback: (page: 'timeline') => void): () => void
+  openSettings(page?: SettingsPage): void
+  onSettingsPage(callback: (page: SettingsPage) => void): () => void
   chatgptStatus(): Promise<ChatGptStatus>
   /** Opens the browser for sign-in and resolves once the user has finished there. */
   chatgptSignIn(): Promise<ChatGptStatus>
@@ -315,6 +348,11 @@ export interface FamiliarAPI {
   /** Starts reflecting on recent conversations now; the result arrives with onMemoryChanged. */
   reflectMemory(): void
   revealMemory(): void
+  /** Where ~/.familiar is and how much space it takes. */
+  dataInfo(): Promise<{ path: string; bytes: number }>
+  revealData(): void
+  /** Opens a conversation file in its default app (Preview for images and PDFs). */
+  openAttachment(path: string): void
   onMemoryChanged(callback: (change: MemoryChange) => void): () => void
   /** MCP servers (connecting them first when asked) and skills. */
   getExtensions(connect?: boolean): Promise<Extensions>
@@ -332,6 +370,7 @@ export interface FamiliarAPI {
   /** Which configured shortcuts the system refused (taken by another app). */
   shortcutStatus(): Promise<ShortcutFailure[]>
   perceptionStatus(): Promise<PerceptionStatus>
+  usageToday(): Promise<UsageToday>
   /** The raw events of the last hour, decrypted, newest first. */
   perceptionRecent(): Promise<PerceptionEvent[]>
   /** App icons as data: URLs by bundle id; apps without one are left out. */
@@ -379,6 +418,11 @@ export interface PerceptionStatus {
   lastEventAt?: number
   lastSummaryAt?: number
   summary?: { timeline: number; pending: number } | { error: string }
+}
+/** Today's active time and top apps, for the menu bar panel. */
+export interface UsageToday {
+  activeMinutes: number
+  apps: { bundleId: string; name: string; minutes: number }[]
 }
 export interface PerceptionApp {
   bundleId: string

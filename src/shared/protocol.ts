@@ -70,7 +70,7 @@ export type UiAction =
       size: 'small' | 'medium' | 'large'
       perception: 'off' | 'on' | 'paused'
     }
-  | { type: 'panel-opacity'; value: number }
+  | { type: 'panel-opacity'; value: number; windows: number }
   | { type: 'quit' }
 
 /**

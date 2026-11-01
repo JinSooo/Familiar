@@ -10,3 +10,6 @@ commands.allow = ["pet_drag_start"]
 [[permission]]
 identifier = "allow-pet-menu"
 commands.allow = ["pet_menu"]
+[[permission]]
+identifier = "allow-login-item"
+commands.allow = ["login_item", "set_login_item"]

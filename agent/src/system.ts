@@ -138,3 +138,24 @@ export async function idleSeconds(): Promise<number> {
   const output = (await exec('/usr/sbin/ioreg', ['-c', 'IOHIDSystem'])).stdout
   return Number(output.match(/"HIDIdleTime"\s*=\s*(\d+)/)?.[1] ?? 0) / 1e9
 }
+/** Bytes under a directory, following no symlinks; unreadable entries count as zero. */
+export async function directorySize(path: string): Promise<number> {
+  const { readdir, lstat } = await import('node:fs/promises')
+  let total = 0
+  const walk = async (dir: string): Promise<void> => {
+    let entries: import('node:fs').Dirent[]
+    try {
+      entries = await readdir(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const e of entries) {
+      const full = join(dir, e.name)
+      if (e.isDirectory()) await walk(full)
+      else if (e.isFile())
+        total += (await lstat(full).catch(() => ({ size: 0 }))).size
+    }
+  }
+  await walk(path)
+  return total
+}

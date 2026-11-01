@@ -5,7 +5,8 @@ import {
   type LanguageModel,
   type ToolSet,
 } from 'ai'
-import type { AgentEvent, Message, Source } from '../../../src/shared'
+import type { ModelMessage } from 'ai'
+import type { AgentEvent, Source } from '../../../src/shared'
 import type { ToolCall, ToolDecision } from '../permissions'
 import { waitForApproval } from './approvals'
 import { agentError } from './errors'
@@ -41,7 +42,7 @@ function preview(output: unknown): string {
 
 /** No Electron or settings dependency: usable with SDK test models. */
 export async function runAgentCore(
-  messages: Message[],
+  messages: ModelMessage[],
   onEvent: (event: AgentEvent) => void,
   signal: AbortSignal,
   dependencies: AgentDependencies,

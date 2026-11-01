@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { MemoryItem, PerceptionStatus, PetState } from '../../shared'
+import type {
+  ConversationSummary,
+  MemoryItem,
+  PerceptionStatus,
+  PetState,
+  UsageToday,
+} from '../../shared'
 import { api } from '../api'
 import { PetAvatar } from '../pet/PetAvatar'
+import { Icon } from '../shared-ui/Icon'
 
 const stateLabel: Record<PetState, string> = {
   idle: '空闲',
@@ -19,8 +26,12 @@ const today = () => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 /** Rows the panel shows before pointing to the timeline page. */
-const shownCount = 6
+const shownCount = 4
 const clock = (at: number) => new Date(at).toTimeString().slice(0, 5)
+const duration = (minutes: number) =>
+  minutes < 60
+    ? `${minutes} 分钟`
+    : `${Math.floor(minutes / 60)} 小时${minutes % 60 ? ` ${minutes % 60} 分` : ''}`
 /** A timeline line's time and title: activity lines carry them, conversation lines start with the time. */
 function view(item: MemoryItem): { time: string; title: string } {
   if (item.activity)
@@ -29,13 +40,16 @@ function view(item: MemoryItem): { time: string; title: string } {
   return m ? { time: m[1]!, title: m[2]! } : { time: '', title: item.text }
 }
 
-/** The menu bar panel: how the pet is doing and what today looked like. */
+/** The menu bar panel: how the pet is doing, what today looked like, and the way back in. */
 export function TrayPanel() {
   const [name, setName] = useState('')
   const [state, setState] = useState<PetState>('idle')
   const [perception, setPerception] = useState<PerceptionStatus>()
   const [enabled, setEnabled] = useState(false)
   const [items, setItems] = useState<MemoryItem[]>()
+  const [pending, setPending] = useState(0)
+  const [usage, setUsage] = useState<UsageToday>()
+  const [last, setLast] = useState<ConversationSummary>()
   const [icons, setIcons] = useState<Record<string, string>>({})
   /** Bumped on every open: the window loads at launch, possibly before the pet skin is known. */
   const [opened, setOpened] = useState(0)
@@ -47,12 +61,20 @@ export function TrayPanel() {
       .then((s) => {
         setName(s.pet.name)
         setEnabled(s.perception.enabled)
+        if (s.perception.enabled)
+          void api.usageToday().then(setUsage).catch(console.error)
+        else setUsage(undefined)
       })
       .catch(console.error)
     void api.perceptionStatus().then(setPerception).catch(console.error)
     void api
+      .listConversations()
+      .then((list) => setLast(list.find((c) => c.messages > 0)))
+      .catch(console.error)
+    void api
       .listMemory()
-      .then((all) =>
+      .then((all) => {
+        setPending(all.filter((i) => i.status === 'pending').length)
         setItems(
           all
             .filter(
@@ -62,8 +84,8 @@ export function TrayPanel() {
                 i.key === today(),
             )
             .sort((a, b) => view(b).time.localeCompare(view(a).time)),
-        ),
-      )
+        )
+      })
       .catch(console.error)
   }, [])
   useEffect(() => {
@@ -87,11 +109,12 @@ export function TrayPanel() {
   }, [load])
   useEffect(() => {
     const missing = [
-      ...new Set(
-        (items ?? []).flatMap(
+      ...new Set([
+        ...(usage?.apps.map((a) => a.bundleId) ?? []),
+        ...(items ?? []).flatMap(
           (i) => i.activity?.apps.map((a) => a.bundleId) ?? [],
         ),
-      ),
+      ]),
     ].filter((id) => !(id in icons))
     if (!missing.length) return
     void api
@@ -104,18 +127,20 @@ export function TrayPanel() {
         })),
       )
       .catch(console.error)
-  }, [items, icons])
+  }, [items, usage, icons])
 
   const watching = !enabled
     ? { tone: 'off', text: '感知未开启' }
     : perception?.paused
-      ? { tone: 'paused', text: '感知已暂停' }
+      ? { tone: 'paused', text: '感知已暂停，点一下继续' }
       : perception?.trusted === false
         ? { tone: 'warn', text: '需要辅助功能权限' }
         : {
             tone: 'on',
-            text: `正在记录${perception?.lastEventAt ? ` · ${clock(perception.lastEventAt)}` : ''}`,
+            text: `正在记录${perception?.lastEventAt ? `，最近一次 ${clock(perception.lastEventAt)}` : ''}，点一下暂停`,
           }
+  const canPause = enabled && perception && perception.trusted !== false
+  const top = usage?.apps[0]?.minutes ?? 0
 
   return (
     <main className="tray-panel">
@@ -125,62 +150,128 @@ export function TrayPanel() {
           <strong>{name}</strong>
           <span className="muted">{stateLabel[state]}</span>
         </div>
-      </header>
-      <div className="tray-watch">
-        <i className={`dot ${watching.tone}`} aria-hidden="true" />
-        <span>{watching.text}</span>
-        {enabled && perception && perception.trusted !== false && (
-          <button
-            type="button"
-            className="link"
-            onClick={() =>
-              void api.perceptionPause(!perception.paused).catch(console.error)
-            }
-          >
-            {perception.paused ? '继续' : '暂停'}
-          </button>
-        )}
-      </div>
-      <h3 className="tray-heading">今天</h3>
-      <ol className="tray-list">
-        {items?.slice(0, shownCount).map((item) => {
-          const v = view(item)
-          return (
-            <li key={item.id}>
-              <time>{v.time}</time>
-              <span className="tray-title" title={item.text}>
-                {v.title}
-              </span>
-              <span className="tray-apps">
-                {item.activity?.apps
-                  .slice(0, 3)
-                  .map((a) =>
-                    icons[a.bundleId] ? (
-                      <img
-                        key={a.bundleId}
-                        src={icons[a.bundleId]}
-                        alt={a.name}
-                        title={a.name}
-                      />
-                    ) : null,
-                  )}
-              </span>
-            </li>
-          )
-        })}
-        {items && !items.length && (
-          <li className="tray-empty muted">还没有整理出的活动</li>
-        )}
-      </ol>
-      {items && items.length > shownCount && (
         <button
           type="button"
-          className="link tray-more"
-          onClick={() => api.openSettings('timeline')}
+          className={`tray-watch-dot ${watching.tone}`}
+          title={watching.text}
+          aria-label={watching.text}
+          disabled={!canPause}
+          onClick={() =>
+            canPause &&
+            void api.perceptionPause(!perception.paused).catch(console.error)
+          }
         >
-          还有 {items.length - shownCount} 条 · 在设置里查看
+          <i className={`dot ${watching.tone}`} aria-hidden="true" />
+        </button>
+      </header>
+
+      <div className="tray-actions">
+        <button
+          type="button"
+          title="新对话"
+          onClick={() => {
+            api.newSession()
+          }}
+        >
+          <Icon name="new" />
+          新对话
+        </button>
+        <button
+          type="button"
+          title="在大窗口打开"
+          onClick={() => api.openMainWindow()}
+        >
+          <Icon name="window" />
+          大窗口
+        </button>
+        <button type="button" title="设置" onClick={() => api.openSettings()}>
+          <Icon name="settings" />
+          设置
+        </button>
+      </div>
+
+      {last && (
+        <button
+          type="button"
+          className="tray-card tray-resume"
+          onClick={() =>
+            void api
+              .openConversation(last.id)
+              .then(() => api.openMainWindow())
+              .catch(console.error)
+          }
+        >
+          <span className="muted">继续上次</span>
+          <strong>{last.title}</strong>
+          {last.preview && <span className="tray-preview">{last.preview}</span>}
         </button>
       )}
+
+      {pending > 0 && (
+        <button
+          type="button"
+          className="tray-card tray-pending"
+          onClick={() => api.openSettings('pending')}
+        >
+          <span>
+            有 <strong>{pending}</strong> 条判断等你确认
+          </span>
+          <span className="muted">去看看 ›</span>
+        </button>
+      )}
+
+      {usage && usage.activeMinutes > 0 && (
+        <section>
+          <h3 className="tray-heading">
+            今天活跃 <span>{duration(usage.activeMinutes)}</span>
+          </h3>
+          <ul className="tray-usage">
+            {usage.apps.slice(0, 3).map((a) => (
+              <li key={a.bundleId}>
+                {icons[a.bundleId] ? (
+                  <img src={icons[a.bundleId]} alt="" />
+                ) : (
+                  <span className="tray-usage-blank" />
+                )}
+                <span className="tray-usage-name">{a.name}</span>
+                <span className="tray-usage-bar">
+                  <i style={{ width: `${(a.minutes / top) * 100}%` }} />
+                </span>
+                <span className="muted">{duration(a.minutes)}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <section className="tray-today">
+        <h3 className="tray-heading">今天</h3>
+        <ol className="tray-list">
+          {items?.slice(0, shownCount).map((item) => {
+            const v = view(item)
+            return (
+              <li key={item.id}>
+                <time>{v.time}</time>
+                <span className="tray-title" title={item.text}>
+                  {v.title}
+                </span>
+              </li>
+            )
+          })}
+          {items && !items.length && (
+            <li className="tray-empty muted">还没有整理出的活动</li>
+          )}
+        </ol>
+        {items && items.length > shownCount && (
+          <button
+            type="button"
+            className="link tray-more"
+            onClick={() => api.openSettings('timeline')}
+          >
+            还有 {items.length - shownCount} 条 · 在设置里查看
+          </button>
+        )}
+      </section>
     </main>
   )
 }

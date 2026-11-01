@@ -9,6 +9,7 @@ import { api } from '../api'
 import { Pet } from '../pet/Pet'
 import { PetAvatar } from '../pet/PetAvatar'
 import { Composer } from '../shared-ui/Composer'
+import { Attachments } from './Attachments'
 import { useSession } from '../shared-ui/session'
 import { useTurnStatus } from '../shared-ui/status'
 /** `panel`: the small floating panel by the pet. `window`: the big resizable window with history beside it. */
@@ -194,6 +195,12 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
                       )}
                     </article>
                   )}
+                  {m.attachments?.length ? (
+                    <Attachments
+                      items={m.attachments}
+                      align={m.role === 'user' ? 'end' : 'start'}
+                    />
+                  ) : null}
                   {m.role === 'assistant' && m.sources?.length ? (
                     <SourceCards sources={m.sources} />
                   ) : null}

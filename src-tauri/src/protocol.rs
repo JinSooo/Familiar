@@ -1,4 +1,4 @@
-//! NDJSON wire messages and the read-only pet asset protocol.
+//! NDJSON wire messages and the read-only pet asset and conversation file protocols.
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 use std::path::{Component, Path, PathBuf};
@@ -54,6 +54,8 @@ pub enum UiAction {
     /// How opaque the chat panel and the menu bar panel windows are (0.5 to 1).
     PanelOpacity {
         value: f64,
+        /// The settings and big conversation windows.
+        windows: f64,
     },
     Quit,
 }
@@ -107,7 +109,10 @@ impl<'de> Deserialize<'de> for AgentToShell {
                 payload,
                 target,
             } => {
-                if !matches!(target.as_str(), "pet" | "chat" | "settings" | "main" | "all") {
+                if !matches!(
+                    target.as_str(),
+                    "pet" | "chat" | "settings" | "main" | "panel" | "all"
+                ) {
                     return Err(serde::de::Error::custom("invalid event target"));
                 }
                 Ok(Self::Emit {
@@ -131,7 +136,11 @@ impl<'de> Deserialize<'de> for AgentToShell {
 // Decode once, then reject encoded separators and a remaining percent sign. This
 // also rejects double-encoded traversal rather than relying on URL normalization.
 fn asset_path(uri: &str) -> Result<PathBuf, ()> {
-    let path = uri.strip_prefix("familiar-pet://localhost/").ok_or(())?;
+    scheme_path(uri, "familiar-pet://localhost/")
+}
+
+fn scheme_path(uri: &str, prefix: &str) -> Result<PathBuf, ()> {
+    let path = uri.strip_prefix(prefix).ok_or(())?;
     let path = path.split(['?', '#']).next().ok_or(())?;
     let mut decoded = Vec::new();
     let bytes = path.as_bytes();
@@ -224,6 +233,49 @@ pub fn serve(resources: &Path, data: &Path, uri: &str) -> Response<Vec<u8>> {
     }
 }
 
+/// Files kept with conversations (`<data>/conversations/files/<conversation id>/<name>`): what the
+/// user sent and generated images. Read-only, one conversation folder deep, no symlinks out.
+pub fn serve_file(data: &Path, uri: &str) -> Response<Vec<u8>> {
+    let not_found = || {
+        reply(
+            StatusCode::NOT_FOUND,
+            "text/plain",
+            b"File not found".to_vec(),
+        )
+    };
+    let Ok(relative) = scheme_path(uri, "familiar-file://localhost/") else {
+        return reply(
+            StatusCode::BAD_REQUEST,
+            "text/plain",
+            b"Invalid file path".to_vec(),
+        );
+    };
+    if relative.components().count() != 2 {
+        return not_found();
+    }
+    let Some(file) = confined_file(&data.join("conversations/files"), &relative) else {
+        return not_found();
+    };
+    let mime = match file
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("heic") => "image/heic",
+        Some("pdf") => "application/pdf",
+        _ => "application/octet-stream",
+    };
+    match std::fs::read(file) {
+        Ok(bytes) => reply(StatusCode::OK, mime, bytes),
+        Err(_) => not_found(),
+    }
+}
+
 fn reply(status: StatusCode, mime: &str, bytes: Vec<u8>) -> Response<Vec<u8>> {
     Response::builder()
         .status(status)
@@ -268,6 +320,8 @@ mod tests {
             r#"{"kind":"response","id":1,"ok":true,"value":null}"#,
             r#"{"kind":"response","id":2,"ok":false,"error":"failed"}"#,
             r#"{"kind":"emit","channel":"pet:state","payload":{},"target":"all"}"#,
+            // Regression: events for the menu bar panel were rejected as an invalid target.
+            r#"{"kind":"emit","channel":"pet:state","payload":{},"target":"panel"}"#,
             r#"{"kind":"ui","action":{"type":"tray","pets":[{"id":"cat","name":"Cat"}],"currentPet":"cat","size":"small"}}"#,
             r#"{"kind":"ui","action":{"type":"pet-size","width":460,"height":400}}"#,
         ] {
@@ -309,6 +363,31 @@ mod tests {
         let response = serve(&resources, &data, "familiar-pet://localhost/cat/ok.png");
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.headers()["Access-Control-Allow-Origin"], "*");
+        std::fs::remove_dir_all(temp).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn conversation_files_stay_inside_their_folder() {
+        let temp = std::env::temp_dir().join(format!("familiar-files-{}", std::process::id()));
+        let files = temp.join("conversations/files/2026-11-01-1200-abcd");
+        std::fs::create_dir_all(&files).unwrap();
+        std::fs::write(temp.join("settings.json"), b"secret").unwrap();
+        std::fs::write(files.join("cat.png"), b"png").unwrap();
+        std::os::unix::fs::symlink(temp.join("settings.json"), files.join("escape.png")).unwrap();
+        let get = |path: &str| serve_file(&temp, &format!("familiar-file://localhost/{path}"));
+        let ok = get("2026-11-01-1200-abcd/cat.png");
+        assert_eq!(ok.status(), StatusCode::OK);
+        assert_eq!(ok.headers()["Content-Type"], "image/png");
+        for path in [
+            "2026-11-01-1200-abcd/escape.png",
+            "2026-11-01-1200-abcd/%2e%2e/%2e%2e/settings.json",
+            "../settings.json",
+            "settings.json",
+            "2026-11-01-1200-abcd/missing.png",
+        ] {
+            assert_ne!(get(path).status(), StatusCode::OK, "{path}");
+        }
         std::fs::remove_dir_all(temp).unwrap();
     }
 }

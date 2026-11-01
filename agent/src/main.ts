@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { optionalArg } from './ipc-args'
 import {
   IPC,
+  attachmentSchema,
   settingsSchema,
   type AgentEvent,
   type PetState,
@@ -46,7 +47,13 @@ import {
   listConversations,
   loadConversation,
   saveConversation,
+  newConversationId,
 } from './conversations'
+import {
+  attachmentFile,
+  maxAttachmentBytes,
+  saveAttachment,
+} from './attachments'
 import { petDimensions, resolveState } from './pet-logic'
 import { mentions, openMemory } from './memory'
 import { recordFeedback } from './memory/feedback'
@@ -59,6 +66,7 @@ import {
   clearEvents,
   grantAccess,
   perceptionStatus,
+  todayUsage,
   recentEvents,
   startPerception,
   stopPerception,
@@ -91,6 +99,7 @@ import {
   conversationsDir,
   refreshProxy,
   idleSeconds,
+  directorySize,
   openExternal,
   reveal,
 } from './system'
@@ -115,6 +124,15 @@ function broadcast(channel: string, payload: unknown) {
 }
 function ui(action: UiAction) {
   send({ kind: 'ui', action })
+}
+/** Window alpha for the floating panels and for the settings and big windows. */
+function applyOpacity() {
+  const settings = getSettings()
+  ui({
+    type: 'panel-opacity',
+    value: settings.panelOpacity,
+    windows: settings.windowOpacity,
+  })
 }
 let session = emptySession()
 let capsuleOpen = false
@@ -327,19 +345,54 @@ function updatePet() {
   // The chat panel's perched pet animates too.
   emit(IPC.petSpeed, settings.pet.speed, 'all')
 }
-async function run(window: WindowLabel | 'tray', input: unknown) {
+/** Files sent with a message: name and base64 bytes, saved before the turn starts. */
+const uploadSchema = z
+  .array(
+    z.object({
+      name: z.string().min(1).max(200),
+      data: z.string().max(Math.ceil((maxAttachmentBytes * 4) / 3) + 4),
+    }),
+  )
+  .max(10)
+async function run(
+  window: WindowLabel | 'tray',
+  input: unknown,
+  files: unknown = [],
+) {
   if (controller) throw new Error('已有对话正在运行')
-  const text = z.string().trim().min(1).max(100000).parse(input)
+  const uploads = uploadSchema.parse(files ?? [])
+  const text = z
+    .string()
+    .trim()
+    .max(100000)
+    .parse(input ?? '')
+  if (!text && !uploads.length) throw new Error('消息是空的')
   if (session.messages.length >= 498) throw new Error('请开启新对话')
   clearTimeout(bubbleTimer)
   if (window === 'pet') restartIfIdle()
   expandedTurn = window === 'chat' || window === 'main'
   turnWindow = window
-  session = beginTurn(session, text, window === 'pet' ? 'capsule' : 'chat')
+  // The conversation id exists before the files are written beside it.
+  if (!session.id) session = { ...session, id: newConversationId() }
+  const attachments = []
+  for (const u of uploads)
+    attachments.push(
+      await saveAttachment(session.id, u.name, Buffer.from(u.data, 'base64')),
+    )
+  session = beginTurn(
+    session,
+    text,
+    window === 'pet' ? 'capsule' : 'chat',
+    attachments,
+  )
   persist()
   const messages = session.messages
-    .filter((m) => m.content)
-    .map(({ role, content }) => ({ role, content }))
+    .filter((m) => m.content || m.attachments?.length)
+    .map(({ role, content, attachments }) => ({
+      role,
+      content,
+      ...(attachments?.length ? { attachments } : {}),
+    }))
   publishSession()
   resetRequested = false
   const run = new AbortController()
@@ -388,7 +441,7 @@ async function run(window: WindowLabel | 'tray', input: unknown) {
     broadcast(IPC.agentEvent, item)
   }
   try {
-    await runAgent(messages, emit, run.signal)
+    await runAgent(messages, emit, run.signal, session.id)
   } catch (error) {
     // runAgent already turns model, network and config failures into user-facing Chinese messages.
     console.error('Agent run failed', error)
@@ -443,7 +496,7 @@ async function request(
       })
       updatePet()
       broadcast(IPC.appearance, saved.panelOpacity)
-      ui({ type: 'panel-opacity', value: saved.panelOpacity })
+      applyOpacity()
       publishSession()
       rebuildTray()
       sendShortcuts()
@@ -453,13 +506,13 @@ async function request(
     case IPC.sessionGet:
       return session
     case IPC.sessionNew:
-      requireSender(window, ['chat', 'pet', 'tray', 'main'])
+      requireSender(window, ['chat', 'pet', 'tray', 'main', 'panel'])
       resetRequested = Boolean(controller)
       controller?.abort()
       pendingApprovals.clear()
       startFresh()
-      // From the tray or pet menu: put the user somewhere they can type.
-      if (window === 'tray') {
+      // From the tray, the pet menu or the menu bar panel: put the user somewhere they can type.
+      if (window === 'tray' || window === 'panel') {
         if (chatVisible) emit(IPC.view, 'chat', 'chat')
         else setCapsule(true)
       }
@@ -474,10 +527,10 @@ async function request(
       publishSession()
       return
     case IPC.conversationsList:
-      requireSender(window, ['chat', 'settings', 'main'])
+      requireSender(window, ['chat', 'settings', 'main', 'panel'])
       return listConversations(optionalArg(z.string().max(200)).parse(input))
     case IPC.conversationsOpen:
-      requireSender(window, ['chat', 'pet', 'main', 'settings'])
+      requireSender(window, ['chat', 'pet', 'main', 'settings', 'panel'])
       return openConversation(z.string().parse(input))
     case IPC.conversationsDelete: {
       requireSender(window, ['chat', 'main'])
@@ -513,6 +566,7 @@ async function request(
       const saved = await saveSettings({
         ...settings,
         model: { ...settings.model, apiKey: undefined },
+        imageModel: { ...settings.imageModel, apiKey: undefined },
         dirRules: settings.dirRules.filter((r) => r.path !== path),
       })
       return saved.dirRules
@@ -545,7 +599,7 @@ async function request(
       showChat()
       return
     case IPC.mainOpen:
-      requireSender(window, ['chat', 'pet', 'tray', 'settings'])
+      requireSender(window, ['chat', 'pet', 'tray', 'settings', 'panel'])
       // One conversation on screen at a time: the big window takes over from panel and capsule.
       dismissChat()
       emit(IPC.view, 'chat', 'main')
@@ -558,7 +612,7 @@ async function request(
       return
     case IPC.agentRun:
       requireSender(window, ['chat', 'pet', 'main'])
-      return run(window, input)
+      return run(window, input, args[1])
     case IPC.agentStop:
       requireSender(window, ['chat', 'pet', 'main'])
       controller?.abort()
@@ -581,6 +635,7 @@ async function request(
         await saveSettings({
           ...settings,
           model: { ...settings.model, apiKey: undefined },
+          imageModel: { ...settings.imageModel, apiKey: undefined },
           dirRules: [
             ...settings.dirRules.filter((r) => r.path !== dir),
             { path: dir, access: 'allow' },
@@ -613,7 +668,7 @@ async function request(
       }
       return
     case IPC.settingsOpen: {
-      const page = optionalArg(z.enum(['timeline'])).parse(input)
+      const page = optionalArg(z.enum(['timeline', 'pending'])).parse(input)
       if (page) emit(IPC.settingsPage, page, 'settings')
       ui({ type: 'show-settings' })
       return
@@ -649,6 +704,7 @@ async function request(
       await saveSettings({
         ...settings,
         model: { ...settings.model, apiKey: undefined },
+        imageModel: { ...settings.imageModel, apiKey: undefined },
         pet,
       })
       updatePet()
@@ -752,6 +808,20 @@ async function request(
       requireSender(window, ['settings'])
       reflect(true)
       return
+    case IPC.dataInfo: {
+      requireSender(window, ['settings'])
+      return { path: dataDir, bytes: await directorySize(dataDir) }
+    }
+    case IPC.attachmentOpen: {
+      requireSender(window, ['chat', 'main'])
+      const attachment = attachmentSchema.shape.path.parse(input)
+      await reveal(attachmentFile(attachment))
+      return
+    }
+    case IPC.dataReveal:
+      requireSender(window, ['settings'])
+      await reveal(dataDir)
+      return
     case IPC.memoryReveal: {
       requireSender(window, ['settings'])
       const { store } = await memory()
@@ -826,6 +896,9 @@ async function request(
     case IPC.perceptionStatus:
       requireSender(window, ['settings', 'panel'])
       return perceptionStatus()
+    case IPC.usageToday:
+      requireSender(window, ['panel'])
+      return todayUsage()
     case IPC.perceptionRecent:
       requireSender(window, ['settings'])
       return recentEvents()
@@ -858,6 +931,7 @@ async function request(
       await saveSettings({
         ...settings,
         model: { ...settings.model, apiKey: undefined },
+        imageModel: { ...settings.imageModel, apiKey: undefined },
         perception: settingsSchema.shape.perception.parse(input),
       })
       applyPerceptionSettings()
@@ -872,6 +946,7 @@ async function request(
       await saveSettings({
         ...settings,
         model: { ...settings.model, apiKey: undefined },
+        imageModel: { ...settings.imageModel, apiKey: undefined },
         perception: {
           ...settings.perception,
           paused,
@@ -992,6 +1067,7 @@ async function migrate() {
     await saveSettings({
       ...settings,
       model: { ...settings.model, apiKey: undefined },
+      imageModel: { ...settings.imageModel, apiKey: undefined },
       workspacePath: moved,
     })
     await ensureWorkspace(getSettings())
@@ -1028,7 +1104,8 @@ async function start() {
   updatePet()
   rebuildTray()
   sendShortcuts()
-  ui({ type: 'panel-opacity', value: getSettings().panelOpacity })
+  applyOpacity()
+  if (!getSettings().showPetOnLaunch) setPetVisible(false)
   startPerception((status) => broadcast(IPC.perceptionChanged, status))
   const proxyTimer = setInterval(() => {
     void refreshProxy()

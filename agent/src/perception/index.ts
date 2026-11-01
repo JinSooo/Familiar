@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { createInterface } from 'node:readline'
 import { promisify } from 'node:util'
 import type {
+  UsageToday,
   PerceptionApp,
   PerceptionEvent,
   PerceptionStatus,
@@ -17,7 +18,7 @@ import { backgroundModel } from '../memory/jobs'
 import { getSettings } from '../settings'
 import { dataDir, readKey, writeKey } from '../system'
 import { ensureWorkspace, snapshot } from '../workspace'
-import { admit } from './activity'
+import { admit, segments } from './activity'
 import { keepHours, PerceptionBuffer } from './buffer'
 import { periodEnd, summarizeWindow, talkText } from './summarize'
 
@@ -438,4 +439,38 @@ export function stopPerception() {
   clearInterval(pruneTimer)
   clearInterval(summaryTimer)
   halt()
+}
+
+/** Today's active time and the apps it went to, from the raw record (nothing leaves the Mac). */
+export async function todayUsage(now = Date.now()): Promise<UsageToday> {
+  const midnight = new Date(now)
+  midnight.setHours(0, 0, 0, 0)
+  const perception = getSettings().perception
+  const list = segments(
+    await buffer.read(midnight.getTime()),
+    { ...perception, localApps: [] },
+    now,
+  )
+  const byApp = new Map<string, { name: string; ms: number }>()
+  let total = 0
+  for (const s of list) {
+    const ms = s.end - s.start
+    total += ms
+    const key = s.bundleId ?? s.app
+    const entry = byApp.get(key) ?? { name: s.app, ms: 0 }
+    entry.ms += ms
+    byApp.set(key, entry)
+  }
+  return {
+    activeMinutes: Math.round(total / 60000),
+    apps: [...byApp.entries()]
+      .map(([bundleId, a]) => ({
+        bundleId,
+        name: a.name,
+        minutes: Math.round(a.ms / 60000),
+      }))
+      .filter((a) => a.minutes > 0)
+      .sort((a, b) => b.minutes - a.minutes)
+      .slice(0, 5),
+  }
 }

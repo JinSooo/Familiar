@@ -1,4 +1,4 @@
-import { dataDir, resourcesDir } from '../system'
+import { dataDir, moveToTrash, resourcesDir } from '../system'
 import { cp, mkdir, readdir, readFile, realpath, lstat } from 'node:fs/promises'
 import { join, relative, isAbsolute } from 'node:path'
 import { homedir } from 'node:os'
@@ -81,6 +81,8 @@ export async function listPets(): Promise<PetSkin[]> {
           ...data,
           version,
           spritesheetUrl: url(data.id, data.spritesheetPath),
+          // Only what the user added lives in the data folder; the bundled pets stay.
+          removable: root === roots()[1],
         }
         const files = new Set([data.spritesheetPath])
         try {
@@ -130,6 +132,17 @@ export function currentSkin(id: string): PetSkin {
 export function petCreatePrompt() {
   const skill = join(resourcesDir, 'pet-creator', 'SKILL.md')
   return `按 ${skill} 的步骤，帮我做一只 Familiar 桌宠，做好后放进 ${roots()[1]}。\n\n它的样子：`
+}
+/** Moves a pet the user added to the Trash (so it can be put back); the bundled ones stay. */
+export async function deletePet(
+  id: string,
+  trash: (path: string) => Promise<void> = moveToTrash,
+) {
+  const item = library.get(id)
+  if (!item) throw new Error('找不到这只宠物')
+  if (!item.skin.removable) throw new Error('内置宠物不能删除')
+  await trash(item.directory)
+  library.delete(id)
 }
 export async function importCodexPets() {
   const source = join(homedir(), '.codex/pets')

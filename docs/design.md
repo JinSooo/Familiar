@@ -195,6 +195,7 @@ Familiar 是一只住在 macOS 桌面上的宠物，同时也是一个自主运�
 - **格式直接兼容 ChatGPT 宠物**（P0.5 定）：`pet.json` + `spritesheet`，v1 为 1536×1872（9 行），v2 为 1536×2288（多出 16 个视线方向）；每格 192×208，8 列。可从 `~/.codex/pets` 导入。
 - **扩展动作**：ChatGPT 图集缺的动作放进同目录的 `familiar.json` + 扩展图集，不改原图集。Xiaohei Q 已补齐 listening、talking、sleeping、petted、poked、worried 六行（由 Codex 用 imagegen 生成）。
 - **自己做一只**（2026-11-02）：设置「宠物」页「自己做一只…」复制一段提示词，指向随应用分发的 `resources/pet-creator/SKILL.md` 和宠物目录，用户粘贴到 Codex 或 Claude Code 并写上样子。技能用生图工具逐行画动作条，`scripts/pack.py` 打包成上面的格式（基础 9 行 + 可选扩展行）。应用里不生图。设置窗口回到前台时重读宠物列表。
+- **导入与删除**（2026-11-02）：「从 ChatGPT 导入…」点完在按钮上写结果（导入了 N 个 / 没有新的可导入），3 秒后恢复。用户添加或导入的宠物，卡片悬停出现 ×，点一次变「删除？」，3 秒内再点才移到废纸篓（可放回）；内置的四只不能删。删掉当前选中的宠物时切回 Xiaohei Q。
 - **默认皮肤**：Xiaohei Q（作者自己在 ChatGPT 里生成的形象，自用；对外分发前需另做内置皮肤）。
 - **动作映射**：待机→idle；拖动→running-left/right；单击、每天初见→waving；被摸头→petted；思考/干活→running（看书）；说话→talking；需要你→waiting；回复完成未读→review；出错→failed；睡觉→sleeping；担心→worried。感知指示不画进图集，用叠加的小圆点。
 - 人设写在一个可编辑的人设文件里；相处中的演化写进记忆，不改人设文件本身。

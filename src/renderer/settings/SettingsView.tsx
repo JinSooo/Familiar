@@ -156,6 +156,8 @@ export function SettingsView() {
   const [imageKey, setImageKey] = useState('')
   const [notice, setNotice] = useState('')
   const [promptCopied, setPromptCopied] = useState(false)
+  const [importNote, setImportNote] = useState('')
+  const [confirming, setConfirming] = useState('')
   const [clearing, setClearing] = useState(false)
   const [models, setModels] = useState<string[]>()
   const [chatgpt, setChatgpt] = useState<ChatGptStatus>()
@@ -973,26 +975,55 @@ export function SettingsView() {
           <section hidden={tab !== 'pet'}>
             <div className="pet-grid">
               {pets.map((p) => (
-                <button
-                  type="button"
-                  className={`pet-card ${p.id === settings.pet.id ? 'selected' : ''}`}
-                  key={p.id}
-                  onClick={() =>
-                    change({
-                      ...settings,
-                      pet: { ...settings.pet, id: p.id },
-                    })
-                  }
-                >
-                  <span
-                    className="skin-preview"
-                    style={{
-                      backgroundImage: `url("${p.spritesheetUrl}")`,
-                      backgroundSize: `768px ${p.version === 1 ? 936 : 1144}px`,
-                    }}
-                  />
-                  <span>{p.displayName}</span>
-                </button>
+                <div className="pet-item" key={p.id}>
+                  <button
+                    type="button"
+                    className={`pet-card ${p.id === settings.pet.id ? 'selected' : ''}`}
+                    onClick={() =>
+                      change({
+                        ...settings,
+                        pet: { ...settings.pet, id: p.id },
+                      })
+                    }
+                  >
+                    <span
+                      className="skin-preview"
+                      style={{
+                        backgroundImage: `url("${p.spritesheetUrl}")`,
+                        backgroundSize: `768px ${p.version === 1 ? 936 : 1144}px`,
+                      }}
+                    />
+                    <span>{p.displayName}</span>
+                  </button>
+                  {p.removable && (
+                    <button
+                      type="button"
+                      className={`pet-delete ${confirming === p.id ? 'confirming' : ''}`}
+                      title="移到废纸篓"
+                      onClick={() => {
+                        if (confirming !== p.id) {
+                          setConfirming(p.id)
+                          setTimeout(
+                            () => setConfirming((c) => (c === p.id ? '' : c)),
+                            3000,
+                          )
+                          return
+                        }
+                        setConfirming('')
+                        void api
+                          .deletePet(p.id)
+                          .then(async (list) => {
+                            setPets(list)
+                            const loaded = await api.getSettings()
+                            setSettings((s) => s && { ...s, pet: loaded.pet })
+                          })
+                          .catch(() => setNotice('删除失败'))
+                      }}
+                    >
+                      {confirming === p.id ? '删除？' : '×'}
+                    </button>
+                  )}
+                </div>
               ))}
             </div>
             <div className="pet-links">
@@ -1002,11 +1033,18 @@ export function SettingsView() {
                 onClick={() => {
                   void api
                     .importCodexPets()
-                    .then(setPets)
+                    .then((list) => {
+                      const added = list.length - pets.length
+                      setImportNote(
+                        added > 0 ? `导入了 ${added} 个` : '没有新的可导入',
+                      )
+                      setTimeout(() => setImportNote(''), 3000)
+                      setPets(list)
+                    })
                     .catch(() => setNotice('导入失败'))
                 }}
               >
-                从 ChatGPT 导入…
+                {importNote || '从 ChatGPT 导入…'}
               </button>
               <button
                 type="button"

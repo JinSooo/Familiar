@@ -617,6 +617,31 @@ summary:focus-visible {
   border-radius: var(--radius-card);
   background: var(--group);
 }
+.pet-item {
+  position: relative;
+  display: flex;
+}
+.pet-item > .pet-card {
+  flex: 1;
+}
+.pet-delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 0 7px;
+  height: 20px;
+  font-size: 12px;
+  line-height: 20px;
+  opacity: 0;
+}
+.pet-item:hover .pet-delete,
+.pet-delete:focus-visible,
+.pet-delete.confirming {
+  opacity: 1;
+}
+.pet-delete.confirming {
+  color: var(--red);
+}
 .pet-card.selected {
   outline: 2px solid var(--accent);
   outline-offset: 2px;

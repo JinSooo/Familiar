@@ -43,7 +43,13 @@ import {
   signIn as chatGptSignIn,
   signOut as chatGptSignOut,
 } from './agent/chatgpt-auth'
-import { listPets, currentSkin, importCodexPets, petCreatePrompt } from './pets'
+import {
+  listPets,
+  currentSkin,
+  importCodexPets,
+  petCreatePrompt,
+  deletePet,
+} from './pets'
 import {
   clearConversations,
   conversationTitle,
@@ -798,6 +804,24 @@ async function request(
     case IPC.petsCreatePrompt:
       requireSender(window, ['settings'])
       return petCreatePrompt()
+    case IPC.petsDelete: {
+      requireSender(window, ['settings'])
+      const id = z.string().parse(input)
+      await deletePet(id)
+      skins = await listPets()
+      const settings = publicSettings()
+      // The pet on screen was the one deleted: back to the default.
+      if (settings.pet.id === id)
+        await saveSettings({
+          ...settings,
+          model: { ...settings.model, apiKey: undefined },
+          imageModel: { ...settings.imageModel, apiKey: undefined },
+          pet: { ...settings.pet, id: 'xiaohei-q' },
+        })
+      updatePet()
+      rebuildTray()
+      return skins
+    }
     case IPC.petsImport:
       skins = await importCodexPets()
       updatePet()

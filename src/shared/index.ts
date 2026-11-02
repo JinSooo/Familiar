@@ -183,6 +183,8 @@ export interface PetSkin {
   spritesheetUrl: string
   /** ChatGPT sheet version: v1 = 1536x1872 (rows 0-8), v2 = 1536x2288 (adds look rows 9-10). */
   version: 1 | 2
+  /** False for the pets that ship with the app; those cannot be deleted. */
+  removable: boolean
   extension?: { sheetUrl: string; rows: SkinExtension['rows'] }
 }
 /** A file kept with the conversation (sent by the user or made by a tool), under conversations/files. */
@@ -252,6 +254,7 @@ export const IPC = {
   petsList: 'pets:list',
   petsImport: 'pets:import',
   petsCreatePrompt: 'pets:create-prompt',
+  petsDelete: 'pets:delete',
   ready: 'window:ready',
   session: 'session:changed',
   sessionGet: 'session:get',
@@ -396,6 +399,8 @@ export interface FamiliarAPI {
   importCodexPets(): Promise<PetSkin[]>
   /** A prompt for Codex or Claude Code that makes a new pet with the bundled skill. */
   petCreatePrompt(): Promise<string>
+  /** Moves a pet the user added to the Trash; returns the pets that are left. */
+  deletePet(id: string): Promise<PetSkin[]>
   onGesture(callback: (gesture: PetGesture) => void): () => void
   onSkin(callback: (skin: PetSkin) => void): () => void
   listMemory(): Promise<MemoryItem[]>

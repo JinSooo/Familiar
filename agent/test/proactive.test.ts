@@ -2,7 +2,9 @@ import { describe, expect, test } from 'bun:test'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
+  proactiveChoices,
   settingsSchema,
+  shortDuration,
   type PerceptionEvent,
   type ProactiveMessage,
 } from '../../src/shared'
@@ -258,5 +260,27 @@ describe('decision', () => {
     ).toEqual({ speak: true, text: '歇会儿吧 喝口水', reason: '连续两小时' })
     expect(parseDecision('{"speak":true,"text":""}').speak).toBe(false)
     expect(() => parseDecision('不说了')).toThrow()
+  })
+})
+
+describe('bubble', () => {
+  // Reported 2026-11-02: a reminder the user set offered 别烦我, and 好 on it opened the chat.
+  test("a reminder only closes or comes back later; the pet's own line can open the chat", () => {
+    const reminder = proactiveChoices('reminder')
+    expect(reminder.buttons.map(([c]) => c)).toEqual(['ok', 'later'])
+    expect(reminder.opensChat).toBe(false)
+    const own = proactiveChoices('lateNight')
+    expect(own.buttons.map(([c]) => c)).toEqual(['ok', 'later', 'quiet'])
+    expect(own.opensChat).toBe(true)
+  })
+
+  // Reported 2026-11-02: 1 小时 24 分 and 21 分钟 did not line up in the menu bar panel.
+  test('usage times are short h / m', () => {
+    expect([5, 60, 84, 122].map(shortDuration)).toEqual([
+      '5m',
+      '1h',
+      '1h 24m',
+      '2h 2m',
+    ])
   })
 })

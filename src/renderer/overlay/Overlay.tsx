@@ -1,6 +1,10 @@
 import { bubblePlainText } from '../chat/content'
 import { useEffect, useState, type CSSProperties } from 'react'
-import type { ProactiveMessage, Session } from '../../shared'
+import {
+  proactiveChoices,
+  type ProactiveMessage,
+  type Session,
+} from '../../shared'
 import { api } from '../api'
 import { Pet } from '../pet/Pet'
 import { scales } from '../pet/logic'
@@ -30,10 +34,14 @@ export function Bubble({
     </button>
   )
 }
-/** A line the pet said on its own: why now, and 好 / 稍后 / 别烦我. Clicking the text is 好. */
+/**
+ * A line the pet said on its own, or a reminder the user set: why now, and its buttons.
+ * Clicking the text is the first button.
+ */
 function ProactiveBubble({ message }: { message: ProactiveMessage }) {
   const answer = (choice: 'ok' | 'later' | 'quiet') =>
     void api.respondProactive(message.id, choice).catch(console.error)
+  const { buttons } = proactiveChoices(message.trigger)
   return (
     <div data-hit className="bubble proactive" role="status">
       <button
@@ -47,15 +55,11 @@ function ProactiveBubble({ message }: { message: ProactiveMessage }) {
         <span className="proactive-why">{message.reason}</span>
       )}
       <div className="proactive-actions">
-        <button type="button" onClick={() => answer('ok')}>
-          好
-        </button>
-        <button type="button" onClick={() => answer('later')}>
-          稍后
-        </button>
-        <button type="button" onClick={() => answer('quiet')}>
-          别烦我
-        </button>
+        {buttons.map(([choice, label]) => (
+          <button key={choice} type="button" onClick={() => answer(choice)}>
+            {label}
+          </button>
+        ))}
       </div>
       <span className="tail" />
     </div>
@@ -118,11 +122,25 @@ export function Overlay() {
     )
     return () => clearTimeout(timer)
   }, [session.running, session.bubble])
-  const [open, setOpen] = useState(false)
+  // Closing keeps the capsule on screen for its shrink animation.
+  const [capsule, setCapsule] = useState<'open' | 'closing' | 'closed'>(
+    'closed',
+  )
+  const open = capsule === 'open'
+  useEffect(() => {
+    if (capsule !== 'closing') return
+    const timer = setTimeout(() => setCapsule('closed'), 180)
+    return () => clearTimeout(timer)
+  }, [capsule])
   const [name, setName] = useState('小黑')
   const [scale, setScale] = useState(scales.medium)
   useEffect(() => {
-    const off = [api.onCapsule(setOpen), api.onSize((s) => setScale(scales[s]))]
+    const off = [
+      api.onCapsule((next) =>
+        setCapsule((c) => (next ? 'open' : c === 'closed' ? c : 'closing')),
+      ),
+      api.onSize((s) => setScale(scales[s])),
+    ]
     const update = () => {
       void api
         .getSettings()
@@ -157,8 +175,8 @@ export function Overlay() {
       {!session.proactive && session.bubble && session.origin === 'capsule' && (
         <Bubble text={bubblePlainText(session.bubble)} fading={fading} />
       )}
-      {open && (
-        <div className="capsule">
+      {capsule !== 'closed' && (
+        <div className={`capsule ${open ? '' : 'closing'}`}>
           <ContextStrip session={session} />
           <Composer
             running={session.running}

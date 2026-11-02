@@ -30,6 +30,9 @@
       "signingIdentity": "Apple Development",
       "hardenedRuntime": false
     },
-    "resources": { "../resources/pets/": "pets/" }
+    "resources": {
+      "../resources/pets/": "pets/",
+      "../resources/pet-creator/": "pet-creator/"
+    }
   }
 }

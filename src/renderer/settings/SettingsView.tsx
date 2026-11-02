@@ -155,6 +155,7 @@ export function SettingsView() {
   const [key, setKey] = useState('')
   const [imageKey, setImageKey] = useState('')
   const [notice, setNotice] = useState('')
+  const [promptCopied, setPromptCopied] = useState(false)
   const [clearing, setClearing] = useState(false)
   const [models, setModels] = useState<string[]>()
   const [chatgpt, setChatgpt] = useState<ChatGptStatus>()
@@ -197,6 +198,8 @@ export function SettingsView() {
   // Rules are added from approval cards, so pick them up whenever the window comes back.
   useEffect(() => {
     const refresh = () => {
+      // A pet made in Codex or Claude Code shows up when the user comes back.
+      void api.listPets().then(setPets).catch(console.error)
       void api
         .getSettings()
         .then((loaded) =>
@@ -992,18 +995,39 @@ export function SettingsView() {
                 </button>
               ))}
             </div>
-            <button
-              type="button"
-              className="link import"
-              onClick={() => {
-                void api
-                  .importCodexPets()
-                  .then(setPets)
-                  .catch(() => setNotice('导入失败'))
-              }}
-            >
-              从 ChatGPT 导入…
-            </button>
+            <div className="pet-links">
+              <button
+                type="button"
+                className="link"
+                onClick={() => {
+                  void api
+                    .importCodexPets()
+                    .then(setPets)
+                    .catch(() => setNotice('导入失败'))
+                }}
+              >
+                从 ChatGPT 导入…
+              </button>
+              <button
+                type="button"
+                className="link"
+                title="复制一段提示词，粘贴到 Codex 或 Claude Code，写上它的样子"
+                onClick={() => {
+                  void api
+                    .petCreatePrompt()
+                    .then((prompt) => navigator.clipboard.writeText(prompt))
+                    .then(() => {
+                      setPromptCopied(true)
+                      setTimeout(() => setPromptCopied(false), 3000)
+                    })
+                    .catch(() => setNotice('复制失败'))
+                }}
+              >
+                {promptCopied
+                  ? '已复制，粘贴到 Codex 或 Claude Code'
+                  : '自己做一只…'}
+              </button>
+            </div>
             <div className="group">
               <label>
                 名字

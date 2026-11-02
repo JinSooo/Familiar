@@ -123,6 +123,14 @@ export function currentSkin(id: string): PetSkin {
   if (!skin) throw new Error('Default pet skin is missing')
   return skin
 }
+/**
+ * What the 自己做一只 button copies: the bundled skill's path and where the pet goes, for the
+ * user to paste into Codex or Claude Code with their own description.
+ */
+export function petCreatePrompt() {
+  const skill = join(resourcesDir, 'pet-creator', 'SKILL.md')
+  return `按 ${skill} 的步骤，帮我做一只 Familiar 桌宠，做好后放进 ${roots()[1]}。\n\n它的样子：`
+}
 export async function importCodexPets() {
   const source = join(homedir(), '.codex/pets')
   const target = roots()[1]!

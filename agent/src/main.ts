@@ -8,6 +8,7 @@ import { optionalArg } from './ipc-args'
 import {
   IPC,
   attachmentSchema,
+  proactiveChoices,
   settingsSchema,
   type AgentEvent,
   type Attachment,
@@ -42,7 +43,7 @@ import {
   signIn as chatGptSignIn,
   signOut as chatGptSignOut,
 } from './agent/chatgpt-auth'
-import { listPets, currentSkin, importCodexPets } from './pets'
+import { listPets, currentSkin, importCodexPets, petCreatePrompt } from './pets'
 import {
   clearConversations,
   conversationTitle,
@@ -794,6 +795,9 @@ async function request(
       skins = await listPets()
       rebuildTray()
       return skins
+    case IPC.petsCreatePrompt:
+      requireSender(window, ['settings'])
+      return petCreatePrompt()
     case IPC.petsImport:
       skins = await importCodexPets()
       updatePet()
@@ -1058,7 +1062,13 @@ async function request(
       session = { ...session, proactive: undefined }
       sizePet()
       // 好: the line becomes part of the conversation, so the reply has something to answer.
-      if (choice === 'ok' && answered && message && !controller) {
+      if (
+        choice === 'ok' &&
+        answered &&
+        message &&
+        proactiveChoices(message.trigger).opensChat &&
+        !controller
+      ) {
         const now = Date.now()
         // After a long pause the line starts a fresh conversation, as the capsule would.
         restartIfIdle()

@@ -49,6 +49,7 @@ export const api: FamiliarAPI = {
   getPetSkin: () => request(IPC.petSkin),
   listPets: () => request(IPC.petsList),
   importCodexPets: () => request(IPC.petsImport),
+  petCreatePrompt: () => request(IPC.petsCreatePrompt),
   onGesture: (cb) => subscribe(IPC.petGesture, cb),
   onSkin: (cb) => subscribe(IPC.petSkin, cb),
   getSettings: () => request(IPC.settingsGet),

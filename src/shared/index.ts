@@ -251,6 +251,7 @@ export const IPC = {
   petSkin: 'pet:skin',
   petsList: 'pets:list',
   petsImport: 'pets:import',
+  petsCreatePrompt: 'pets:create-prompt',
   ready: 'window:ready',
   session: 'session:changed',
   sessionGet: 'session:get',
@@ -393,6 +394,8 @@ export interface FamiliarAPI {
   listPets(): Promise<PetSkin[]>
   /** Copies pets from ~/.codex/pets into Familiar's own pet library. */
   importCodexPets(): Promise<PetSkin[]>
+  /** A prompt for Codex or Claude Code that makes a new pet with the bundled skill. */
+  petCreatePrompt(): Promise<string>
   onGesture(callback: (gesture: PetGesture) => void): () => void
   onSkin(callback: (skin: PetSkin) => void): () => void
   listMemory(): Promise<MemoryItem[]>
@@ -488,6 +491,33 @@ export interface ProactiveMessage {
   /** What the user did with it; `ignored` when the bubble timed out. */
   response?: 'ok' | 'later' | 'quiet' | 'ignored'
 }
+/**
+ * The buttons under a proactive bubble. A reminder the user set has nothing to tell the pet off
+ * for, so no 别烦我, and its 知道了 only closes it; 好 on the pet's own line opens the chat with it.
+ */
+export function proactiveChoices(trigger: ProactiveTrigger) {
+  return trigger === 'reminder'
+    ? {
+        opensChat: false,
+        buttons: [
+          ['ok', '知道了'],
+          ['later', '10 分钟后'],
+        ] as const,
+      }
+    : {
+        opensChat: true,
+        buttons: [
+          ['ok', '好'],
+          ['later', '稍后'],
+          ['quiet', '别烦我'],
+        ] as const,
+      }
+}
+/** Minutes as 45m / 1h / 1h 24m: short and the same shape, so a right-aligned column lines up. */
+export const shortDuration = (minutes: number) =>
+  minutes < 60
+    ? `${minutes}m`
+    : `${Math.floor(minutes / 60)}h${minutes % 60 ? ` ${minutes % 60}m` : ''}`
 export interface ProactiveStatus {
   /** Messages and reminders, newest first, from the last 7 days. */
   history: ProactiveMessage[]

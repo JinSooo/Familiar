@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { LogicalSize } from '@tauri-apps/api/dpi'
-import type {
-  ConversationSummary,
-  MemoryItem,
-  Reminder,
-  PerceptionStatus,
-  PetState,
-  UsageToday,
+import {
+  shortDuration,
+  type ConversationSummary,
+  type MemoryItem,
+  type Reminder,
+  type PerceptionStatus,
+  type PetState,
+  type UsageToday,
 } from '../../shared'
 import { api } from '../api'
 import { PetAvatar } from '../pet/PetAvatar'
@@ -51,10 +52,6 @@ const reminderTime = (at: number) => {
   return prefix + d.toTimeString().slice(0, 5)
 }
 const clock = (at: number) => new Date(at).toTimeString().slice(0, 5)
-const duration = (minutes: number) =>
-  minutes < 60
-    ? `${minutes} 分钟`
-    : `${Math.floor(minutes / 60)} 小时${minutes % 60 ? ` ${minutes % 60} 分` : ''}`
 /** A timeline line's time and title: activity lines carry them, conversation lines start with the time. */
 function view(item: MemoryItem): { time: string; title: string } {
   if (item.activity)
@@ -295,7 +292,7 @@ export function TrayPanel() {
         {usage && usage.activeMinutes > 0 && (
           <section>
             <h3 className="tray-heading">
-              今天活跃 <span>{duration(usage.activeMinutes)}</span>
+              今天活跃 <span>{shortDuration(usage.activeMinutes)}</span>
             </h3>
             <ul className="tray-usage">
               {usage.apps.slice(0, 3).map((a) => (
@@ -309,7 +306,9 @@ export function TrayPanel() {
                   <span className="tray-usage-bar">
                     <i style={{ width: `${(a.minutes / top) * 100}%` }} />
                   </span>
-                  <span className="muted">{duration(a.minutes)}</span>
+                  <span className="tray-usage-time muted">
+                    {shortDuration(a.minutes)}
+                  </span>
                 </li>
               ))}
             </ul>

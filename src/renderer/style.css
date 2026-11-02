@@ -172,6 +172,10 @@ summary:focus-visible {
   transform-origin: right center;
   animation: grow 260ms cubic-bezier(0.2, 0.9, 0.3, 1.1) both;
 }
+.capsule.closing {
+  pointer-events: none;
+  animation: shrink 160ms ease-in both;
+}
 .composer-wrap {
   padding: 0 10px 10px;
 }
@@ -301,28 +305,10 @@ summary:focus-visible {
   background: #a6d46a;
   box-shadow: 0 0 0 2px var(--glass);
 }
-.bubble.proactive:before,
-.bubble.proactive:after {
-  content: '';
-  position: absolute;
-  top: -8px;
-  width: 18px;
-  height: 18px;
-  background: var(--glass);
-  clip-path: polygon(0 100%, 20% 0, 100% 100%);
-}
-.bubble.proactive:before {
-  left: 18px;
-}
-.bubble.proactive:after {
-  right: 18px;
-  transform: scaleX(-1);
-}
 .bubble.proactive {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-top: 10px;
 }
 .proactive-text {
   padding: 0;
@@ -673,6 +659,12 @@ summary:focus-visible {
     transform: none;
   }
 }
+@keyframes shrink {
+  to {
+    opacity: 0;
+    transform: translateX(24px) scaleX(0.6);
+  }
+}
 @keyframes pop {
   from {
     opacity: 0;
@@ -728,8 +720,9 @@ summary:focus-visible {
   color: var(--accent);
   font-size: 12px;
 }
-.settings .link.import {
-  display: block;
+.settings .pet-links {
+  display: flex;
+  gap: 16px;
   margin: 10px 2px 16px;
 }
 .rules summary {
@@ -1854,7 +1847,7 @@ form.setting-row input {
 }
 .tray-usage li {
   display: grid;
-  grid-template-columns: 16px 76px 1fr auto;
+  grid-template-columns: 16px 76px 1fr 52px;
   align-items: center;
   gap: 8px;
   font-size: 12px;
@@ -1868,6 +1861,10 @@ form.setting-row input {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.tray-usage-time {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 .tray-usage-bar {
   height: 4px;

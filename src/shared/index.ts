@@ -61,6 +61,7 @@ export const settingsSchema = z.object({
       main: z.string().default('Alt+Shift+Space'),
       togglePet: z.string().default('Alt+Shift+P'),
       newChat: z.string().default('Alt+Shift+N'),
+      quick: z.string().default('Alt+Shift+A'),
     })
     .prefault({}),
   /** Skills by name that the model should not be offered. */
@@ -260,6 +261,7 @@ export const IPC = {
   sessionGet: 'session:get',
   sessionNew: 'session:new',
   capsule: 'overlay:capsule',
+  quickHide: 'quick:hide',
   settingsOpen: 'settings:open',
   appearance: 'appearance:changed',
   settingsPage: 'settings:page',
@@ -360,6 +362,8 @@ export interface FamiliarAPI {
   chatgptSignOut(): Promise<void>
   onAppearance(callback: (panelOpacity: number) => void): () => void
   capsule(open: boolean): void
+  /** Closes the quick-ask bar. */
+  hideQuick(): void
   onCapsule(callback: (open: boolean) => void): () => void
   stop(): void
   approve(id: string, decision: ApprovalChoice): void
@@ -601,7 +605,8 @@ export interface Extensions {
   skills: SkillInfo[]
   mcpFile: string
 }
-export type ShortcutAction = 'summon' | 'main' | 'togglePet' | 'newChat'
+export type ShortcutAction =
+  'summon' | 'main' | 'togglePet' | 'newChat' | 'quick'
 export interface ShortcutFailure {
   action: ShortcutAction
   accelerator: string

@@ -2161,3 +2161,58 @@ form.setting-row input {
 .message-edit-actions .muted {
   margin-right: auto;
 }
+
+/* The quick-ask bar: its own window, centered; the reply opens above the field. */
+.quick-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-sizing: border-box;
+  padding: 10px;
+}
+.quick-bar .composer-wrap {
+  padding: 0;
+}
+.quick-reply {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 380px;
+  overflow-y: auto;
+  padding: 4px 6px;
+  font-size: 14px;
+  border-top: 0.5px solid var(--line);
+  padding-top: 10px;
+}
+.composer.quick {
+  flex-shrink: 0;
+  height: auto;
+  min-height: 48px;
+  align-items: flex-end;
+  padding: 8px 8px 8px 6px;
+  border-radius: 20px;
+  font-size: 15px;
+}
+.composer.quick textarea {
+  flex: 1;
+  min-width: 0;
+  max-height: 132px;
+  margin: 3px 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  line-height: 1.45;
+  resize: none;
+  outline: none;
+}
+.composer.quick .icon,
+.composer.quick .send {
+  flex-shrink: 0;
+}
+/* The window is the bar's surface; the field inside it has no box of its own. */
+.composer.quick,
+.composer.quick:focus-within {
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}

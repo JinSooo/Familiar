@@ -11,7 +11,19 @@ import type { ShortcutAction } from './index'
  * - Sidecar → webviews: `emit` messages; Rust re-emits them as Tauri events named `channel`.
  */
 
-export type WindowLabel = 'pet' | 'chat' | 'settings' | 'main' | 'panel'
+/**
+ * Every webview window. The agent checks requests against this list and the shell keeps the same
+ * names (src-tauri/src/agent.rs); a window missing from either side gets no answers at all.
+ */
+export const windowLabels = [
+  'pet',
+  'chat',
+  'settings',
+  'main',
+  'panel',
+  'quick',
+] as const
+export type WindowLabel = (typeof windowLabels)[number]
 
 /** Rust → sidecar */
 export type ShellToAgent =
@@ -52,6 +64,9 @@ export type AgentToShell =
 export type UiAction =
   | { type: 'show-chat' }
   | { type: 'hide-chat' }
+  /** The quick-ask bar: a centered panel with its own field. */
+  | { type: 'show-quick' }
+  | { type: 'hide-quick' }
   /** Make the pet panel key so the capsule gets typing and notices when the user leaves. */
   | { type: 'focus-pet' }
   | { type: 'show-settings' }

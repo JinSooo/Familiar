@@ -106,7 +106,7 @@ pub async fn familiar_invoke(
     channel: String,
     args: Vec<Value>,
 ) -> Reply {
-    if !["pet", "chat", "settings", "main", "panel"].contains(&window.label()) {
+    if !["pet", "chat", "settings", "main", "panel", "quick"].contains(&window.label()) {
         return Err("Unknown window".into());
     }
     request(app, window.label().into(), channel, args).await
@@ -136,7 +136,7 @@ fn receive(app: &tauri::AppHandle, bytes: &[u8]) {
             target,
         }) => {
             let targets = if target == "all" {
-                vec!["pet", "chat", "settings", "main", "panel"]
+                vec!["pet", "chat", "settings", "main", "panel", "quick"]
             } else {
                 vec![target.as_str()]
             };

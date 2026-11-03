@@ -11,10 +11,14 @@ tauri_panel! {
     // Not main-capable: a non-activating panel that may become main spends a click on that.
     panel!(ChatPanel { config: { can_become_key_window: true } })
     // The menu bar panel: key so it can tell when the user clicks elsewhere and hide.
-    panel!(TrayPanel { config: { can_become_key_window: true } })
+    panel!(TrayPanel { config: { can_become_key_window: false } })
+    // The quick-ask bar: key so its field takes typing.
+    panel!(QuickPanel { config: { can_become_key_window: true } })
 }
 
 const PANEL_SIZE: (f64, f64) = (320., 520.);
+/// The quick-ask bar's window: wide, and just tall enough for the field; the page resizes it to fit a reply.
+const QUICK_SIZE: (f64, f64) = (680., 76.);
 /// When the menu bar panel last hid itself on losing focus, in ms since the epoch. A click on the
 /// tray icon while the panel is open first takes its focus away; that click must not reopen it.
 static PANEL_HIDDEN_AT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -250,6 +254,39 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
                 .build(),
         )
         .build()?;
+    let quick = WebviewWindowBuilder::new(app, "quick", url("quick"))
+        .title("Familiar")
+        .inner_size(QUICK_SIZE.0, QUICK_SIZE.1)
+        .transparent(true)
+        .decorations(false)
+        .resizable(false)
+        .skip_taskbar(true)
+        .visible(false)
+        .accept_first_mouse(true)
+        .effects(
+            EffectsBuilder::new()
+                .effect(Effect::Popover)
+                .state(EffectState::Active)
+                .radius(18.)
+                .build(),
+        )
+        .build()?
+        .to_panel::<QuickPanel>()?;
+    quick.set_level(PanelLevel::PopUpMenu.value());
+    quick.set_collection_behavior(
+        CollectionBehavior::new()
+            .move_to_active_space()
+            .full_screen_auxiliary()
+            .value(),
+    );
+    quick
+        .set_style_mask(
+            StyleMask::empty()
+                .borderless()
+                .nonactivating_panel()
+                .value(),
+        )
+        .map_err(|e| std::io::Error::other(format!("Quick panel style mask: {e:?}")))?;
     let tray_panel = WebviewWindowBuilder::new(app, "panel", url("panel"))
         .title("Familiar")
         .inner_size(PANEL_SIZE.0, PANEL_SIZE.1)
@@ -298,7 +335,7 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
                 }
             });
     }
-    for label in ["pet", "chat", "settings", "main"] {
+    for label in ["pet", "chat", "settings", "main", "quick"] {
         let w = app.get_webview_window(label).unwrap();
         let h = app.clone();
         w.on_window_event(move |event| match event {
@@ -343,7 +380,7 @@ fn report_blur(app: &tauri::AppHandle) {
         std::thread::sleep(std::time::Duration::from_millis(250));
         let main = app.clone();
         let _ = app.run_on_main_thread(move || {
-            let ours = ["pet", "chat", "settings", "main"].iter().any(|label| {
+            let ours = ["pet", "chat", "settings", "main", "quick"].iter().any(|label| {
                 main.get_webview_window(label)
                     .and_then(|w| w.is_focused().ok())
                     .unwrap_or(false)
@@ -445,6 +482,32 @@ pub fn action(app: &tauri::AppHandle, action: crate::protocol::UiAction) -> taur
         UiAction::HideChat => {
             app.get_webview_window("chat").unwrap().hide()?;
             chat_signal(app);
+        }
+        UiAction::ShowQuick => {
+            let w = app.get_webview_window("quick").unwrap();
+            // Centered on the screen the pointer is on, a little below the middle.
+            let monitor = app
+                .cursor_position()
+                .ok()
+                .and_then(|p| app.monitor_from_point(p.x, p.y).ok().flatten())
+                .or_else(|| w.primary_monitor().ok().flatten());
+            if let Some(m) = monitor {
+                let scale = m.scale_factor();
+                let p = m.work_area().position.to_logical::<f64>(scale);
+                let s = m.work_area().size.to_logical::<f64>(scale);
+                w.set_position(LogicalPosition::new(
+                    p.x + (s.width - QUICK_SIZE.0) / 2.,
+                    p.y + s.height * 0.32,
+                ))?;
+            }
+            if let Ok(panel) = app.get_webview_panel("quick") {
+                panel.show_and_make_key();
+            }
+        }
+        UiAction::HideQuick => {
+            if let Ok(panel) = app.get_webview_panel("quick") {
+                panel.hide();
+            }
         }
         UiAction::FocusPet => {
             if let Ok(panel) = app.get_webview_panel("pet") {

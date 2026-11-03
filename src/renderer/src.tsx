@@ -3,6 +3,7 @@ import { Chat } from './chat/Chat'
 import { Overlay } from './overlay/Overlay'
 import { SettingsView } from './settings/SettingsView'
 import { TrayPanel } from './panel/TrayPanel'
+import { Quick } from './quick/Quick'
 import { api } from './api'
 import './style.css'
 const kind = new URLSearchParams(location.search).get('window')
@@ -16,6 +17,8 @@ api.onAppearance((opacity) =>
 createRoot(document.getElementById('root')!).render(
   kind === 'pet' ? (
     <Overlay />
+  ) : kind === 'quick' ? (
+    <Quick />
   ) : kind === 'panel' ? (
     <TrayPanel />
   ) : kind === 'settings' ? (

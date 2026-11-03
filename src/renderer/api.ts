@@ -41,6 +41,7 @@ export const api: FamiliarAPI = {
   chatgptSignOut: () => request(IPC.chatgptSignOut),
   onAppearance: (cb) => subscribe(IPC.appearance, cb),
   capsule: (open) => send(IPC.capsule, open),
+  hideQuick: () => send(IPC.quickHide),
   onCapsule: (cb) => subscribe(IPC.capsule, cb),
   typing: (hasText) => send(IPC.typing, hasText),
   animationFinished: () => send(IPC.petFinished),

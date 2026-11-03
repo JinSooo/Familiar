@@ -21,6 +21,7 @@ import type {
   WindowLabel,
   UiAction,
 } from '../../src/shared/protocol'
+import { windowLabels } from '../../src/shared/protocol'
 import {
   loadSettings,
   publicSettings,
@@ -32,6 +33,7 @@ import {
   beginTurn,
   reduceSession,
   shouldExpand,
+  blurHides,
   bubbleTimeout,
   rewind,
 } from './session'
@@ -242,6 +244,12 @@ function setPetVisible(visible: boolean) {
 }
 function shortcut(action: ShortcutAction) {
   if (action === 'togglePet') return setPetVisible(petHidden)
+  if (action === 'quick') {
+    // One conversation on screen at a time: the bar takes over from panel and capsule.
+    dismissChat()
+    restartIfIdle()
+    return ui({ type: 'show-quick' })
+  }
   if (petHidden) setPetVisible(true)
   if (action === 'main') {
     dismissChat()
@@ -326,6 +334,7 @@ function setCapsule(open: boolean) {
 function dismissChat() {
   if (chatVisible) ui({ type: 'hide-chat' })
   if (capsuleOpen) setCapsule(false)
+  ui({ type: 'hide-quick' })
 }
 function showChat() {
   activity.done = false
@@ -334,6 +343,7 @@ function showChat() {
   session = { ...session, origin: 'chat' }
   publishSession()
   setCapsule(false)
+  ui({ type: 'hide-quick' })
   emit(IPC.view, 'chat', 'chat')
   ui({ type: 'show-chat' })
 }
@@ -536,8 +546,10 @@ async function turn(
       activity.done = false
     }
     if (item.type === 'finish')
+      // A reply read in the quick-ask bar is not waiting to be seen.
       activity.done =
         !item.stopped &&
+        turnWindow !== 'quick' &&
         !(chatVisible && chatFocused) &&
         !(mainVisible && mainFocused)
     if (item.type === 'tool-approval-request') {
@@ -613,7 +625,7 @@ async function request(
     case IPC.sessionGet:
       return session
     case IPC.sessionNew:
-      requireSender(window, ['chat', 'pet', 'tray', 'main', 'panel'])
+      requireSender(window, ['chat', 'pet', 'tray', 'main', 'panel', 'quick'])
       resetRequested = Boolean(controller)
       controller?.abort()
       pendingApprovals.clear()
@@ -718,7 +730,7 @@ async function request(
       emit(IPC.view, 'history', 'chat')
       return
     case IPC.agentRun:
-      requireSender(window, ['chat', 'pet', 'main'])
+      requireSender(window, ['chat', 'pet', 'main', 'quick'])
       return run(window, input, args[1])
     case IPC.agentResend:
       requireSender(window, ['chat', 'main'])
@@ -727,7 +739,7 @@ async function request(
       requireSender(window, ['chat', 'main'])
       return branch(input)
     case IPC.agentStop:
-      requireSender(window, ['chat', 'pet', 'main'])
+      requireSender(window, ['chat', 'pet', 'main', 'quick'])
       controller?.abort()
       return
     case IPC.approval: {
@@ -770,7 +782,7 @@ async function request(
       return
     }
     case IPC.toggleChat:
-      if (window === 'pet') showChat()
+      if (window === 'pet' || window === 'quick') showChat()
       else if (window === 'chat') {
         ui({ type: 'hide-chat' })
         setCapsule(true)
@@ -788,6 +800,10 @@ async function request(
       ui({ type: 'show-settings' })
       return
     }
+    case IPC.quickHide:
+      requireSender(window, ['quick'])
+      ui({ type: 'hide-quick' })
+      return
     case IPC.capsule: {
       requireSender(window, ['pet'])
       const open = z.boolean().parse(input)
@@ -853,14 +869,21 @@ async function request(
       refreshState()
       return
     case IPC.typing:
-      requireSender(window, ['pet', 'chat', 'main'])
+      requireSender(window, ['pet', 'chat', 'main', 'quick'])
       activity.listening = z.boolean().parse(input)
       hasDraft = activity.listening
       typingAt = activity.listening ? Date.now() : 0
       refreshState()
       return
     case IPC.ready:
-      requireSender(window, ['pet', 'chat', 'settings', 'main', 'panel'])
+      requireSender(window, [
+        'pet',
+        'chat',
+        'settings',
+        'main',
+        'panel',
+        'quick',
+      ])
       emit(IPC.appearance, getSettings().panelOpacity, window as WindowLabel)
       if (window === 'panel') {
         emit(IPC.petState, state, 'panel')
@@ -967,7 +990,11 @@ async function request(
     }
     case IPC.shortcut:
       requireSender(window, ['tray'])
-      shortcut(z.enum(['summon', 'main', 'togglePet', 'newChat']).parse(input))
+      shortcut(
+        z
+          .enum(['summon', 'main', 'togglePet', 'newChat', 'quick'])
+          .parse(input),
+      )
       return
     case IPC.shortcutStatus:
       requireSender(window, ['settings'])
@@ -1155,7 +1182,7 @@ async function request(
 const requestSchema = z.object({
   kind: z.literal('request'),
   id: z.number().int(),
-  window: z.enum(['pet', 'chat', 'settings', 'main', 'panel', 'tray']),
+  window: z.enum([...windowLabels, 'tray']),
   channel: z.string(),
   args: z.array(z.unknown()),
 })
@@ -1176,7 +1203,7 @@ const signalSchema = z.object({
       name: z.literal('shortcut-status'),
       failed: z.array(
         z.object({
-          action: z.enum(['summon', 'main', 'togglePet', 'newChat']),
+          action: z.enum(['summon', 'main', 'togglePet', 'newChat', 'quick']),
           accelerator: z.string(),
           error: z.string(),
         }),
@@ -1228,9 +1255,17 @@ async function handle(line: string) {
       } else if (signal.name === 'shortcut-status') {
         shortcutFailures = signal.failed
       } else if (signal.name === 'blurred') {
-        // Stay put while something still needs the user here.
-        if (getSettings().chatAutoHide && !pendingApprovals.size && !hasDraft)
-          dismissChat()
+        const hide = blurHides({
+          autoHide: getSettings().chatAutoHide,
+          approvals: pendingApprovals.size,
+          draft: hasDraft,
+          running: Boolean(controller),
+        })
+        if (hide.chat) {
+          if (chatVisible) ui({ type: 'hide-chat' })
+          if (capsuleOpen) setCapsule(false)
+        }
+        if (hide.quick) ui({ type: 'hide-quick' })
       } else
         emit(
           IPC.petDrag,

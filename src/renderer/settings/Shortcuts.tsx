@@ -8,6 +8,7 @@ const labels: Record<keyof Bindings, string> = {
   main: '打开大窗口',
   togglePet: '显示 / 隐藏宠物',
   newChat: '新对话',
+  quick: '快捷问答条',
 }
 const symbols: Record<string, string> = {
   Control: '⌃',

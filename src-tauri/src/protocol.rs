@@ -27,6 +27,9 @@ pub enum AgentToShell {
 pub enum UiAction {
     ShowChat,
     HideChat,
+    /// The quick-ask bar: a centered panel with its own field.
+    ShowQuick,
+    HideQuick,
     /// Make the pet panel key so the capsule receives typing and its own blur.
     FocusPet,
     ShowSettings,
@@ -111,7 +114,7 @@ impl<'de> Deserialize<'de> for AgentToShell {
             } => {
                 if !matches!(
                     target.as_str(),
-                    "pet" | "chat" | "settings" | "main" | "panel" | "all"
+                    "pet" | "chat" | "settings" | "main" | "panel" | "quick" | "all"
                 ) {
                     return Err(serde::de::Error::custom("invalid event target"));
                 }

@@ -456,11 +456,11 @@ function EditMessage({
   )
 }
 
-const stamp = (at: number) =>
+export const stamp = (at: number) =>
   new Date(at).toLocaleString('zh-CN', { hour12: false })
 
 /** A reply in the order it happened: text, tool steps, source cards and made files interleaved. */
-function Reply({
+export function Reply({
   message,
   tools,
 }: {

@@ -25,6 +25,7 @@ export function Composer({
   status = '',
   failed = '',
   continuing = false,
+  quick = false,
 }: {
   running: boolean
   mini?: boolean
@@ -35,6 +36,8 @@ export function Composer({
   failed?: string
   /** The current conversation already has messages. */
   continuing?: boolean
+  /** The quick-ask bar: several lines, files, and Esc closes it. */
+  quick?: boolean
 }) {
   const [input, setInput] = useState('')
   const [error, setError] = useState('')
@@ -70,14 +73,25 @@ export function Composer({
   const field = useRef<HTMLInputElement>(null)
   const busy = useRef(false)
   const lastSent = useRef('')
+  const area = useRef<HTMLTextAreaElement>(null)
+  // The bar stays mounted while hidden, so focus comes back with the window.
+  useEffect(() => {
+    if (!quick) return
+    const focus = () => area.current?.focus()
+    window.addEventListener('focus', focus)
+    return () => window.removeEventListener('focus', focus)
+  }, [quick])
+  useEffect(() => {
+    if (!input && area.current) area.current.style.height = ''
+  }, [input])
   // The capsule cannot take a second message mid-turn, so it shows progress instead of an idle field.
   const working = mini && running
   useEffect(() => {
     return () => api.typing(false)
   }, [])
   useEffect(() => {
-    if (!working) field.current?.focus()
-  }, [working])
+    if (!working) (quick ? area.current : field.current)?.focus()
+  }, [working, quick])
   useEffect(() => {
     if (mini && failed && lastSent.current) {
       setInput((current) => current || lastSent.current)
@@ -128,9 +142,10 @@ export function Composer({
         </p>
       )}
       <form
-        className={`composer ${mini ? 'mini' : ''} ${working ? 'working' : ''}`}
+        className={`composer ${mini ? 'mini' : ''} ${quick ? 'quick' : ''} ${working ? 'working' : ''}`}
         onKeyDown={(e) => {
           if (e.key === 'Escape' && mini) api.capsule(false)
+          if (e.key === 'Escape' && quick) api.hideQuick()
         }}
         onSubmit={async (e) => {
           e.preventDefault()
@@ -164,7 +179,7 @@ export function Composer({
           }
         }}
       >
-        {mini && (
+        {(mini || quick) && (
           <button
             type="button"
             className="icon"
@@ -212,6 +227,33 @@ export function Composer({
             </span>
             <span>{status || `${name}在想…`}</span>
           </button>
+        ) : quick ? (
+          <textarea
+            ref={area}
+            rows={1}
+            aria-label="消息"
+            placeholder={continuing ? `继续问${name}…` : `问${name}…`}
+            value={input}
+            onChange={(e) => {
+              setInput(e.target.value)
+              api.typing(Boolean(e.target.value))
+              e.target.style.height = 'auto'
+              e.target.style.height = `${Math.min(e.target.scrollHeight, 132)}px`
+            }}
+            onKeyDown={(e) => {
+              // Enter sends, Shift+Enter breaks the line; Enter that confirms an IME choice does neither.
+              if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing)
+                return
+              e.preventDefault()
+              e.currentTarget.form?.requestSubmit()
+            }}
+            onPaste={(e) => {
+              const pasted = [...e.clipboardData.files]
+              if (!pasted.length) return
+              e.preventDefault()
+              addFiles(pasted)
+            }}
+          />
         ) : (
           <input
             ref={field}

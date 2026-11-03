@@ -1,13 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import type { PetGesture, PetSkin, PetState, Settings } from '../../shared'
+import type { PetGesture, PetSkin, PetState } from '../../shared'
 import { api, subscribe } from '../api'
 import { IPC } from '../../shared'
 import { alphaHit, overlayHit } from './hit'
 import {
   animation,
   clickSequence,
-  scales,
-  speeds,
   sweep,
   type Action,
   type Sweep,
@@ -33,8 +31,8 @@ export function Pet({
 }) {
   const canvas = useRef<HTMLCanvasElement>(null)
   const [skin, setSkin] = useState<PetSkin>()
-  const [size, setSize] = useState<Settings['pet']['size']>('medium')
-  const [speed, setSpeed] = useState<Settings['pet']['speed']>('normal')
+  const [size, setSize] = useState<number>(0.73)
+  const [speed, setSpeed] = useState<number>(1)
   const [state, setState] = useState<PetState>('idle')
   const [gesture, setGesture] = useState<PetGesture>()
   const [direction, setDirection] = useState<'running-left' | 'running-right'>()
@@ -59,8 +57,8 @@ export function Pet({
     void api
       .getSettings()
       .then((s) => {
-        setSize(s.pet.size)
-        setSpeed(s.pet.speed)
+        setSize(s.pet.scale)
+        setSpeed(s.pet.rate)
       })
       .catch(console.error)
     const media = matchMedia('(prefers-reduced-motion: reduce)')
@@ -122,7 +120,7 @@ export function Pet({
           frame %= spec.frames
           draw()
         },
-        1000 / (direction ? spec.fps : spec.fps * speeds[speed]),
+        1000 / (direction ? spec.fps : spec.fps * speed),
       )
     }
     image.onerror = () => {
@@ -268,8 +266,8 @@ export function Pet({
         width={192}
         height={208}
         style={{
-          width: 192 * (scale ?? scales[size]),
-          height: 208 * (scale ?? scales[size]),
+          width: 192 * (scale ?? size),
+          height: 208 * (scale ?? size),
         }}
         aria-label={`Familiar, ${state}`}
       />

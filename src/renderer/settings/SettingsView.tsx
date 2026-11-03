@@ -6,6 +6,12 @@ import type {
   PublicSettings,
 } from '../../shared'
 import { api } from '../api'
+import {
+  petRatePresets,
+  petRateRange,
+  petScalePresets,
+  petScaleRange,
+} from '../../shared'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { invoke } from '@tauri-apps/api/core'
 import { MemoryPage } from './MemoryPage'
@@ -1084,46 +1090,42 @@ export function SettingsView() {
                   }
                 />
               </label>
-              <div className="setting-row">
-                <span>大小</span>
-                <div className="segmented">
-                  {(['small', 'medium', 'large'] as const).map((size, i) => (
-                    <button
-                      type="button"
-                      key={size}
-                      className={settings.pet.size === size ? 'selected' : ''}
-                      onClick={() =>
-                        change({
-                          ...settings,
-                          pet: { ...settings.pet, size },
-                        })
-                      }
-                    >
-                      {['小', '中', '大'][i]}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="setting-row">
-                <span>动作快慢</span>
-                <div className="segmented">
-                  {(['slow', 'normal', 'fast'] as const).map((speed, i) => (
-                    <button
-                      type="button"
-                      key={speed}
-                      className={settings.pet.speed === speed ? 'selected' : ''}
-                      onClick={() =>
-                        change({
-                          ...settings,
-                          pet: { ...settings.pet, speed },
-                        })
-                      }
-                    >
-                      {['慢', '正常', '快'][i]}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <Tuning
+                label="大小"
+                value={settings.pet.scale}
+                presets={[
+                  [petScalePresets.small, '小'],
+                  [petScalePresets.medium, '中'],
+                  [petScalePresets.large, '大'],
+                ]}
+                range={petScaleRange}
+                show={(v) =>
+                  `${Math.round((v / petScalePresets.medium) * 100)}%`
+                }
+                onChange={(scale, dragging) =>
+                  change(
+                    { ...settings, pet: { ...settings.pet, scale } },
+                    dragging ? typingDelay : undefined,
+                  )
+                }
+              />
+              <Tuning
+                label="动作快慢"
+                value={settings.pet.rate}
+                presets={[
+                  [petRatePresets.slow, '慢'],
+                  [petRatePresets.normal, '正常'],
+                  [petRatePresets.fast, '快'],
+                ]}
+                range={petRateRange}
+                show={(v) => `${Number(v.toFixed(2))}×`}
+                onChange={(rate, dragging) =>
+                  change(
+                    { ...settings, pet: { ...settings.pet, rate } },
+                    dragging ? typingDelay : undefined,
+                  )
+                }
+              />
             </div>
           </section>
           <section hidden={tab !== 'privacy'}>
@@ -1177,6 +1179,53 @@ export function SettingsView() {
             </p>
           )}
         </form>
+      </div>
+    </div>
+  )
+}
+
+/** Three presets as buttons and a slider for anything between; the buttons light only on an exact match. */
+function Tuning({
+  label,
+  value,
+  presets,
+  range,
+  show,
+  onChange,
+}: {
+  label: string
+  value: number
+  presets: [number, string][]
+  range: { min: number; max: number }
+  show: (value: number) => string
+  onChange: (value: number, dragging: boolean) => void
+}) {
+  return (
+    <div className="setting-row">
+      <span>{label}</span>
+      <div className="tuning">
+        <div className="segmented">
+          {presets.map(([v, text]) => (
+            <button
+              type="button"
+              key={text}
+              className={Math.abs(value - v) < 0.001 ? 'selected' : ''}
+              onClick={() => onChange(v, false)}
+            >
+              {text}
+            </button>
+          ))}
+        </div>
+        <input
+          type="range"
+          aria-label={label}
+          min={range.min}
+          max={range.max}
+          step={0.01}
+          value={value}
+          onChange={(e) => onChange(Number(e.target.value), true)}
+        />
+        <output>{show(value)}</output>
       </div>
     </div>
   )

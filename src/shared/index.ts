@@ -1,4 +1,48 @@
 import { z } from 'zod'
+/** Pet size (a multiplier of the 192x208 sprite) and animation rate. The named presets are shortcuts. */
+export const petScaleRange = { min: 0.4, max: 1.3 } as const
+export const petRateRange = { min: 0.5, max: 2 } as const
+export const petScalePresets = {
+  small: 0.5,
+  medium: 0.73,
+  large: 0.95,
+} as const
+export const petRatePresets = { slow: 0.6, normal: 1, fast: 1.5 } as const
+/** The pet window for a scale: the sprite plus room for the capsule and the bubble. */
+export function petDimensions(scale: number) {
+  return {
+    width: Math.ceil((460 * scale) / 0.73),
+    height: Math.ceil((330 * scale) / 0.73),
+  }
+}
+/** Which menu bar size item to check; a value none of the three matches checks none. */
+export function trayTier(
+  scale: number,
+): 'small' | 'medium' | 'large' | 'custom' {
+  const hit = (['small', 'medium', 'large'] as const).find(
+    (k) => petScalePresets[k] === scale,
+  )
+  return hit ?? 'custom'
+}
+/** Settings written before the numbers: size small / medium / large, speed slow / normal / fast. */
+function legacyPet(value: unknown) {
+  if (!value || typeof value !== 'object') return value
+  const { size, speed, ...rest } = value as Record<string, unknown>
+  const pet: Record<string, unknown> = { ...rest }
+  if (
+    pet.scale === undefined &&
+    typeof size === 'string' &&
+    size in petScalePresets
+  )
+    pet.scale = petScalePresets[size as keyof typeof petScalePresets]
+  if (
+    pet.rate === undefined &&
+    typeof speed === 'string' &&
+    speed in petRatePresets
+  )
+    pet.rate = petRatePresets[speed as keyof typeof petRatePresets]
+  return pet
+}
 export const settingsSchema = z.object({
   model: z
     .object({
@@ -19,15 +63,23 @@ export const settingsSchema = z.object({
       extraBody: z.record(z.string(), z.unknown()).default({}),
     })
     .prefault({}),
-  pet: z
-    .object({
-      id: z.string().default('xiaohei-q'),
-      name: z.string().trim().min(1).max(40).default('小黑'),
-      size: z.enum(['small', 'medium', 'large']).default('medium'),
-      /** Playback rate of the pet's own animations (drag running follows the hand instead). */
-      speed: z.enum(['slow', 'normal', 'fast']).default('normal'),
-    })
-    .prefault({}),
+  pet: z.preprocess(
+    legacyPet,
+    z
+      .object({
+        id: z.string().default('xiaohei-q'),
+        name: z.string().trim().min(1).max(40).default('小黑'),
+        /** Size as a multiplier of the sprite; small / medium / large are 0.5 / 0.73 / 0.95. */
+        scale: z
+          .number()
+          .min(petScaleRange.min)
+          .max(petScaleRange.max)
+          .default(0.73),
+        /** Playback rate of the pet's own animations (drag running follows the hand instead). */
+        rate: z.number().min(petRateRange.min).max(petRateRange.max).default(1),
+      })
+      .prefault({}),
+  ),
   permissionMode: z.enum(['ask', 'auto', 'full']).default('auto'),
   dirRules: z
     .array(
@@ -395,8 +447,8 @@ export interface FamiliarAPI {
   petMenu(x: number, y: number): void
   typing(hasText: boolean): void
   animationFinished(): void
-  onSize(callback: (size: Settings['pet']['size']) => void): () => void
-  onSpeed(callback: (speed: Settings['pet']['speed']) => void): () => void
+  onSize(callback: (scale: number) => void): () => void
+  onSpeed(callback: (rate: number) => void): () => void
   getPetSkin(): Promise<PetSkin>
   listPets(): Promise<PetSkin[]>
   /** Copies pets from ~/.codex/pets into Familiar's own pet library. */

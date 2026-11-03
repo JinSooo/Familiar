@@ -2216,3 +2216,24 @@ form.setting-row input {
   box-shadow: none;
   backdrop-filter: none;
 }
+/* Size and speed: three presets, a slider, and the value. */
+.tuning {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.settings .tuning input[type='range'] {
+  width: 110px;
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+.tuning output {
+  min-width: 40px;
+  text-align: right;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}

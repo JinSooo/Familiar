@@ -82,7 +82,7 @@ export type UiAction =
       type: 'tray'
       pets: { id: string; name: string }[]
       currentPet: string
-      size: 'small' | 'medium' | 'large'
+      size: 'small' | 'medium' | 'large' | 'custom'
       perception: 'off' | 'on' | 'paused'
     }
   | { type: 'panel-opacity'; value: number; windows: number }

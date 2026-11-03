@@ -7,7 +7,6 @@ import {
 } from '../../shared'
 import { api } from '../api'
 import { Pet } from '../pet/Pet'
-import { scales } from '../pet/logic'
 import { Composer } from '../shared-ui/Composer'
 const bubbleTimeout = (text: string) =>
   12000 + Math.min(8000, [...text].length * 60)
@@ -133,20 +132,20 @@ export function Overlay() {
     return () => clearTimeout(timer)
   }, [capsule])
   const [name, setName] = useState('小黑')
-  const [scale, setScale] = useState(scales.medium)
+  const [scale, setScale] = useState<number>(0.73)
   useEffect(() => {
     const off = [
       api.onCapsule((next) =>
         setCapsule((c) => (next ? 'open' : c === 'closed' ? c : 'closing')),
       ),
-      api.onSize((s) => setScale(scales[s])),
+      api.onSize(setScale),
     ]
     const update = () => {
       void api
         .getSettings()
         .then((s) => {
           setName(s.pet.name)
-          setScale(scales[s.pet.size])
+          setScale(s.pet.scale)
         })
         .catch(console.error)
     }

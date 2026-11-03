@@ -8,8 +8,11 @@ import { optionalArg } from './ipc-args'
 import {
   IPC,
   attachmentSchema,
+  petDimensions,
+  petScalePresets,
   proactiveChoices,
   settingsSchema,
+  trayTier,
   type AgentEvent,
   type Attachment,
   type PetState,
@@ -67,7 +70,7 @@ import {
   readAttachment,
   saveAttachment,
 } from './attachments'
-import { petDimensions, resolveState } from './pet-logic'
+import { resolveState } from './pet-logic'
 import {
   checkNow,
   noteConversation,
@@ -362,7 +365,7 @@ function rebuildTray() {
     type: 'tray',
     pets: skins.map((skin) => ({ id: skin.id, name: skin.displayName })),
     currentPet: currentSkin(settings.pet.id).id,
-    size: settings.pet.size,
+    size: trayTier(settings.pet.scale),
     perception: !settings.perception.enabled
       ? 'off'
       : settings.perception.paused
@@ -372,7 +375,7 @@ function rebuildTray() {
 }
 /** The pet window grows while a proactive bubble shows: its reason and buttons need the room. */
 function sizePet() {
-  const size = petDimensions(getSettings().pet.size)
+  const size = petDimensions(getSettings().pet.scale)
   ui({
     type: 'pet-size',
     ...size,
@@ -384,9 +387,9 @@ function updatePet() {
   sizePet()
   // Every window shows the pet (the chat header avatar too), so skin changes go to all.
   emit(IPC.petSkin, currentSkin(settings.pet.id), 'all')
-  emit(IPC.petSize, settings.pet.size, 'pet')
+  emit(IPC.petSize, settings.pet.scale, 'pet')
   // The chat panel's perched pet animates too.
-  emit(IPC.petSpeed, settings.pet.speed, 'all')
+  emit(IPC.petSpeed, settings.pet.rate, 'all')
 }
 /** Files sent with a message: name and base64 bytes, saved before the turn starts. */
 const uploadSchema = z
@@ -852,7 +855,9 @@ async function request(
         const id = z.string().parse(input)
         if (!skins.some((s) => s.id === id)) throw new Error('Unknown pet')
         pet.id = id
-      } else pet.size = z.enum(['small', 'medium', 'large']).parse(input)
+      } else
+        pet.scale =
+          petScalePresets[z.enum(['small', 'medium', 'large']).parse(input)]
       await saveSettings({
         ...settings,
         model: { ...settings.model, apiKey: undefined },
@@ -895,8 +900,8 @@ async function request(
         emit(IPC.petState, state, 'pet')
         emit(IPC.capsule, capsuleOpen, 'pet')
         emit(IPC.petSkin, currentSkin(getSettings().pet.id), 'pet')
-        emit(IPC.petSize, getSettings().pet.size, 'pet')
-        emit(IPC.petSpeed, getSettings().pet.speed, 'pet')
+        emit(IPC.petSize, getSettings().pet.scale, 'pet')
+        emit(IPC.petSpeed, getSettings().pet.rate, 'pet')
         petReady = true
         await greet()
       }

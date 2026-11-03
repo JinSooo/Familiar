@@ -1,13 +1,5 @@
-import type { PetGesture, PetSkin, PetState, Settings } from '../../shared'
+import type { PetGesture, PetSkin, PetState } from '../../shared'
 
-export const scales = { small: 0.5, medium: 0.73, large: 0.95 }
-export const speeds = { slow: 0.6, normal: 1, fast: 1.5 }
-export function petDimensions(size: Settings['pet']['size']) {
-  return {
-    width: Math.ceil((460 * scales[size]) / 0.73),
-    height: Math.ceil((330 * scales[size]) / 0.73),
-  }
-}
 export function atlasVersion(width: number, height: number): 1 | 2 | undefined {
   return width === 1536
     ? height === 1872

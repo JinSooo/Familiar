@@ -126,7 +126,7 @@ impl<'de> Deserialize<'de> for AgentToShell {
             }
             Wire::Ui { action } => {
                 if let UiAction::Tray { size, .. } = &action {
-                    if !matches!(size.as_str(), "small" | "medium" | "large") {
+                    if !matches!(size.as_str(), "small" | "medium" | "large" | "custom") {
                         return Err(serde::de::Error::custom("invalid pet size"));
                     }
                 }
@@ -326,6 +326,7 @@ mod tests {
             // Regression: events for the menu bar panel were rejected as an invalid target.
             r#"{"kind":"emit","channel":"pet:state","payload":{},"target":"panel"}"#,
             r#"{"kind":"ui","action":{"type":"tray","pets":[{"id":"cat","name":"Cat"}],"currentPet":"cat","size":"small"}}"#,
+            r#"{"kind":"ui","action":{"type":"tray","pets":[],"currentPet":"","size":"custom"}}"#,
             r#"{"kind":"ui","action":{"type":"pet-size","width":460,"height":400}}"#,
         ] {
             assert!(serde_json::from_str::<AgentToShell>(line).is_ok(), "{line}");

@@ -109,8 +109,29 @@ function ContextStrip({ session }: { session: Session }) {
     </div>
   )
 }
+/** Lines that went unseen while the user was away; the dot on the pet brings the newest back. */
+function useMissed(): ProactiveMessage[] {
+  const [missed, setMissed] = useState<ProactiveMessage[]>([])
+  useEffect(() => {
+    const load = () =>
+      void api
+        .proactiveStatus()
+        .then((s) => setMissed(s.missed))
+        .catch(console.error)
+    load()
+    const off = api.onProactiveChanged((s) => setMissed(s.missed))
+    // Own lines go stale after a while even when nothing else changes.
+    const timer = setInterval(load, 60000)
+    return () => {
+      off()
+      clearInterval(timer)
+    }
+  }, [])
+  return missed
+}
 export function Overlay() {
   const session = useSession()
+  const missed = useMissed()
   const [fading, setFading] = useState(false)
   useEffect(() => {
     setFading(false)
@@ -168,6 +189,22 @@ export function Overlay() {
       }
     >
       <Pet />
+      {missed[0] && !session.proactive && !open && !session.running && (
+        <button
+          type="button"
+          data-hit
+          className="missed-dot"
+          title={
+            missed.length > 1
+              ? `有 ${missed.length} 句刚才没看到`
+              : '有一句刚才没看到'
+          }
+          aria-label="看看刚才想说的话"
+          onClick={() =>
+            void api.reopenProactive(missed[0]!.id).catch(console.error)
+          }
+        />
+      )}
       {session.proactive && !open && !session.running && (
         <ProactiveBubble message={session.proactive} />
       )}

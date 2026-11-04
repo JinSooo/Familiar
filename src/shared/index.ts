@@ -405,6 +405,8 @@ export const IPC = {
   proactiveResume: 'proactive:resume',
   /** Look for something to say now instead of at the next minute. */
   proactiveCheck: 'proactive:check',
+  /** Shows a line that went unseen again. */
+  proactiveReopen: 'proactive:reopen',
   reminderCancel: 'reminder:cancel',
 } as const
 export type DragAction = 'start' | 'move' | 'end'
@@ -535,6 +537,8 @@ export interface FamiliarAPI {
   ): Promise<void>
   resumeProactive(): Promise<void>
   checkProactive(): Promise<void>
+  /** Puts a line that went unseen back in the bubble. */
+  reopenProactive(id: string): Promise<void>
   cancelReminder(id: string): Promise<void>
   onProactiveChanged(callback: (status: ProactiveStatus) => void): () => void
   onDirRulesChanged(callback: (rules: Settings['dirRules']) => void): () => void
@@ -571,8 +575,11 @@ export interface ProactiveMessage {
   text: string
   /** Why now, in one line, shown under the message. */
   reason: string
-  /** What the user did with it; `ignored` when the bubble timed out. */
-  response?: 'ok' | 'later' | 'quiet' | 'ignored'
+  /**
+   * What the user did with it. `ignored`: the user was at the Mac while it showed and did not
+   * answer. `missed`: no keyboard or mouse input the whole time it waited, so it went unseen.
+   */
+  response?: 'ok' | 'later' | 'quiet' | 'ignored' | 'missed'
 }
 /**
  * The buttons under a proactive bubble. A reminder the user set has nothing to tell the pet off
@@ -612,6 +619,8 @@ export interface ProactiveStatus {
   gapMinutes: number
   /** Set while 别烦我 holds; epoch ms when it ends. */
   quietUntil?: number
+  /** Lines that went unseen and can still be shown again, newest first. */
+  missed: ProactiveMessage[]
 }
 export interface PerceptionEvent {
   at: number

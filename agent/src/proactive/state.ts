@@ -83,12 +83,14 @@ export function updateState(
 /** What the user did with a proactive message, for future evaluation (docs/design.md §12). */
 export async function recordProactiveFeedback(
   message: ProactiveMessage,
+  /** Seconds without keyboard or mouse input when it appeared and when it ended. */
+  evidence?: { idleAtShow: number; idleAtEnd: number },
 ): Promise<void> {
   const dir = join(dataDir, 'evals')
   await mkdir(dir, { recursive: true })
   await appendFile(
     join(dir, 'proactive-feedback.jsonl'),
-    `${JSON.stringify({ ...message, at: new Date(message.at).toISOString() })}\n`,
+    `${JSON.stringify({ ...message, at: new Date(message.at).toISOString(), ...evidence })}\n`,
     { mode: 0o600 },
   )
 }

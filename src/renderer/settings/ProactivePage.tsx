@@ -23,6 +23,7 @@ const responses = {
   later: '稍后',
   quiet: '别烦我',
   ignored: '没理',
+  missed: '没看到',
 } as const
 const when = (at: number) => {
   const d = new Date(at)

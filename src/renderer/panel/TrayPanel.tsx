@@ -5,6 +5,7 @@ import {
   shortDuration,
   type ConversationSummary,
   type MemoryItem,
+  type ProactiveMessage,
   type Reminder,
   type PerceptionStatus,
   type PetState,
@@ -72,6 +73,8 @@ export function TrayPanel() {
   const [usage, setUsage] = useState<UsageToday>()
   const [last, setLast] = useState<ConversationSummary>()
   const [next, setNext] = useState<Reminder & { at: number }>()
+  /** The newest line the pet said while the user was away. */
+  const [missed, setMissed] = useState<ProactiveMessage>()
   const [icons, setIcons] = useState<Record<string, string>>({})
   /** Bumped on every open: the window loads at launch, possibly before the pet skin is known. */
   const [opened, setOpened] = useState(0)
@@ -92,14 +95,15 @@ export function TrayPanel() {
     void api.perceptionStatus().then(setPerception).catch(console.error)
     void api
       .proactiveStatus()
-      .then((s) =>
+      .then((s) => {
+        setMissed(s.missed[0])
         setNext(
           s.reminders.find(
             (r): r is Reminder & { at: number } =>
               !r.done && r.kind === 'reminder' && r.at !== undefined,
           ),
-        ),
-      )
+        )
+      })
       .catch(console.error)
     void api
       .listConversations()
@@ -267,6 +271,22 @@ export function TrayPanel() {
             {last.preview && (
               <span className="tray-preview">{last.preview}</span>
             )}
+          </button>
+        )}
+
+        {missed && (
+          <button
+            type="button"
+            className="tray-card tray-pending"
+            onClick={() =>
+              void api
+                .reopenProactive(missed.id)
+                .then(load)
+                .catch(console.error)
+            }
+          >
+            <span className="tray-reminder">{missed.text}</span>
+            <span className="muted">刚才想说 · {clock(missed.at)}</span>
           </button>
         )}
 

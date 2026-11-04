@@ -17,7 +17,14 @@ import { memoryContext, openMemory } from '../memory'
 import { today } from '../memory/store'
 import { decide } from './decide'
 import { readReminders, stamp, updateReminders } from './reminders'
-import { breakpoint, budget, candidates, pace } from './rules'
+import {
+  breakpoint,
+  bubbleProgress,
+  budget,
+  candidates,
+  missedLines,
+  pace,
+} from './rules'
 import {
   companionContext,
   readState,
@@ -80,9 +87,19 @@ async function inTheWay(): Promise<string | undefined> {
 let speaker: Speaker | undefined
 let timer: ReturnType<typeof setInterval> | undefined
 let ticking = false
-/** The message on screen, so a click can answer it and a timeout can mark it ignored. */
+/**
+ * The message on screen, so a click can answer it and the watch can end it: ignored when the
+ * user was there and let it go, missed when they never came near the Mac while it waited.
+ */
 let showing:
-  | { message: ProactiveMessage; timer: ReturnType<typeof setTimeout> }
+  | {
+      message: ProactiveMessage
+      shownAt: number
+      /** Seconds without input when it appeared, kept with the answer as evidence. */
+      idleAtShow: number
+      startedAt?: number
+      timer: ReturnType<typeof setInterval>
+    }
   | undefined
 
 export async function proactiveStatus(): Promise<ProactiveStatus> {
@@ -108,6 +125,7 @@ export async function proactiveStatus(): Promise<ProactiveStatus> {
     ...(state.quietUntil && state.quietUntil > now
       ? { quietUntil: state.quietUntil }
       : {}),
+    missed: missedLines(state.history, now),
   }
 }
 async function changed() {
@@ -117,35 +135,81 @@ async function changed() {
 /** No keyboard or mouse for this long means the user is away. */
 const awayAfter = 120
 /**
- * How long a bubble stays before it counts as ignored: the pet's own ideas fade quickly, a
- * reminder the user asked for waits so a glance away does not lose it.
+ * How long a bubble stays, counted from the user's first input after it appeared, before it
+ * counts as ignored: the pet's own ideas fade quickly, a reminder the user asked for waits so a
+ * glance away does not lose it.
  */
 const showFor = (m: ProactiveMessage) =>
   m.trigger === 'reminder' ? 10 * minute : 45000
-async function show(message: ProactiveMessage) {
+/** With no input at all for this long the bubble goes unseen and moves to the missed list. */
+const waitFor = 10 * minute
+const watchEvery = 5000
+
+async function show(message: ProactiveMessage, idle: number, reopened = false) {
   await updateState((s) => {
-    s.history.unshift(message)
+    if (reopened) {
+      const m = s.history.find((x) => x.id === message.id)
+      if (m) delete m.response
+    } else s.history.unshift(message)
   })
-  clearTimeout(showing?.timer)
+  clearInterval(showing?.timer)
+  const now = Date.now()
   showing = {
     message,
-    timer: setTimeout(
-      () => void respond(message.id, 'ignored'),
-      showFor(message),
-    ),
+    shownAt: now,
+    idleAtShow: Math.round(idle),
+    // Brought back by a click: the user is plainly there.
+    ...(reopened ? { startedAt: now } : {}),
+    timer: setInterval(() => void watch(), watchEvery),
   }
   speaker?.say(message)
   void changed()
+}
+
+async function watch() {
+  const current = showing
+  if (!current) return
+  const idle = await idleSeconds().catch(() => 0)
+  if (showing !== current) return
+  const progress = bubbleProgress({
+    shownAt: current.shownAt,
+    startedAt: current.startedAt,
+    idle,
+    now: Date.now(),
+    showFor: showFor(current.message),
+    waitFor,
+  })
+  current.startedAt = progress.startedAt
+  if (progress.end) await respond(current.message.id, progress.end, idle)
+}
+
+/** Shows an unseen line again (the dot on the pet, the menu bar panel). */
+export async function reopen(id: string): Promise<void> {
+  const state = await readState()
+  const message = missedLines(state.history, Date.now()).find(
+    (m) => m.id === id,
+  )
+  if (!message) throw new Error('这句话已经过期了')
+  if (showing) throw new Error('正在说另一句话')
+  await show({ ...message, response: undefined }, 0, true)
 }
 
 /** What the user did with a bubble. 别烦我 holds for the rest of the day. */
 export async function respond(
   id: string,
   response: NonNullable<ProactiveMessage['response']>,
+  /** Seconds without input at the answer, when already known. */
+  idleNow?: number,
 ): Promise<ProactiveMessage | undefined> {
+  let evidence: { idleAtShow: number; idleAtEnd: number } | undefined
   if (showing?.message.id === id) {
-    clearTimeout(showing.timer)
+    const ended = showing
+    clearInterval(ended.timer)
     showing = undefined
+    evidence = {
+      idleAtShow: ended.idleAtShow,
+      idleAtEnd: Math.round(idleNow ?? (await idleSeconds().catch(() => 0))),
+    }
   }
   let answered: ProactiveMessage | undefined
   await updateState((s) => {
@@ -174,7 +238,7 @@ export async function respond(
       ],
       result: undefined,
     }))
-  void recordProactiveFeedback(answered).catch(console.error)
+  void recordProactiveFeedback(answered, evidence).catch(console.error)
   void changed()
   return answered
 }
@@ -211,6 +275,7 @@ const responses = {
   later: '稍后',
   quiet: '别烦我',
   ignored: '没理',
+  missed: '没看到',
 } as const
 /** Reminders and follow-ups due in the next day, so "his deadline is near" can be noticed; with `todos`, also the open to-dos that have no time. */
 async function upcoming(now: number, todos = false): Promise<string> {
@@ -346,13 +411,16 @@ async function tick() {
         result: undefined,
       }))
       const late = now - asked.at > 5 * minute
-      return await show({
-        id: newId(),
-        at: now,
-        trigger: 'reminder',
-        text: asked.text,
-        reason: late ? `你设的提醒（${stamp(asked.at)}）` : '你设的提醒',
-      })
+      return await show(
+        {
+          id: newId(),
+          at: now,
+          trigger: 'reminder',
+          text: asked.text,
+          reason: late ? `你设的提醒（${stamp(asked.at)}）` : '你设的提醒',
+        },
+        idle,
+      )
     }
 
     // 2. The pet's own ideas. Budget first; then only at a moment that costs little to interrupt.
@@ -382,13 +450,16 @@ async function tick() {
     if (queued && !opening) {
       const line = queued
       queued = undefined
-      return await show({
-        id: newId(),
-        at: now,
-        trigger: 'activity',
-        text: line.text,
-        reason: line.reason,
-      })
+      return await show(
+        {
+          id: newId(),
+          at: now,
+          trigger: 'activity',
+          text: line.text,
+          reason: line.reason,
+        },
+        idle,
+      )
     }
 
     const followUp = due.find((r) => r.kind === 'follow-up')
@@ -424,13 +495,16 @@ async function tick() {
     if (!decision.speak) return
     // Things may have changed while the model thought.
     if (showing || speaker.busy()) return
-    await show({
-      id: newId(),
-      at: Date.now(),
-      trigger,
-      text: decision.text,
-      reason: decision.reason || facts.slice(0, 30),
-    })
+    await show(
+      {
+        id: newId(),
+        at: Date.now(),
+        trigger,
+        text: decision.text,
+        reason: decision.reason || facts.slice(0, 30),
+      },
+      await idleSeconds().catch(() => 0),
+    )
   } catch (error) {
     console.error('Proactive check failed', error)
   } finally {
@@ -446,7 +520,7 @@ export function startProactive(s: Speaker) {
 }
 export function stopProactive() {
   clearInterval(timer)
-  clearTimeout(showing?.timer)
+  clearInterval(showing?.timer)
 }
 /** For self-tests and the settings page: look now instead of waiting for the next minute. */
 export const checkNow = () => tick()

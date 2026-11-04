@@ -305,6 +305,21 @@ summary:focus-visible {
   background: #a6d46a;
   box-shadow: 0 0 0 2px var(--glass);
 }
+/* A line the pet said while the user was away: click to see it again. */
+.missed-dot {
+  position: absolute;
+  right: calc(8px + var(--pet-width) * 0.22);
+  bottom: calc(8px + var(--pet-height) * 0.82);
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border-radius: 50%;
+  background: #a6d46a;
+  box-shadow:
+    0 0 0 2px var(--glass),
+    0 2px 6px #0003;
+  animation: pop 220ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
 .bubble.proactive {
   display: flex;
   flex-direction: column;

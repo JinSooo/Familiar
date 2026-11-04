@@ -60,8 +60,13 @@ export function pace(input: {
   now: number
 }): Pace {
   const { level, history, days, now } = input
+  // 没看到 is not an answer: the user was not there to like or dislike it.
   const answered = history.filter(
-    (m) => m.trigger !== 'reminder' && m.response && now - m.at < 7 * day,
+    (m) =>
+      m.trigger !== 'reminder' &&
+      m.response &&
+      m.response !== 'missed' &&
+      now - m.at < 7 * day,
   )
   let base: Pace
   // Set when 自动 already learned from 回应 and 没理, so the three-day tally does not count them again.
@@ -134,6 +139,52 @@ export function budget(input: {
   if (now - (own[0]?.at ?? 0) < gapMinutes * minute)
     return { reason: '刚说过不久' }
   return {}
+}
+
+/**
+ * Where a bubble on screen stands. Its countdown starts at the first keyboard or mouse input
+ * after it appeared, so stepping away does not use it up; with no input for `waitFor` it went
+ * unseen (missed), and once the countdown runs out unanswered it was ignored.
+ */
+export function bubbleProgress(input: {
+  shownAt: number
+  /** When the countdown started; undefined while still waiting for the user. */
+  startedAt?: number
+  /** Seconds since the last keyboard or mouse input. */
+  idle: number
+  now: number
+  showFor: number
+  waitFor: number
+}): { startedAt?: number; end?: 'ignored' | 'missed' } {
+  const { shownAt, idle, now, showFor, waitFor } = input
+  let startedAt = input.startedAt
+  if (startedAt === undefined) {
+    const lastInput = now - idle * 1000
+    if (lastInput > shownAt) startedAt = lastInput
+    else if (now - shownAt >= waitFor) return { end: 'missed' }
+    else return {}
+  }
+  return now - startedAt >= showFor
+    ? { startedAt, end: 'ignored' }
+    : { startedAt }
+}
+
+/** How long an unseen line can still be shown again: the pet's own ideas go stale, reminders last the day. */
+export const missedFreshFor = 40 * minute
+/** Unseen lines that are still worth showing, newest first. */
+export function missedLines(
+  history: ProactiveMessage[],
+  now: number,
+): ProactiveMessage[] {
+  return history
+    .filter(
+      (m) =>
+        m.response === 'missed' &&
+        (m.trigger === 'reminder'
+          ? m.at >= startOfDay(now)
+          : now - m.at < missedFreshFor),
+    )
+    .sort((a, b) => b.at - a.at)
 }
 
 /** Active stretches from the raw record: gaps of idle (or no events) ≥ `away` split them. */

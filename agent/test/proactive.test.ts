@@ -17,9 +17,11 @@ import {
 } from '../src/proactive/reminders'
 import {
   breakpoint,
+  bubbleProgress,
   budget,
   candidates,
   inQuietHours,
+  missedLines,
   pace,
 } from '../src/proactive/rules'
 import { createReminderTools } from '../src/proactive/state'
@@ -348,5 +350,63 @@ describe('bubble', () => {
       '1h 24m',
       '2h 2m',
     ])
+  })
+})
+
+// Reported 2026-11-05: many lines showed as 没理 though they were never seen. A line came out
+// after 20 s without input, the user had stepped away, and 45 s later it counted as ignored.
+describe('unseen bubbles', () => {
+  const shownAt = at(10)
+  const run = (seconds: number, idle: number, startedAt?: number) =>
+    bubbleProgress({
+      shownAt,
+      startedAt,
+      idle,
+      now: shownAt + seconds * 1000,
+      showFor: 45000,
+      waitFor: 10 * minute,
+    })
+
+  test('away when it appears: the countdown waits, then it was missed', () => {
+    // 30 s idle when shown, still nobody 2 minutes on: not ignored, not started.
+    expect(run(120, 150)).toEqual({})
+    expect(run(10 * 60, 630)).toEqual({ end: 'missed' })
+  })
+
+  test('the countdown starts at the first input after it appeared', () => {
+    const back = run(300, 2)
+    expect(back.startedAt).toBe(shownAt + 298 * 1000)
+    expect(run(320, 22, back.startedAt).end).toBeUndefined()
+    expect(run(345, 47, back.startedAt)).toEqual({
+      startedAt: back.startedAt,
+      end: 'ignored',
+    })
+  })
+
+  test('there and typing: ignored after the usual 45 seconds', () => {
+    const typing = run(5, 1)
+    expect(run(50, 1, typing.startedAt).end).toBe('ignored')
+  })
+
+  test('没看到 does not lower the pace', () => {
+    const p = (history: ProactiveMessage[]) =>
+      pace({ level: 'normal', history, days: {}, now: at(12) })
+    expect(p([said(9, 'missed'), said(10, 'missed')])).toEqual(p([]))
+  })
+
+  test('unseen lines can be seen again: own ideas for 40 minutes, reminders for the day', () => {
+    const now = at(12)
+    const own = { ...said(11, 'missed'), at: at(11, 30), id: 'own' }
+    const stale = { ...said(10, 'missed'), id: 'stale' }
+    const reminder = {
+      ...said(9, 'missed'),
+      id: 'r',
+      trigger: 'reminder' as const,
+    }
+    const answered = { ...said(11, 'ignored'), at: at(11, 50), id: 'seen' }
+    expect(
+      missedLines([stale, reminder, answered, own], now).map((m) => m.id),
+    ).toEqual(['own', 'r'])
+    expect(missedLines([reminder], at(12) + 86400000)).toEqual([])
   })
 })

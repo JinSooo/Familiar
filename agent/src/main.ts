@@ -80,6 +80,7 @@ import {
   noticeActivity,
   proactiveChanged,
   proactiveStatus,
+  reopen as reopenProactive,
   respond,
   resumeProactive,
   startProactive,
@@ -331,7 +332,11 @@ async function openConversation(id: string) {
   reflectSoon()
 }
 function refreshState() {
-  const next = resolveState(activity) as PetState
+  // A proactive bubble waiting for an answer keeps the pet in its waiting pose, like an approval.
+  const next = resolveState({
+    ...activity,
+    'needs-you': activity['needs-you'] || Boolean(session.proactive),
+  }) as PetState
   if (next !== state) {
     state = next
     emit(IPC.petState, state, 'pet')
@@ -1143,7 +1148,7 @@ async function request(
       return getSettings().perception
     }
     case IPC.proactiveStatus:
-      requireSender(window, ['settings', 'panel'])
+      requireSender(window, ['settings', 'panel', 'pet'])
       return proactiveStatus()
     case IPC.proactiveRespond: {
       requireSender(window, ['pet', 'chat', 'main'])
@@ -1153,6 +1158,7 @@ async function request(
       const message = session.proactive
       session = { ...session, proactive: undefined }
       sizePet()
+      refreshState()
       // 好: the line becomes part of the conversation, so the reply has something to answer.
       if (
         choice === 'ok' &&
@@ -1181,6 +1187,10 @@ async function request(
     case IPC.proactiveCheck:
       requireSender(window, ['settings'])
       return checkNow()
+    case IPC.proactiveReopen:
+      requireSender(window, ['pet', 'panel'])
+      if (controller || capsuleOpen) throw new Error('正在对话，稍后再看')
+      return reopenProactive(z.string().parse(input))
     case IPC.proactiveResume:
       requireSender(window, ['settings', 'panel'])
       return resumeProactive()
@@ -1380,6 +1390,7 @@ async function start() {
       session = { ...session, proactive: message }
       sizePet()
       emit(IPC.petGesture, 'wave', 'pet')
+      refreshState()
       publishSession()
     },
     changed: (status) => {
@@ -1390,6 +1401,7 @@ async function start() {
       ) {
         session = { ...session, proactive: undefined }
         sizePet()
+        refreshState()
         publishSession()
       }
       broadcast(IPC.proactiveChanged, status)

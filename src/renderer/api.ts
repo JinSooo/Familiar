@@ -119,6 +119,7 @@ export const api: FamiliarAPI = {
     request(IPC.proactiveRespond, id, response),
   resumeProactive: () => request(IPC.proactiveResume),
   checkProactive: () => request(IPC.proactiveCheck),
+  reopenProactive: (id) => request(IPC.proactiveReopen, id),
   cancelReminder: (id) => request(IPC.reminderCancel, id),
   onProactiveChanged: (cb) => subscribe(IPC.proactiveChanged, cb),
   onDirRulesChanged: (cb) => subscribe(IPC.dirRulesChanged, cb),

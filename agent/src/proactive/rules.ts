@@ -64,6 +64,8 @@ export function pace(input: {
     (m) => m.trigger !== 'reminder' && m.response && now - m.at < 7 * day,
   )
   let base: Pace
+  // Set when 自动 already learned from 回应 and 没理, so the three-day tally does not count them again.
+  let learned = false
   if (level === 'auto') {
     const week = new Date(now - 7 * day).toISOString().slice(0, 10)
     const talked = Object.entries(days)
@@ -77,6 +79,7 @@ export function pace(input: {
           : { perDay: 3, gapMinutes: 75 }
     // Enough answers to learn from: lines that land earn more room, ignored ones less.
     if (answered.length >= 3) {
+      learned = true
       const rate =
         answered.filter((m) => m.response === 'ok').length / answered.length
       if (rate >= 0.5)
@@ -95,7 +98,9 @@ export function pace(input: {
   const count = (r: ProactiveMessage['response']) =>
     recent.filter((m) => m.response === r).length
   const perDay =
-    base.perDay - 2 * count('quiet') - count('ignored') + count('ok')
+    base.perDay -
+    2 * count('quiet') -
+    (learned ? 0 : count('ignored') - count('ok'))
   return {
     perDay: Math.max(1, Math.min(ceiling.perDay, base.perDay + 1, perDay)),
     gapMinutes: Math.round(

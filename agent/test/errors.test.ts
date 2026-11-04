@@ -44,6 +44,12 @@ describe('what the user is told', () => {
       }),
       '45 秒没有回应',
     ],
+    // Seen 2026-11-04: the relay's upstream Responses stream stopped after a tool ran.
+    [
+      'relay stream cut before the end',
+      new Error('responses stream ended without ***.completed'),
+      '传到一半连接断开',
+    ],
     ['bad key', apiError(401, '{"error":"invalid api key"}'), 'API Key'],
     [
       'out of quota',

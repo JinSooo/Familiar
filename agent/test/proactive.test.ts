@@ -154,6 +154,17 @@ describe('budget', () => {
       gapMinutes: 90,
     })
   })
+
+  // Reported 2026-11-04: four unanswered lines took 自动 to 1 a day, because each 没理 counted
+  // in the week's answer rate and again in the three-day tally.
+  test('自动 counts each 没理 once; 别烦我 still weighs on top', () => {
+    const day = new Date(at(12) - 86400000).toISOString().slice(0, 10)
+    const ignored = [9, 10, 11, 11.5].map((h) => said(h, 'ignored'))
+    const auto = (history: ProactiveMessage[]) =>
+      pace({ level: 'auto', history, days: { [day]: 21 }, now: at(12) })
+    expect(auto(ignored)).toEqual({ perDay: 3, gapMinutes: 90 })
+    expect(auto([...ignored, said(8, 'quiet')]).perDay).toBe(1)
+  })
 })
 
 const activity = (

@@ -48,7 +48,7 @@ export function agentError(error: unknown): Error {
     message =
       '模型服务暂时不可用（服务端 5xx），已自动重试仍失败，请稍后再试或换个模型。'
   else if (
-    /ERR_INCOMPLETE_CHUNKED_ENCODING|ERR_CONNECTION_(RESET|CLOSED)|terminated|Failed to process successful response/i.test(
+    /ERR_INCOMPLETE_CHUNKED_ENCODING|ERR_CONNECTION_(RESET|CLOSED)|terminated|Failed to process successful response|stream ended without/i.test(
       text,
     )
   )

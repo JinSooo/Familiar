@@ -23,7 +23,7 @@ const QUICK_SIZE: (f64, f64) = (680., 76.);
 const QUICK_OPEN_HEIGHT: f64 = 520.;
 const QUICK_MIN: (f64, f64) = (420., 240.);
 /// Where the user left the bar: top-left corner, width, and the open height. Saved to
-/// quick-window.json; without it the open box is centered on the screen under the pointer.
+/// quick-window.json; without it the open box is centered on the screen in use.
 #[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
 struct QuickFrame {
     x: f64,
@@ -538,24 +538,22 @@ pub fn action(app: &tauri::AppHandle, action: crate::protocol::UiAction) -> taur
             let scale = w.scale_factor()?;
             let now = w.outer_size()?.to_logical::<f64>(scale);
             let saved = *QUICK_FRAME.lock().unwrap();
-            // Where the user left it; otherwise the open box centered on the screen under the pointer.
-            let place = match saved {
-                Some(f) => Some((f.x, f.y, f.width, f.height)),
-                None => app
-                    .cursor_position()
-                    .ok()
-                    .and_then(|p| app.monitor_from_point(p.x, p.y).ok().flatten())
-                    .or_else(|| w.primary_monitor().ok().flatten())
-                    .map(|m| {
-                        let p = m.work_area().position.to_logical::<f64>(m.scale_factor());
-                        let s = m.work_area().size.to_logical::<f64>(m.scale_factor());
-                        (
-                            p.x + (s.width - QUICK_SIZE.0) / 2.,
-                            p.y + ((s.height - QUICK_OPEN_HEIGHT) / 2.).max(0.),
-                            QUICK_SIZE.0,
-                            QUICK_OPEN_HEIGHT,
-                        )
-                    }),
+            // Where the user left it when that is on the screen in use; otherwise the open box
+            // centered there, at the size the user gave it.
+            let area = screen_in_use(app);
+            let (width, open) = saved.map_or((QUICK_SIZE.0, QUICK_OPEN_HEIGHT), |f| (f.width, f.height));
+            let place = match (saved, area) {
+                (Some(f), Some(a)) if a.holds(f.x + f.width / 2., f.y + f.height / 2.) => {
+                    Some((f.x, f.y, width, open))
+                }
+                (Some(f), None) => Some((f.x, f.y, width, open)),
+                (_, Some(a)) => Some((
+                    a.x + (a.width - width) / 2.,
+                    a.y + ((a.height - open) / 2.).max(0.),
+                    width,
+                    open,
+                )),
+                (None, None) => None,
             };
             if let Some((x, y, width, open)) = place {
                 quick_quiet();
@@ -580,11 +578,7 @@ pub fn action(app: &tauri::AppHandle, action: crate::protocol::UiAction) -> taur
         UiAction::ShowMain => {
             // A regular app while the window is open: it gets a Dock icon and a place in ⌘Tab.
             app.set_activation_policy(tauri::ActivationPolicy::Regular)?;
-            let w = app.get_webview_window("main").unwrap();
-            w.unminimize()?;
-            w.show()?;
-            w.set_focus()?;
-            settle_on_pointer_screen(app, "main");
+            show_here(app, "main")?;
             main_signal(app);
         }
         UiAction::Shortcuts { bindings } => crate::shortcuts::apply(app, &bindings),
@@ -598,10 +592,7 @@ pub fn action(app: &tauri::AppHandle, action: crate::protocol::UiAction) -> taur
             }
         }
         UiAction::ShowSettings => {
-            let w = app.get_webview_window("settings").unwrap();
-            w.show()?;
-            w.set_focus()?;
-            settle_on_pointer_screen(app, "settings");
+            show_here(app, "settings")?;
         }
         UiAction::PetSize { width, height } => {
             if !width.is_finite() || !height.is_finite() || width <= 0. || height <= 0. {
@@ -809,71 +800,150 @@ fn move_to_active_space(w: &tauri::WebviewWindow) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Brought to the current desktop, a window can land on another screen or past its edge: with two
-/// displays the system moved the big window below the built-in screen, a moment after it was
-/// activated. Once that has happened, put it whole on the screen under the pointer.
-fn settle_on_pointer_screen(app: &tauri::AppHandle, label: &'static str) {
-    let app = app.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(300));
-        let main = app.clone();
-        let _ = app.run_on_main_thread(move || {
-            if let Some(w) = main.get_webview_window(label) {
-                if let Err(e) = onto_pointer_screen(&w) {
-                    eprintln!("Keep {label} on screen: {e}");
-                }
-            }
-        });
-    });
+/// A screen's work area in top-left points, the space window positions use.
+#[derive(Clone, Copy)]
+struct Area {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
 }
-fn onto_pointer_screen(w: &tauri::WebviewWindow) -> tauri::Result<()> {
-    let Some((mx, my)) = pointer() else {
-        return Ok(());
-    };
-    // Screens in the same top-left point space as window positions.
-    let screen = w.available_monitors()?.into_iter().find_map(|m| {
-        let scale = m.scale_factor();
-        let p = m.position().to_logical::<f64>(scale);
-        let s = m.size().to_logical::<f64>(scale);
-        let inside = mx >= p.x && mx < p.x + s.width && my >= p.y && my < p.y + s.height;
-        inside.then(|| {
-            (
-                m.work_area().position.to_logical::<f64>(scale),
-                m.work_area().size.to_logical::<f64>(scale),
-            )
+impl Area {
+    fn holds(&self, x: f64, y: f64) -> bool {
+        x >= self.x && x < self.x + self.width && y >= self.y && y < self.y + self.height
+    }
+}
+
+/// The screen the user is working on: the one holding the front window of the frontmost app.
+/// Read before Familiar activates. The pointer was not a good guide: with two displays it often
+/// rests on the screen the user is not looking at. Without a front window, the primary screen.
+fn screen_in_use(app: &tauri::AppHandle) -> Option<Area> {
+    let monitors = app.available_monitors().ok()?;
+    let area_of = |x: f64, y: f64| {
+        monitors.iter().find_map(|m| {
+            let scale = m.scale_factor();
+            let p = m.position().to_logical::<f64>(scale);
+            let s = m.size().to_logical::<f64>(scale);
+            let screen = Area { x: p.x, y: p.y, width: s.width, height: s.height };
+            screen.holds(x, y).then(|| {
+                let p = m.work_area().position.to_logical::<f64>(scale);
+                let s = m.work_area().size.to_logical::<f64>(scale);
+                Area { x: p.x, y: p.y, width: s.width, height: s.height }
+            })
         })
-    });
-    let Some((area, size)) = screen else {
-        return Ok(());
     };
+    front_window_center()
+        .and_then(|(x, y)| area_of(x, y))
+        .or_else(|| {
+            let m = app.primary_monitor().ok()??;
+            let scale = m.scale_factor();
+            let p = m.work_area().position.to_logical::<f64>(scale);
+            let s = m.work_area().size.to_logical::<f64>(scale);
+            Some(Area { x: p.x, y: p.y, width: s.width, height: s.height })
+        })
+}
+
+#[link(name = "CoreGraphics", kind = "framework")]
+extern "C" {
+    fn CGWindowListCopyWindowInfo(option: u32, relative_to: u32) -> *mut std::ffi::c_void;
+}
+
+/// Center (top-left points) of the frontmost app's frontmost ordinary window. Window bounds and
+/// owners are readable without screen recording permission; titles are not needed.
+fn front_window_center() -> Option<(f64, f64)> {
+    use tauri_nspanel::objc2::rc::Retained;
+    use tauri_nspanel::objc2::runtime::AnyObject;
+    use tauri_nspanel::objc2_app_kit::NSWorkspace;
+    use tauri_nspanel::objc2_foundation::{NSArray, NSDictionary, NSNumber, NSString};
+    let pid = NSWorkspace::sharedWorkspace()
+        .frontmostApplication()?
+        .processIdentifier();
+    // On-screen windows only, front to back, without the desktop.
+    let raw = unsafe { CGWindowListCopyWindowInfo(1 | 16, 0) };
+    if raw.is_null() {
+        return None;
+    }
+    // SAFETY: a CFArray of CFDictionary, toll-free bridged; the copy is ours to release.
+    let list: Retained<NSArray<NSDictionary<NSString, AnyObject>>> =
+        unsafe { Retained::from_raw(raw.cast())? };
+    let number = |d: &NSDictionary<NSString, AnyObject>, key: &str| -> Option<f64> {
+        let v = d.objectForKey(&NSString::from_str(key))?;
+        Some(v.downcast::<NSNumber>().ok()?.as_f64())
+    };
+    for d in list.iter() {
+        if number(&d, "kCGWindowOwnerPID")? as i32 != pid || number(&d, "kCGWindowLayer")? != 0. {
+            continue;
+        }
+        let bounds = d.objectForKey(&NSString::from_str("kCGWindowBounds"))?;
+        let bounds = bounds.downcast::<NSDictionary>().ok()?;
+        // SAFETY: the bounds dictionary maps NSString keys to NSNumber values.
+        let bounds: &NSDictionary<NSString, AnyObject> = unsafe { &*(&*bounds as *const NSDictionary).cast() };
+        let (x, y) = (number(bounds, "X")?, number(bounds, "Y")?);
+        let (w, h) = (number(bounds, "Width")?, number(bounds, "Height")?);
+        if w < 100. || h < 100. {
+            continue;
+        }
+        return Some((x + w / 2., y + h / 2.));
+    }
+    None
+}
+
+/// Opens a big window on the screen and desktop the user is on. A window already open on another
+/// desktop is hidden and placed first, so showing it again brings it here (MoveToActiveSpace acts
+/// only when a window comes on screen) instead of switching the user away.
+fn show_here(app: &tauri::AppHandle, label: &'static str) -> tauri::Result<()> {
+    let w = app.get_webview_window(label).unwrap();
+    let area = screen_in_use(app);
+    if w.is_visible()? && !on_active_space(&w)? {
+        w.hide()?;
+    }
+    if let Some(area) = area {
+        onto_screen(&w, area)?;
+    }
+    w.unminimize()?;
+    w.show()?;
+    w.set_focus()?;
+    // The system can still nudge a window it has just brought over; put it back, whole.
+    if let Some(area) = area {
+        let app = app.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            let main = app.clone();
+            let _ = app.run_on_main_thread(move || {
+                if let Some(w) = main.get_webview_window(label) {
+                    if let Err(e) = onto_screen(&w, area) {
+                        eprintln!("Keep {label} on screen: {e}");
+                    }
+                }
+            });
+        });
+    }
+    Ok(())
+}
+
+fn on_active_space(w: &tauri::WebviewWindow) -> tauri::Result<bool> {
+    use tauri_nspanel::objc2_app_kit::NSWindow;
+    let ptr = w.ns_window()? as *const NSWindow;
+    // SAFETY: the live NSWindow of this webview window, used on the main thread.
+    Ok(unsafe { ptr.as_ref() }.is_none_or(|ns| ns.isOnActiveSpace()))
+}
+
+/// Keeps a window where it is when it is already on this screen, else centers it there.
+fn onto_screen(w: &tauri::WebviewWindow, area: Area) -> tauri::Result<()> {
     let scale = w.scale_factor()?;
     let p = w.outer_position()?.to_logical::<f64>(scale);
     let s = w.outer_size()?.to_logical::<f64>(scale);
-    let (cx, cy) = (p.x + s.width / 2., p.y + s.height / 2.);
-    let inside = cx >= area.x && cx <= area.x + size.width && cy >= area.y && cy <= area.y + size.height;
-    let (x, y) = if inside {
+    let (x, y) = if area.holds(p.x + s.width / 2., p.y + s.height / 2.) {
         (p.x, p.y)
     } else {
-        (area.x + (size.width - s.width) / 2., area.y + (size.height - s.height) / 2.)
+        (area.x + (area.width - s.width) / 2., area.y + (area.height - s.height) / 2.)
     };
     let to = LogicalPosition::new(
-        x.clamp(area.x, area.x + (size.width - s.width).max(0.)),
-        y.clamp(area.y, area.y + (size.height - s.height).max(0.)),
+        x.clamp(area.x, area.x + (area.width - s.width).max(0.)),
+        y.clamp(area.y, area.y + (area.height - s.height).max(0.)),
     );
     if (to.x - p.x).abs() > 0.5 || (to.y - p.y).abs() > 0.5 {
         w.set_position(to)?;
     }
     Ok(())
-}
-
-/// The pointer in top-left points. Tauri's cursor position scales every screen by the main
-/// screen's factor, so on a 1x display beside a 2x one it matched no monitor.
-fn pointer() -> Option<(f64, f64)> {
-    use tauri_nspanel::objc2::MainThreadMarker;
-    use tauri_nspanel::objc2_app_kit::{NSEvent, NSScreen};
-    let mtm = MainThreadMarker::new()?;
-    let primary = NSScreen::screens(mtm).firstObject()?;
-    let p = NSEvent::mouseLocation();
-    // AppKit counts up from the bottom of the primary screen.
-    Some((p.x, primary.frame().size.height - p.y))
 }

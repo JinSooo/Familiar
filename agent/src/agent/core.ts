@@ -194,7 +194,7 @@ function interruptedStream(error: unknown): boolean {
     if (typeof current !== 'object') break
     current = (current as { cause?: unknown }).cause
   }
-  return /ERR_INCOMPLETE_CHUNKED_ENCODING|ERR_CONNECTION_(RESET|CLOSED)|ERR_NETWORK_CHANGED|ECONNRESET|terminated|socket hang up|Failed to process successful response/i.test(
+  return /ERR_INCOMPLETE_CHUNKED_ENCODING|ERR_CONNECTION_(RESET|CLOSED)|ERR_NETWORK_CHANGED|ECONNRESET|terminated|socket hang up|Failed to process successful response|stream ended without/i.test(
     chain.join(' '),
   )
 }

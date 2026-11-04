@@ -121,6 +121,7 @@ export const api: FamiliarAPI = {
   checkProactive: () => request(IPC.proactiveCheck),
   cancelReminder: (id) => request(IPC.reminderCancel, id),
   onProactiveChanged: (cb) => subscribe(IPC.proactiveChanged, cb),
+  onDirRulesChanged: (cb) => subscribe(IPC.dirRulesChanged, cb),
   petMenu: (x, y) => {
     void invoke('pet_menu', { x, y }).catch(console.error)
   },

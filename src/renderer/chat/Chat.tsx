@@ -3,7 +3,7 @@ import { ImageViewer, SourceCards } from './Visual'
 import { needsTimeDivider, formatMessageTime, replyParts } from './content'
 import { useEffect, useRef, useState } from 'react'
 import { Icon } from '../shared-ui/Icon'
-import type { ChatView, PetState, Session } from '../../shared'
+import type { ChatView, PetState, Session, Settings } from '../../shared'
 import { History, errorText } from './History'
 import { api } from '../api'
 import { Pet } from '../pet/Pet'
@@ -43,6 +43,7 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
   }, [view, big])
   const [name, setName] = useState('小黑')
   const [mode, setMode] = useState('自动')
+  const [toolView, setToolView] = useState<ToolView>('brief')
   const bottom = useRef<HTMLDivElement>(null)
   const list = useRef<HTMLElement>(null)
   // Follow new output only while the reader is already near the bottom.
@@ -51,6 +52,7 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
     const update = () => {
       void api.getSettings().then((s) => {
         setName(s.pet.name)
+        setToolView(s.toolView)
         setMode(
           { ask: '询问', auto: '自动', full: '完全访问' }[s.permissionMode],
         )
@@ -196,6 +198,7 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
                     <Reply
                       message={m}
                       tools={session.tools.filter((t) => t.turn === i)}
+                      view={toolView}
                     />
                   ) : editing === i ? (
                     <EditMessage
@@ -274,20 +277,22 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
                     >
                       允许
                     </button>
+                    {(a.dir || a.server) && (
+                      <button
+                        title={
+                          a.dir
+                            ? `之后 ${a.dir} 里的请求都不再询问，可在设置「权限 › 目录规则」里删除`
+                            : `之后 ${a.server} 的工具都不再询问，可在设置「扩展」里改回`
+                        }
+                        onClick={() => api.approve(a.id, 'always')}
+                      >
+                        全部允许
+                      </button>
+                    )}
                     <button onClick={() => api.approve(a.id, 'deny')}>
                       拒绝
                     </button>
                   </div>
-                  {a.dir && (
-                    <button
-                      className="link"
-                      title={a.dir}
-                      onClick={() => api.approve(a.id, 'always')}
-                    >
-                      总是允许{' '}
-                      {a.dir.split('/').filter(Boolean).at(-1) ?? a.dir} 目录
-                    </button>
-                  )}
                 </article>
               ))}
               {actionError && (
@@ -460,12 +465,16 @@ export const stamp = (at: number) =>
   new Date(at).toLocaleString('zh-CN', { hour12: false })
 
 /** A reply in the order it happened: text, tool steps, source cards and made files interleaved. */
+export type ToolView = Settings['toolView']
 export function Reply({
   message,
   tools,
+  view = 'brief',
 }: {
   message: Session['messages'][number]
   tools: Session['tools']
+  /** How tool steps show: one line each, opened, or not at all (settings 对话过程). */
+  view?: ToolView
 }) {
   const parts = replyParts(
     message.content,
@@ -483,7 +492,7 @@ export function Reply({
         <Markdown content={part.text} />
       </article>
     ) : part.kind === 'tools' ? (
-      <ToolSteps key={k} tools={part.tools} />
+      <ToolSteps key={k} tools={part.tools} view={view} />
     ) : part.kind === 'sources' ? (
       <SourceCards key={k} sources={part.sources} />
     ) : (
@@ -531,14 +540,41 @@ function ApprovalDetail({
 }
 
 /** One line per tool step; more than three fold into a summary like 「搜索 4 次 · 读网页 9 次」. */
-function ToolSteps({ tools }: { tools: Session['tools'] }) {
-  const row = (t: Session['tools'][number]) => (
-    <p className="tool muted" key={t.id}>
-      {t.done ? '✓ 已' : '正在'}
-      {t.name}
-    </p>
-  )
-  if (tools.length <= 3) return <>{tools.map(row)}</>
+/** One line per step; a step with its command or result opens to show them in full. */
+function ToolSteps({
+  tools,
+  view,
+}: {
+  tools: Session['tools']
+  view: ToolView
+}) {
+  if (view === 'hidden') return null
+  const row = (t: Session['tools'][number]) => {
+    const label = (
+      <>
+        {t.done ? '✓ 已' : '正在'}
+        {t.name}
+      </>
+    )
+    if (!t.detail && !t.output)
+      return (
+        <p className="tool muted" key={t.id}>
+          {label}
+        </p>
+      )
+    return (
+      <details
+        className="tool tool-step muted"
+        key={t.id}
+        open={view === 'full'}
+      >
+        <summary>{label}</summary>
+        {t.detail && <pre className="tool-io">{t.detail}</pre>}
+        {t.output && <pre className="tool-io output">{t.output}</pre>}
+      </details>
+    )
+  }
+  if (view === 'full' || tools.length <= 3) return <>{tools.map(row)}</>
   const running = tools.filter((t) => !t.done)
   const counts = new Map<string, number>()
   for (const t of tools) {

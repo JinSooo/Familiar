@@ -279,6 +279,11 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
                 .build(),
         )
         .build()?;
+    // Opening settings or the big window shows it on the current desktop instead of switching
+    // to the desktop it was last on.
+    for label in ["settings", "main"] {
+        move_to_active_space(&app.get_webview_window(label).unwrap())?;
+    }
     let quick = WebviewWindowBuilder::new(app, "quick", url("quick"))
         .title("Familiar")
         // Files dragged in from Finder reach the page's drop handler; Tauri's own handler
@@ -579,6 +584,7 @@ pub fn action(app: &tauri::AppHandle, action: crate::protocol::UiAction) -> taur
             w.unminimize()?;
             w.show()?;
             w.set_focus()?;
+            settle_on_pointer_screen(app, "main");
             main_signal(app);
         }
         UiAction::Shortcuts { bindings } => crate::shortcuts::apply(app, &bindings),
@@ -595,6 +601,7 @@ pub fn action(app: &tauri::AppHandle, action: crate::protocol::UiAction) -> taur
             let w = app.get_webview_window("settings").unwrap();
             w.show()?;
             w.set_focus()?;
+            settle_on_pointer_screen(app, "settings");
         }
         UiAction::PetSize { width, height } => {
             if !width.is_finite() || !height.is_finite() || width <= 0. || height <= 0. {
@@ -788,4 +795,85 @@ fn remember_quick(app: &tauri::AppHandle) {
             }
         }
     });
+}
+
+fn move_to_active_space(w: &tauri::WebviewWindow) -> tauri::Result<()> {
+    use tauri_nspanel::objc2_app_kit::{NSWindow, NSWindowCollectionBehavior};
+    let ptr = w.ns_window()? as *const NSWindow;
+    // SAFETY: Tauri hands back the live NSWindow of this webview window; setup runs on the main thread.
+    if let Some(ns) = unsafe { ptr.as_ref() } {
+        ns.setCollectionBehavior(
+            ns.collectionBehavior() | NSWindowCollectionBehavior::MoveToActiveSpace,
+        );
+    }
+    Ok(())
+}
+
+/// Brought to the current desktop, a window can land on another screen or past its edge: with two
+/// displays the system moved the big window below the built-in screen, a moment after it was
+/// activated. Once that has happened, put it whole on the screen under the pointer.
+fn settle_on_pointer_screen(app: &tauri::AppHandle, label: &'static str) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let main = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            if let Some(w) = main.get_webview_window(label) {
+                if let Err(e) = onto_pointer_screen(&w) {
+                    eprintln!("Keep {label} on screen: {e}");
+                }
+            }
+        });
+    });
+}
+fn onto_pointer_screen(w: &tauri::WebviewWindow) -> tauri::Result<()> {
+    let Some((mx, my)) = pointer() else {
+        return Ok(());
+    };
+    // Screens in the same top-left point space as window positions.
+    let screen = w.available_monitors()?.into_iter().find_map(|m| {
+        let scale = m.scale_factor();
+        let p = m.position().to_logical::<f64>(scale);
+        let s = m.size().to_logical::<f64>(scale);
+        let inside = mx >= p.x && mx < p.x + s.width && my >= p.y && my < p.y + s.height;
+        inside.then(|| {
+            (
+                m.work_area().position.to_logical::<f64>(scale),
+                m.work_area().size.to_logical::<f64>(scale),
+            )
+        })
+    });
+    let Some((area, size)) = screen else {
+        return Ok(());
+    };
+    let scale = w.scale_factor()?;
+    let p = w.outer_position()?.to_logical::<f64>(scale);
+    let s = w.outer_size()?.to_logical::<f64>(scale);
+    let (cx, cy) = (p.x + s.width / 2., p.y + s.height / 2.);
+    let inside = cx >= area.x && cx <= area.x + size.width && cy >= area.y && cy <= area.y + size.height;
+    let (x, y) = if inside {
+        (p.x, p.y)
+    } else {
+        (area.x + (size.width - s.width) / 2., area.y + (size.height - s.height) / 2.)
+    };
+    let to = LogicalPosition::new(
+        x.clamp(area.x, area.x + (size.width - s.width).max(0.)),
+        y.clamp(area.y, area.y + (size.height - s.height).max(0.)),
+    );
+    if (to.x - p.x).abs() > 0.5 || (to.y - p.y).abs() > 0.5 {
+        w.set_position(to)?;
+    }
+    Ok(())
+}
+
+/// The pointer in top-left points. Tauri's cursor position scales every screen by the main
+/// screen's factor, so on a 1x display beside a 2x one it matched no monitor.
+fn pointer() -> Option<(f64, f64)> {
+    use tauri_nspanel::objc2::MainThreadMarker;
+    use tauri_nspanel::objc2_app_kit::{NSEvent, NSScreen};
+    let mtm = MainThreadMarker::new()?;
+    let primary = NSScreen::screens(mtm).firstObject()?;
+    let p = NSEvent::mouseLocation();
+    // AppKit counts up from the bottom of the primary screen.
+    Some((p.x, primary.frame().size.height - p.y))
 }

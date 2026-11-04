@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { api } from '../api'
 import { Attachments } from '../chat/Attachments'
-import { MessageActions, Reply } from '../chat/Chat'
+import { MessageActions, Reply, type ToolView } from '../chat/Chat'
 import { errorText } from '../chat/History'
 import { PlainText } from '../chat/Markdown'
 import { Composer } from '../shared-ui/Composer'
@@ -21,6 +21,7 @@ const recent = 6
 export function Quick() {
   const session = useSession()
   const [name, setName] = useState('小黑')
+  const [toolView, setToolView] = useState<ToolView>('brief')
   const [actionError, setActionError] = useState('')
   const act = (work: Promise<unknown>, fallback: string) => {
     setActionError('')
@@ -38,7 +39,10 @@ export function Quick() {
     const update = () =>
       void api
         .getSettings()
-        .then((s) => setName(s.pet.name))
+        .then((s) => {
+          setName(s.pet.name)
+          setToolView(s.toolView)
+        })
         .catch(console.error)
     update()
     window.addEventListener('focus', update)
@@ -137,6 +141,7 @@ export function Quick() {
                     <Reply
                       message={m}
                       tools={session.tools.filter((t) => t.turn === i)}
+                      view={toolView}
                     />
                   ) : (
                     <>

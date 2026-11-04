@@ -223,7 +223,9 @@ export function createWorkspaceTools(settings: Settings): ToolSet {
     ),
     run_shell: tool({
       description:
-        '用 zsh 执行一条 shell 命令，返回输出和退出码。默认只能写工作目录且禁止联网；确实需要联网时设置 network: true（会请求用户授权）。',
+        settings.permissionMode !== 'full' && settings.shellSandbox
+          ? '用 zsh 执行一条 shell 命令，返回输出和退出码。命令在 Familiar 的沙箱里运行：只能写工作目录，默认禁止联网（确实需要时设置 network: true；询问模式下会请求用户授权）；~/.familiar 里除工作目录、memory、conversations、knowledge、skills 外都读不到，~/.ssh、钥匙串、浏览器密码文件也读不到。遇到 Operation not permitted 就是被这个沙箱拦下的，不是 macOS 权限问题，不要让用户去系统设置里授权；告诉用户可以在 Familiar 设置「权限」里关掉命令沙箱。'
+          : '用 zsh 执行一条 shell 命令，返回输出和退出码。命令不在沙箱里运行，和用户在终端里执行一样，可以读写整台电脑、可以联网，所以只做用户要求的事，不要顺手删改文件。',
       inputSchema: z.object({
         command: z.string(),
         cwd: z.string().optional(),
@@ -241,7 +243,8 @@ export function createWorkspaceTools(settings: Settings): ToolSet {
             input.cwd ?? settings.workspacePath,
             normalizePath(settings.workspacePath),
           )
-          const full = settings.permissionMode === 'full'
+          const full =
+            settings.permissionMode === 'full' || !settings.shellSandbox
           const args = full
             ? ['-c', input.command]
             : [
@@ -278,7 +281,12 @@ export function createWorkspaceTools(settings: Settings): ToolSet {
             })
             child.on('close', (exitCode, signal) => {
               clearTimeout(timer)
-              resolve({ output, exitCode, signal, timedOut })
+              // Say where the refusal came from, for the user and so the model explains it right.
+              const blocked =
+                !full && /Operation not permitted/.test(output)
+                  ? '\n（被 Familiar 的命令沙箱拦下：沙箱只能写工作目录，~/.familiar 里大部分位置和密钥读不到。需要时可以在设置「权限」里关掉命令沙箱。）'
+                  : ''
+              resolve({ output: output + blocked, exitCode, signal, timedOut })
             })
           })
         } catch (error) {

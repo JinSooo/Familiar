@@ -43,6 +43,36 @@ export async function forbiddenRoots(): Promise<string[]> {
   return roots
 }
 
+/**
+ * Protected places a command names, best effort: paths written from ~, $HOME or the home folder
+ * that fall in a forbidden root (or are a browser's password file), leaving out the workspace and
+ * the folders the model may read. A command that reaches them some other way is not caught.
+ */
+export async function protectedPathsIn(
+  command: string,
+  allowed: string[],
+): Promise<string[]> {
+  const home = homedir()
+  const escaped = home.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const token = new RegExp(
+    `(?:~|\\$\\{?HOME\\}?|${escaped})(/[^\\s'"\`;|&<>()]*)?`,
+    'g',
+  )
+  const roots = await forbiddenRoots()
+  const found = new Set<string>()
+  for (const match of command.matchAll(token)) {
+    let path: string
+    try {
+      path = normalizePath(join(home, match[1] ?? ''))
+    } catch {
+      continue
+    }
+    if (allowed.some((dir) => within(path, dir))) continue
+    if (roots.some((root) => within(path, root)) || browserSecret(path))
+      found.add(path)
+  }
+  return [...found]
+}
 export function browserSecret(path: string): boolean {
   return /\/(?:Login Data(?:-journal|-wal|-shm)?|logins\.json|key4\.db(?:-wal|-shm)?)$/i.test(
     path,

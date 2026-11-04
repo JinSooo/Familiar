@@ -243,3 +243,77 @@ describe('resending', () => {
     expect(() => rewind(s, 1)).toThrow()
   })
 })
+
+// Reported 2026-11-04: a command in the conversation showed cut off with "…" and what it
+// returned could not be seen at all. Both are kept now, and come back from the file.
+describe('tool steps', () => {
+  test('the whole command and its output survive a save, even an output with "-->"', () => {
+    const command = `grep -rn "needle" ${'src/very/long/path/'.repeat(5)}file.ts`
+    const output = 'line 1\n<!-- not a marker --> still output\nline 3'
+    const tools: Session['tools'] = [
+      {
+        id: 't',
+        name: '执行命令 grep…',
+        done: true,
+        turn: 1,
+        detail: command,
+        output,
+      },
+    ]
+    const text = serialize(
+      {
+        id: 'c2',
+        title: 't',
+        createdAt: at,
+        updatedAt: at,
+        messages: [
+          { role: 'user', content: '找一下', createdAt: at },
+          { role: 'assistant', content: '找到了', createdAt: at + 1000 },
+        ],
+        tools,
+      },
+      '小黑',
+    )
+    const back = parse('c2', text).tools[0]
+    expect(back?.detail).toBe(command)
+    expect(back?.output).toBe(output)
+    expect(parse('c2', text).messages[1]?.content).toBe('找到了')
+  })
+})
+
+describe('a running turn', () => {
+  test('a tool step keeps the whole command and what came back', async () => {
+    const { emptySession, reduceSession, beginTurn } =
+      await import('../src/session')
+    const command = `ls -la ${'/some/deep/folder'.repeat(4)}`
+    let s = beginTurn(emptySession(), '看看', 'chat', [])
+    s = reduceSession(s, {
+      type: 'tool-call',
+      id: 'a',
+      toolName: 'run_shell',
+      input: { command },
+    })
+    s = reduceSession(s, { type: 'tool-result', id: 'a', output: 'total 0' })
+    expect(s.tools[0]?.name.endsWith('…')).toBe(true)
+    expect(s.tools[0]?.detail).toBe(command)
+    expect(s.tools[0]?.output).toBe('total 0')
+  })
+})
+
+// Reported 2026-11-04: a command's result showed as escaped JSON ({"output":"…","exitCode":0}).
+describe('a command result', () => {
+  test('shows what it printed, and how it ended only when not cleanly', async () => {
+    const { commandText } = await import('../src/agent/core')
+    const run = (rest: object) => ({
+      output: 'a\nb\n',
+      exitCode: 0,
+      signal: null,
+      timedOut: false,
+      ...rest,
+    })
+    expect(commandText(run({}))).toBe('a\nb')
+    expect(commandText(run({ exitCode: 2 }))).toBe('a\nb\n（退出码 2）')
+    expect(commandText(run({ timedOut: true }))).toContain('超时')
+    expect(commandText({ path: 'x' })).toBeUndefined()
+  })
+})

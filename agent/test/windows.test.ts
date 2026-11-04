@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { windowLabels } from '../../src/shared/protocol'
-import { blurHides } from '../src/session'
+import { blurHides, expandTo, quickStartsFresh } from '../src/session'
 
 // Reported 2026-11-03: the quick-ask bar could not send. Its window was missing from the agent's
 // request check, so every request from it went unanswered and the field stayed stuck.
@@ -74,5 +74,57 @@ describe('dropping files', () => {
       expect(start).toBeGreaterThan(-1)
       expect(rust.slice(start, end)).toContain('.disable_drag_drop_handler()')
     }
+  })
+})
+
+describe('opening the quick bar', () => {
+  const base = {
+    mode: 'continue' as const,
+    idleMinutes: 120,
+    shown: false,
+    running: false,
+    messages: 4,
+    lastActivity: 0,
+    now: 60 * 60_000,
+  }
+  test('continue keeps a recent conversation and starts fresh after the quiet spell', () => {
+    expect(quickStartsFresh(base)).toBe(false)
+    expect(quickStartsFresh({ ...base, idleMinutes: 30 })).toBe(true)
+  })
+  test('new starts fresh each time, but not while open, running or empty', () => {
+    expect(quickStartsFresh({ ...base, mode: 'new' })).toBe(true)
+    for (const s of [{ shown: true }, { running: true }, { messages: 0 }])
+      expect(quickStartsFresh({ ...base, mode: 'new', ...s })).toBe(false)
+  })
+})
+
+// Reported 2026-11-04: an approval from the quick bar opened the big window and the chat panel
+// both. The shell reports the big window visible a moment later; until then the next event
+// moved the turn again, to the panel.
+describe('where a running turn moves', () => {
+  const base = {
+    turnWindow: 'quick',
+    mainVisible: false,
+    chatVisible: false,
+    approvalRequested: false,
+    needsRoom: false,
+    expanded: false,
+  }
+  test('a quick-bar approval goes to the big window once, and stays there', () => {
+    expect(expandTo({ ...base, approvalRequested: true })).toBe('main')
+    // After the hand-off, before the shell says the big window is visible.
+    const after = {
+      ...base,
+      turnWindow: 'main',
+      expanded: true,
+      needsRoom: true,
+    }
+    expect(expandTo(after)).toBeUndefined()
+    expect(expandTo({ ...after, approvalRequested: true })).toBeUndefined()
+  })
+  test('a capsule turn still opens the chat panel', () => {
+    expect(expandTo({ ...base, turnWindow: 'pet', needsRoom: true })).toBe(
+      'chat',
+    )
   })
 })

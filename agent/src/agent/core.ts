@@ -36,8 +36,23 @@ function preview(output: unknown): string {
   const text =
     typeof output === 'string'
       ? output
-      : (JSON.stringify(output) ?? String(output))
+      : (commandText(output) ?? JSON.stringify(output) ?? String(output))
   return text.length > 2000 ? `${text.slice(0, 1999)}…` : text
+}
+
+/** A shell result as people read it: what it printed, then how it ended if not cleanly. */
+export function commandText(output: unknown): string | undefined {
+  if (!output || typeof output !== 'object') return undefined
+  const r = output as Record<string, unknown>
+  if (typeof r.output !== 'string' || !('exitCode' in r)) return undefined
+  const ending = r.timedOut
+    ? '（超时，已停止）'
+    : r.signal
+      ? `（被 ${String(r.signal)} 中断）`
+      : r.exitCode !== 0 && r.exitCode !== null
+        ? `（退出码 ${String(r.exitCode)}）`
+        : ''
+  return `${r.output.trimEnd()}${ending ? `\n${ending}` : ''}`
 }
 
 /** No Electron or settings dependency: usable with SDK test models. */

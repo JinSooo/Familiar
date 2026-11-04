@@ -5,6 +5,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { optionalArg } from './ipc-args'
+import { grantedRule, withRule } from './permissions'
 import {
   IPC,
   attachmentSchema,
@@ -36,7 +37,9 @@ import {
   beginTurn,
   reduceSession,
   shouldExpand,
+  expandTo,
   blurHides,
+  quickStartsFresh,
   bubbleTimeout,
   rewind,
 } from './session'
@@ -151,7 +154,11 @@ function emit(
 function broadcast(channel: string, payload: unknown) {
   emit(channel, payload)
 }
+/** Whether the quick-ask bar is on screen: every show and hide goes through ui(). */
+let quickShown = false
 function ui(action: UiAction) {
+  if (action.type === 'show-quick') quickShown = true
+  if (action.type === 'hide-quick') quickShown = false
   send({ kind: 'ui', action })
 }
 /** Window alpha for the floating panels and for the settings and big windows. */
@@ -248,9 +255,19 @@ function setPetVisible(visible: boolean) {
 function shortcut(action: ShortcutAction) {
   if (action === 'togglePet') return setPetVisible(petHidden)
   if (action === 'quick') {
+    const settings = getSettings()
+    const fresh = quickStartsFresh({
+      mode: settings.quickOpen,
+      idleMinutes: settings.quickIdleMinutes,
+      shown: quickShown,
+      running: Boolean(controller),
+      messages: session.messages.length,
+      lastActivity: Math.max(session.updatedAt, openedAt),
+      now: Date.now(),
+    })
     // One conversation on screen at a time: the bar takes over from panel and capsule.
     dismissChat()
-    restartIfIdle()
+    if (fresh) startFresh()
     return ui({ type: 'show-quick' })
   }
   if (petHidden) setPetVisible(true)
@@ -534,18 +551,20 @@ async function turn(
     if (resetRequested) return
     session = reduceSession(session, item)
     publishSession()
-    const inMain = turnWindow === 'main' && mainVisible
-    if (
-      !inMain &&
-      ((item.type === 'tool-approval-request' && !chatVisible) ||
-        (shouldExpand(session) && !expandedTurn))
-    ) {
-      // A turn from the quick bar grows into the big window, as its expand button does.
-      if (turnWindow === 'quick') {
-        showMain()
-        turnWindow = 'main'
-      } else showChat()
-    }
+    const target = expandTo({
+      turnWindow,
+      mainVisible,
+      chatVisible,
+      approvalRequested: item.type === 'tool-approval-request',
+      needsRoom: shouldExpand(session),
+      expanded: expandedTurn,
+    })
+    // A turn from the quick bar grows into the big window, as its expand button does.
+    if (target === 'main') {
+      showMain()
+      turnWindow = 'main'
+      expandedTurn = true
+    } else if (target === 'chat') showChat()
 
     if (item.type === 'text-delta') {
       activity.thinking = false
@@ -702,6 +721,7 @@ async function request(
         imageModel: { ...settings.imageModel, apiKey: undefined },
         dirRules: settings.dirRules.filter((r) => r.path !== path),
       })
+      broadcast(IPC.dirRulesChanged, saved.dirRules)
       return saved.dirRules
     }
     case IPC.modelsList:
@@ -766,24 +786,25 @@ async function request(
       const choice = z.enum(['approve', 'deny', 'always']).parse(args[1])
       if (!pendingApprovals.has(id)) throw new Error('Unknown approval')
       const approval = session.approvals.find((a) => a.id === id)
-      const dir = approval?.dir
       if (choice === 'always' && approval?.server) {
         const server = approval.server
         await updateMcpServer(server, (entry) =>
           entry ? { ...entry, access: 'allow' } : null,
         )
-      } else if (choice === 'always') {
-        if (!dir) throw new Error('这个请求不能记成目录规则')
+      }
+      // "Allow all" is remembered as a directory rule, which settings lists and can take back;
+      // a plain "allow" lets only this request through.
+      const rule =
+        choice === 'always' && approval ? grantedRule(approval) : undefined
+      if (rule) {
         const settings = publicSettings()
-        await saveSettings({
+        const saved = await saveSettings({
           ...settings,
           model: { ...settings.model, apiKey: undefined },
           imageModel: { ...settings.imageModel, apiKey: undefined },
-          dirRules: [
-            ...settings.dirRules.filter((r) => r.path !== dir),
-            { path: dir, access: 'allow' },
-          ],
+          dirRules: withRule(settings.dirRules, rule),
         })
+        broadcast(IPC.dirRulesChanged, saved.dirRules)
       }
       const decision = choice === 'deny' ? 'deny' : 'approve'
       session = {

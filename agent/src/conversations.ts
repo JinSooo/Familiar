@@ -29,7 +29,13 @@ interface MessageMeta {
   role: 'user' | 'assistant'
   at: number
   attachments?: Attachment[]
-  tools?: { name: string; done: boolean; at?: number }[]
+  tools?: {
+    name: string
+    done: boolean
+    at?: number
+    detail?: string
+    output?: string
+  }[]
   error?: string
   sources?: Source[]
 }
@@ -95,7 +101,13 @@ export function serialize(
   const body = conversation.messages.map((m, i) => {
     const tools = conversation.tools
       .filter((t) => t.turn === i)
-      .map(({ name, done, at }) => ({ name, done, at }))
+      .map(({ name, done, at, detail, output }) => ({
+        name,
+        done,
+        at,
+        ...(detail ? { detail } : {}),
+        ...(output ? { output } : {}),
+      }))
     const meta: MessageMeta = {
       role: m.role,
       at: m.createdAt,
@@ -110,7 +122,11 @@ export function serialize(
       ...tools.map((t) => `${t.done ? '已' : '未完成：'}${t.name}`),
       ...(m.error ? [`出错：${oneLine(m.error, 80)}`] : []),
     ].join(' · ')
-    return `<!-- familiar ${JSON.stringify(meta)} -->\n${header}\n\n${m.content}${attachmentLinks(m.attachments)}\n`
+    // Escaped so a tool's output containing "-->" cannot end the comment early.
+    const json = JSON.stringify(meta)
+      .replace(/</g, '\\u003c')
+      .replace(/>/g, '\\u003e')
+    return `<!-- familiar ${json} -->\n${header}\n\n${m.content}${attachmentLinks(m.attachments)}\n`
   })
   return `${head}\n${body.join('\n')}`
 }
@@ -188,6 +204,12 @@ export function parse(id: string, text: string): StoredConversation {
         done: Boolean(t.done),
         turn,
         ...(Number.isInteger(t.at) && t.at! >= 0 ? { at: t.at } : {}),
+        ...(typeof t.detail === 'string' && t.detail
+          ? { detail: t.detail.slice(0, 2000) }
+          : {}),
+        ...(typeof t.output === 'string' && t.output
+          ? { output: t.output.slice(0, 2000) }
+          : {}),
       })
   }
   const time = (key: string, fallback: number) => {

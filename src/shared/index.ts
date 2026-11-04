@@ -83,16 +83,30 @@ export const settingsSchema = z.object({
   permissionMode: z.enum(['ask', 'auto', 'full']).default('auto'),
   dirRules: z
     .array(
-      z.object({ path: z.string(), access: z.enum(['allow', 'ask', 'deny']) }),
+      z.object({
+        path: z.string(),
+        access: z.enum(['allow', 'ask', 'deny']),
+        /** An allow rule from a network ask: commands run there may also go online. */
+        network: z.boolean().optional(),
+      }),
     )
     .default([]),
   workspacePath: z.string().default('~/.familiar/workspace'),
   /** Commit the workspace to git after every change Familiar makes, so mistakes can be undone. */
   workspaceSnapshots: z.boolean().default(true),
+  /** Ask and auto modes run commands in a sandbox that can only write the workspace. Off: they run
+   * like in a terminal; a command naming a protected place still asks, with a warning. */
+  shellSandbox: z.boolean().default(true),
   /** Close the chat panel and capsule when the user clicks another app. */
   chatAutoHide: z.boolean().default(true),
   /** Close the quick-ask bar when the user clicks another app. Off by default: files are dragged in from Finder. */
   quickAutoHide: z.boolean().default(false),
+  /** Opening the quick-ask bar: go on with the current conversation, or start a new one each time. */
+  quickOpen: z.enum(['continue', 'new']).default('continue'),
+  /** With continue: after this many minutes without a message, opening the bar starts a new one. */
+  quickIdleMinutes: z.number().int().min(5).max(1440).default(120),
+  /** Tool steps in a reply: one line each (brief), opened with command and result (full), or none. */
+  toolView: z.enum(['brief', 'full', 'hidden']).default('brief'),
   /** Image generation, separate from the chat model (the ChatGPT plan route cannot make images). */
   imageModel: z
     .object({
@@ -199,7 +213,7 @@ export interface ModelTestResult {
   reply: string
 }
 export type ApprovalDecision = 'approve' | 'deny'
-/** What the approval card can send: "always" also saves an allow rule for the request's directory. */
+/** What the approval card can send: "always" also trusts the request's MCP server. */
 export type ApprovalChoice = ApprovalDecision | 'always'
 /** Long-lived activity, chosen by the main process; see docs/design.md §9. */
 export type PetState =
@@ -385,6 +399,8 @@ export const IPC = {
   /** The user's answer to a proactive bubble. */
   proactiveRespond: 'proactive:respond',
   proactiveChanged: 'proactive:changed',
+  /** Directory rules changed outside the settings window (an approval). */
+  dirRulesChanged: 'rules:changed',
   /** Ends 别烦我 early. */
   proactiveResume: 'proactive:resume',
   /** Look for something to say now instead of at the next minute. */
@@ -521,6 +537,7 @@ export interface FamiliarAPI {
   checkProactive(): Promise<void>
   cancelReminder(id: string): Promise<void>
   onProactiveChanged(callback: (status: ProactiveStatus) => void): () => void
+  onDirRulesChanged(callback: (rules: Settings['dirRules']) => void): () => void
 }
 
 /** One raw event from familiar-sensor, after the agent's filter. */
@@ -740,6 +757,10 @@ export interface Session {
     done: boolean
     turn: number
     at?: number
+    /** The whole command, path or query the one-line name shortens. */
+    detail?: string
+    /** What the tool gave back, up to about 2000 characters. */
+    output?: string
   }[]
   error: string
   origin: 'capsule' | 'chat'

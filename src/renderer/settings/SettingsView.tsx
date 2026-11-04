@@ -203,6 +203,14 @@ export function SettingsView() {
   }, [tab])
   // The menu bar panel can ask for a page.
   useEffect(() => api.onSettingsPage((page) => setTab(page)), [])
+  // Approvals add rules while this window is open.
+  useEffect(
+    () =>
+      api.onDirRulesChanged((dirRules) =>
+        setSettings((s) => s && { ...s, dirRules }),
+      ),
+    [],
+  )
   // Rules are added from approval cards, so pick them up whenever the window comes back.
   useEffect(() => {
     const refresh = () => {
@@ -587,6 +595,83 @@ export function SettingsView() {
                   ))}
                 </div>
               </div>
+              <div className="setting-row">
+                <span>快捷问答条打开时</span>
+                <div className="segmented">
+                  {(
+                    [
+                      ['continue', '继续上次对话'],
+                      ['new', '新对话'],
+                    ] as const
+                  ).map(([mode, text]) => (
+                    <button
+                      type="button"
+                      key={mode}
+                      className={settings.quickOpen === mode ? 'selected' : ''}
+                      onClick={() => change({ ...settings, quickOpen: mode })}
+                    >
+                      {text}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {settings.quickOpen === 'continue' && (
+                <div className="setting-row">
+                  <span>多久没说话就开新对话</span>
+                  <select
+                    aria-label="多久没说话就开新对话"
+                    value={settings.quickIdleMinutes}
+                    onChange={(e) =>
+                      change({
+                        ...settings,
+                        quickIdleMinutes: Number(e.target.value),
+                      })
+                    }
+                  >
+                    {[
+                      ...new Set([
+                        15,
+                        30,
+                        60,
+                        120,
+                        240,
+                        480,
+                        1440,
+                        settings.quickIdleMinutes,
+                      ]),
+                    ]
+                      .sort((a, b) => a - b)
+                      .map((m) => (
+                        <option key={m} value={m}>
+                          {m < 60 ? `${m} 分钟` : `${m / 60} 小时`}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              )}
+              <div className="setting-row">
+                <span title="任何一档下，点开一步都能看到完整的指令和结果">
+                  对话过程
+                </span>
+                <div className="segmented">
+                  {(
+                    [
+                      ['brief', '简洁'],
+                      ['full', '详细'],
+                      ['hidden', '隐藏'],
+                    ] as const
+                  ).map(([view, text]) => (
+                    <button
+                      type="button"
+                      key={view}
+                      className={settings.toolView === view ? 'selected' : ''}
+                      onClick={() => change({ ...settings, toolView: view })}
+                    >
+                      {text}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
             <h3 className="memory-heading">透明度</h3>
             <div className="group">
@@ -960,6 +1045,23 @@ export function SettingsView() {
                 ))}
               </div>
             </div>
+            <div className="setting-row">
+              <span title="开：询问和自动模式下命令只能写工作目录，读不到 ~/.familiar 和密钥。关：命令像在终端里一样运行，命令里写到登录凭据、密钥所在位置时会先问你。完全访问模式本来就不加沙箱。">
+                命令沙箱
+              </span>
+              <div className="segmented">
+                {([true, false] as const).map((on) => (
+                  <button
+                    type="button"
+                    key={String(on)}
+                    className={settings.shellSandbox === on ? 'selected' : ''}
+                    onClick={() => change({ ...settings, shellSandbox: on })}
+                  >
+                    {on ? '开' : '关'}
+                  </button>
+                ))}
+              </div>
+            </div>
             <details className="rules">
               <summary>
                 目录规则
@@ -974,7 +1076,10 @@ export function SettingsView() {
                   {settings.dirRules.map((rule, i) => (
                     <li key={i}>
                       <span>{rule.path}</span>
-                      <span className="muted">{accessLabel[rule.access]}</span>
+                      <span className="muted">
+                        {accessLabel[rule.access]}
+                        {rule.network && '，可联网'}
+                      </span>
                       <button
                         type="button"
                         className="icon rule-remove"
@@ -995,7 +1100,7 @@ export function SettingsView() {
                   ))}
                 </ul>
               ) : (
-                <p className="muted">审批时选「总是允许这个目录」会记在这里</p>
+                <p className="muted">审批时允许过的目录会记在这里</p>
               )}
             </details>
           </section>

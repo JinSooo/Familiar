@@ -3,7 +3,7 @@ import { mkdtempSync, realpathSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { settingsSchema, type Settings } from '../../src/shared'
-import { decideToolCall } from '../src/permissions'
+import { decideToolCall, grantedRule, withRule } from '../src/permissions'
 
 const workspace = realpathSync(mkdtempSync(join(tmpdir(), 'familiar-ws-')))
 const outside = realpathSync(mkdtempSync(join(tmpdir(), 'familiar-out-')))
@@ -41,11 +41,16 @@ describe('inside the workspace', () => {
       'ask',
     )
   })
-  test('networked shell always asks below full access', async () => {
+  // Reported 2026-11-04: approving every networked command got tiresome. Auto mode now lets
+  // sandboxed commands go online like web_search; ask mode still asks.
+  test('networked shell asks in ask mode, runs in auto mode', async () => {
+    const net = { command: 'curl x', network: true }
     expect(
-      (await decide('run_shell', { command: 'curl x', network: true }))
-        .decision,
+      (await decide('run_shell', net, { permissionMode: 'ask' })).decision,
     ).toBe('ask')
+    expect(
+      (await decide('run_shell', net, { permissionMode: 'auto' })).decision,
+    ).toBe('allow')
   })
 })
 
@@ -114,5 +119,91 @@ describe('hard limits hold in every mode', () => {
   test('unknown tools and missing paths are refused', async () => {
     expect((await decide('format_disk', { path: 'a' })).decision).toBe('deny')
     expect((await decide('write_file', {})).decision).toBe('deny')
+  })
+})
+
+// Asked for 2026-11-04: ls ~/.familiar failed with "Operation not permitted" and nothing asked.
+// The user can turn the command sandbox off; a command naming a protected place then asks first.
+describe('command sandbox off', () => {
+  const off = { permissionMode: 'auto' as const, shellSandbox: false }
+  test('a command naming ~/.familiar or ~/.ssh asks, saying where', async () => {
+    for (const command of [
+      'ls ~/.familiar',
+      'cat $HOME/.ssh/id_ed25519',
+      `ls "${homedir()}/.familiar/mcp.json"`,
+    ]) {
+      const d = await decide('run_shell', { command }, off)
+      expect(d.decision).toBe('ask')
+      expect(d.reason).toContain('登录凭据')
+    }
+  })
+  test('other commands run without asking; with the sandbox on nothing changes', async () => {
+    expect(
+      (await decide('run_shell', { command: `ls ${workspace}` }, off)).decision,
+    ).toBe('allow')
+    expect(
+      (await decide('run_shell', { command: 'ls ~/Downloads' }, off)).decision,
+    ).toBe('allow')
+    const on = await decide(
+      'run_shell',
+      { command: 'ls ~/.familiar' },
+      { permissionMode: 'auto' },
+    )
+    expect(on.decision).toBe('allow')
+  })
+})
+
+// Reported 2026-11-04: directories the user had allowed never showed in 目录规则. Only the
+// "always" link saved a rule, and network asks did not offer one at all.
+describe('an approval leaves a rule', () => {
+  const net = { command: 'curl x', network: true, cwd: outside }
+  test('a network ask offers its directory, and the rule it leaves lets it go online', async () => {
+    const asked = await decide('run_shell', net, { permissionMode: 'ask' })
+    expect(asked).toMatchObject({ decision: 'ask', dir: outside })
+    const rule = grantedRule({
+      toolName: 'run_shell',
+      input: net,
+      dir: asked.dir,
+    })
+    expect(rule).toEqual({ path: outside, access: 'allow', network: true })
+    expect(
+      (
+        await decide('run_shell', net, {
+          permissionMode: 'ask',
+          dirRules: [rule!],
+        })
+      ).decision,
+    ).toBe('allow')
+  })
+  test('a plain allow rule still asks before going online', async () => {
+    const result = await decide('run_shell', net, {
+      permissionMode: 'ask',
+      dirRules: [{ path: outside, access: 'allow' }],
+    })
+    expect(result).toMatchObject({ decision: 'ask', dir: outside })
+  })
+  test('in ask mode a network rule does not skip asking for workspace commands', async () => {
+    const result = await decide(
+      'run_shell',
+      { command: 'curl x', network: true },
+      {
+        permissionMode: 'ask',
+        dirRules: [{ path: workspace, access: 'allow', network: true }],
+      },
+    )
+    expect(result.decision).toBe('ask')
+  })
+  test('a later file grant keeps the network access', () => {
+    const rules = withRule(
+      [{ path: outside, access: 'allow', network: true }],
+      {
+        path: outside,
+        access: 'allow',
+      },
+    )
+    expect(rules).toEqual([{ path: outside, access: 'allow', network: true }])
+  })
+  test('a request without a directory leaves no rule', () => {
+    expect(grantedRule({ toolName: 'run_shell', input: {} })).toBeUndefined()
   })
 })

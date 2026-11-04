@@ -422,8 +422,42 @@ summary:focus-visible {
 .tool-group[open] summary::after {
   content: ' ⌄';
 }
-.tool-group p {
+.tool-group p,
+.tool-group .tool-step {
   margin: 4px 0 0 12px;
+}
+/* A step that opens to show its whole command and what came back. */
+.tool-step summary {
+  cursor: pointer;
+  list-style: none;
+}
+.tool-step summary::-webkit-details-marker {
+  display: none;
+}
+.tool-step summary::after {
+  content: ' ›';
+}
+.tool-step[open] > summary::after {
+  content: ' ⌄';
+}
+.tool-io {
+  margin: 6px 0 2px 12px;
+  padding: 8px 10px;
+  max-height: 220px;
+  overflow: auto;
+  border-radius: var(--radius-control);
+  background: var(--group);
+  color: var(--text);
+  font:
+    11.5px/1.5 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tool-io.output {
+  color: var(--muted);
 }
 .approval-detail {
   display: flex;

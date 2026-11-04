@@ -96,6 +96,9 @@ export function reduceSession(session: Session, event: AgentEvent): Session {
       {
         id: event.id,
         name: toolDescription(event.toolName, event.input),
+        ...(toolDetail(event.toolName, event.input)
+          ? { detail: toolDetail(event.toolName, event.input) }
+          : {}),
         done: false,
         turn: session.messages.length - 1,
         at,
@@ -103,7 +106,15 @@ export function reduceSession(session: Session, event: AgentEvent): Session {
     ]
   if (event.type === 'tool-result')
     next.tools = session.tools.map((t) =>
-      t.id === event.id ? { ...t, done: true } : t,
+      t.id === event.id
+        ? {
+            ...t,
+            done: true,
+            ...(toolOutput(event.output)
+              ? { output: toolOutput(event.output) }
+              : {}),
+          }
+        : t,
     )
   if (event.type === 'sources') {
     const last = session.messages.length - 1
@@ -151,6 +162,27 @@ export function blurHides(state: {
     quick: state.quickAutoHide && !stay && !state.running,
   }
 }
+/**
+ * Where a running turn has to move so the user can see it (an approval, a long capsule reply):
+ * the big window for a turn from the quick bar or already handed there, else the chat panel.
+ * A turn handed to the big window stays there even before the shell reports it visible.
+ */
+export function expandTo(state: {
+  turnWindow: string
+  mainVisible: boolean
+  chatVisible: boolean
+  approvalRequested: boolean
+  needsRoom: boolean
+  expanded: boolean
+}): 'main' | 'chat' | undefined {
+  if (state.turnWindow === 'main' && (state.mainVisible || state.expanded))
+    return undefined
+  const move =
+    (state.approvalRequested && !state.chatVisible) ||
+    (state.needsRoom && !state.expanded)
+  if (!move) return undefined
+  return state.turnWindow === 'quick' ? 'main' : 'chat'
+}
 export function shouldExpand(session: Session): boolean {
   return (
     session.approvals.length > 0 ||
@@ -161,6 +193,63 @@ export function bubbleTimeout(text: string): number {
   return 12000 + Math.min(8000, [...text].length * 60)
 }
 
+const toolTextLimit = 2000
+const capped = (text: string) =>
+  text.length > toolTextLimit ? `${text.slice(0, toolTextLimit - 1)}…` : text
+/** What a tool gave back, as text. */
+function toolOutput(output: unknown): string {
+  const text =
+    typeof output === 'string'
+      ? output
+      : (JSON.stringify(output, null, 2) ?? '')
+  return capped(text.trim())
+}
+/** The whole input behind a tool row: the command, path or query, or the arguments as JSON. */
+export function toolDetail(name: string, input: unknown): string {
+  const field = (key: string): string =>
+    input && typeof input === 'object' && key in input
+      ? String((input as Record<string, unknown>)[key] ?? '')
+      : ''
+  const one: Record<string, string> = {
+    run_shell: 'command',
+    read_file: 'path',
+    write_file: 'path',
+    edit_file: 'path',
+    list_dir: 'path',
+    make_dir: 'path',
+    delete_path: 'path',
+    web_search: 'query',
+    fetch_page: 'url',
+    remember: 'text',
+    use_skill: 'name',
+  }
+  const key = one[name]
+  const text = key
+    ? field(key)
+    : input && typeof input === 'object' && Object.keys(input).length
+      ? JSON.stringify(input, null, 2)
+      : ''
+  return capped(text.trim())
+}
+/**
+ * Whether opening the quick-ask bar starts a new conversation: every time, or after a quiet
+ * spell (settings 快捷问答条打开时). Never while it is already open or a reply is running.
+ */
+export function quickStartsFresh(state: {
+  mode: 'continue' | 'new'
+  idleMinutes: number
+  shown: boolean
+  running: boolean
+  messages: number
+  lastActivity: number
+  now: number
+}): boolean {
+  if (state.shown || state.running || !state.messages) return false
+  return (
+    state.mode === 'new' ||
+    state.now - state.lastActivity > state.idleMinutes * 60_000
+  )
+}
 function toolDescription(name: string, input: unknown): string {
   const labels: Record<string, string> = {
     write_file: '写入',

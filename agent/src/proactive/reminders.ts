@@ -47,6 +47,14 @@ const byTime = (a: Reminder, b: Reminder) =>
 
 export function parseReminders(text: string): Reminder[] {
   const list: Reminder[] = []
+  // Hand-written lines can share a time or a text; every line still needs an id of its own.
+  const used = new Set<string>()
+  const unique = (id: string) => {
+    let next = id
+    for (let n = 1; used.has(next); n++) next = `${id}-${n}`
+    used.add(next)
+    return next
+  }
   for (const raw of text.split('\n')) {
     const trimmed = raw.trim()
     const m = line.exec(trimmed)
@@ -55,7 +63,9 @@ export function parseReminders(text: string): Reminder[] {
       if (!Number.isFinite(at)) continue
       const meta = metaOf(m[5])
       list.push({
-        id: typeof meta.id === 'string' ? meta.id : `h${at.toString(36)}`,
+        id: unique(
+          typeof meta.id === 'string' ? meta.id : `h${at.toString(36)}`,
+        ),
         at,
         text: m[4]!.trim(),
         kind: meta.kind === 'follow-up' ? 'follow-up' : 'reminder',
@@ -70,10 +80,11 @@ export function parseReminders(text: string): Reminder[] {
     const body = t[2]!.trim()
     const meta = metaOf(t[3])
     list.push({
-      id:
+      id: unique(
         typeof meta.id === 'string'
           ? meta.id
           : `t${createHash('sha1').update(body).digest('hex').slice(0, 6)}`,
+      ),
       text: body,
       kind: 'todo',
       ...(t[1] === 'x'

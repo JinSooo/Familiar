@@ -66,6 +66,17 @@ describe('reminders file', () => {
     )
   })
 
+  // Found 2026-11-04 while testing the to-do change: two hand-written lines with the same text (or the same time) got one id, so cancelling one cancelled both.
+  test('hand-written lines with the same text or time still get their own ids', () => {
+    const list = parseReminders(
+      '- [ ] 买牛奶\n- [ ] 买牛奶\n- [ ] 2026-11-05 10:00 开会\n- [ ] 2026-11-05 10:00 交周报\n',
+    )
+    expect(new Set(list.map((r) => r.id)).size).toBe(4)
+    expect(parseReminders(formatReminders(list)).map((r) => r.id)).toEqual(
+      list.map((r) => r.id),
+    )
+  })
+
   test('add_todo writes an undated line, list_reminders shows it without a time, a timed text goes to remind', async () => {
     const tools = createReminderTools(() => {})
     const call = (name: 'add_todo' | 'list_reminders', input: unknown) =>

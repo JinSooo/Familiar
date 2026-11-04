@@ -1,5 +1,5 @@
 {
   "identifier": "familiar-quick-window",
   "windows": ["quick"],
-  "permissions": ["core:window:allow-set-size"]
+  "permissions": ["allow-quick-fit"]
 }

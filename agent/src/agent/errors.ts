@@ -59,6 +59,12 @@ export function agentError(error: unknown): Error {
     message = '无法连接模型服务，请检查网络、代理和 Base URL。'
   else if (error instanceof Error && /[\u3400-\u9fff]/u.test(error.message))
     message = error.message
-  else message = '模型运行失败，请检查模型设置或稍后重试。'
+  else {
+    // Nothing above recognised it: say what the service said, so the next one can be classified.
+    const said = chain.find((line) => line.trim())?.replace(/\s+/g, ' ')
+    message = `模型运行失败，请检查模型设置或稍后重试。${
+      said ? `（${said.length > 120 ? `${said.slice(0, 119)}…` : said}）` : ''
+    }`
+  }
   return new Error(message, { cause: error })
 }

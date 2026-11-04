@@ -339,6 +339,12 @@ function dismissChat() {
   if (capsuleOpen) setCapsule(false)
   ui({ type: 'hide-quick' })
 }
+/** One conversation on screen at a time: the big window takes over from panel, capsule and quick bar. */
+function showMain() {
+  dismissChat()
+  emit(IPC.view, 'chat', 'main')
+  ui({ type: 'show-main' })
+}
 function showChat() {
   activity.done = false
   refreshState()
@@ -533,8 +539,13 @@ async function turn(
       !inMain &&
       ((item.type === 'tool-approval-request' && !chatVisible) ||
         (shouldExpand(session) && !expandedTurn))
-    )
-      showChat()
+    ) {
+      // A turn from the quick bar grows into the big window, as its expand button does.
+      if (turnWindow === 'quick') {
+        showMain()
+        turnWindow = 'main'
+      } else showChat()
+    }
 
     if (item.type === 'text-delta') {
       activity.thinking = false
@@ -721,11 +732,15 @@ async function request(
       showChat()
       return
     case IPC.mainOpen:
-      requireSender(window, ['chat', 'pet', 'tray', 'settings', 'panel'])
-      // One conversation on screen at a time: the big window takes over from panel and capsule.
-      dismissChat()
-      emit(IPC.view, 'chat', 'main')
-      ui({ type: 'show-main' })
+      requireSender(window, [
+        'chat',
+        'pet',
+        'tray',
+        'settings',
+        'panel',
+        'quick',
+      ])
+      showMain()
       return
     case IPC.chatHistory:
       requireSender(window, ['tray'])
@@ -1262,6 +1277,7 @@ async function handle(line: string) {
       } else if (signal.name === 'blurred') {
         const hide = blurHides({
           autoHide: getSettings().chatAutoHide,
+          quickAutoHide: getSettings().quickAutoHide,
           approvals: pendingApprovals.size,
           draft: hasDraft,
           running: Boolean(controller),

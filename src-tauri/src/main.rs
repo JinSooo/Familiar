@@ -21,7 +21,8 @@ fn main() {
             hit::pet_drag_start,
             tray::pet_menu,
             login::login_item,
-            login::set_login_item
+            login::set_login_item,
+            windows::quick_fit
         ])
         .register_uri_scheme_protocol("familiar-pet", |ctx, request| {
             let paths = ctx.app_handle().state::<windows::Paths>();

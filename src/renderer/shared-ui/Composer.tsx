@@ -143,6 +143,8 @@ export function Composer({
       )}
       <form
         className={`composer ${mini ? 'mini' : ''} ${quick ? 'quick' : ''} ${working ? 'working' : ''}`}
+        // The quick bar has no title bar: its empty edges are where it is dragged.
+        data-tauri-drag-region={quick ? '' : undefined}
         onKeyDown={(e) => {
           if (e.key === 'Escape' && mini) api.capsule(false)
           if (e.key === 'Escape' && quick) api.hideQuick()
@@ -183,8 +185,9 @@ export function Composer({
           <button
             type="button"
             className="icon"
-            aria-label="展开聊天"
-            onClick={() => api.toggleChat()}
+            aria-label={quick ? '在大窗口打开' : '展开聊天'}
+            // The quick bar is already wide: expanding it means the big window, not the side panel.
+            onClick={() => (quick ? api.openMainWindow() : api.toggleChat())}
           >
             <Icon name="expand" />
           </button>
@@ -218,7 +221,7 @@ export function Composer({
             className="capsule-status"
             role="status"
             title="展开聊天查看过程"
-            onClick={() => api.toggleChat()}
+            onClick={() => (quick ? api.openMainWindow() : api.toggleChat())}
           >
             <span className="dots" aria-hidden="true">
               <i />

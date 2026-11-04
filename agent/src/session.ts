@@ -135,16 +135,21 @@ export function reduceSession(session: Session, event: AgentEvent): Session {
 }
 /**
  * What goes away when the user leaves for another app. Nothing while something still needs them
- * here; the quick-ask bar also stays while its reply is coming, so a glance away does not lose it.
+ * here. The quick-ask bar has its own setting (dragging a file in from Finder leaves it first),
+ * and also stays while its reply is coming, so a glance away does not lose it.
  */
 export function blurHides(state: {
   autoHide: boolean
+  quickAutoHide: boolean
   approvals: number
   draft: boolean
   running: boolean
 }): { chat: boolean; quick: boolean } {
-  const leave = state.autoHide && !state.approvals && !state.draft
-  return { chat: leave, quick: leave && !state.running }
+  const stay = state.approvals > 0 || state.draft
+  return {
+    chat: state.autoHide && !stay,
+    quick: state.quickAutoHide && !stay && !state.running,
+  }
 }
 export function shouldExpand(session: Session): boolean {
   return (

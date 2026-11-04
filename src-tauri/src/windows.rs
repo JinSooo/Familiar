@@ -17,8 +17,27 @@ tauri_panel! {
 }
 
 const PANEL_SIZE: (f64, f64) = (320., 520.);
-/// The quick-ask bar's window: wide, and just tall enough for the field; the page resizes it to fit a reply.
+/// The quick-ask bar: the field alone at first, then a box of a set height once there is a
+/// conversation. Width and that height are the defaults until the user drags or resizes it.
 const QUICK_SIZE: (f64, f64) = (680., 76.);
+const QUICK_OPEN_HEIGHT: f64 = 520.;
+const QUICK_MIN: (f64, f64) = (420., 240.);
+/// Where the user left the bar: top-left corner, width, and the open height. Saved to
+/// quick-window.json; without it the open box is centered on the screen under the pointer.
+#[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
+struct QuickFrame {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+static QUICK_FRAME: std::sync::Mutex<Option<QuickFrame>> = std::sync::Mutex::new(None);
+static QUICK_OPEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Moves and resizes until this time (ms) are ours, not the user's, and are not remembered.
+static QUICK_QUIET_UNTIL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+fn quick_quiet() {
+    QUICK_QUIET_UNTIL.store(now_ms() + 600, std::sync::atomic::Ordering::Relaxed);
+}
 /// When the menu bar panel last hid itself on losing focus, in ms since the epoch. A click on the
 /// tray icon while the panel is open first takes its focus away; that click must not reopen it.
 static PANEL_HIDDEN_AT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -192,6 +211,9 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
     panel.show();
     let chat = WebviewWindowBuilder::new(app, "chat", url("chat"))
         .title("Familiar")
+        // Files dragged in from Finder reach the page's drop handler; Tauri's own handler
+        // takes every file drop and the composer never sees it.
+        .disable_drag_drop_handler()
         .inner_size(380., 620.)
         .min_inner_size(360., 420.)
         .transparent(true)
@@ -241,6 +263,9 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
         .build()?;
     WebviewWindowBuilder::new(app, "main", url("main"))
         .title("Familiar")
+        // Files dragged in from Finder reach the page's drop handler; Tauri's own handler
+        // takes every file drop and the composer never sees it.
+        .disable_drag_drop_handler()
         .inner_size(1040., 760.)
         .min_inner_size(720., 520.)
         .accept_first_mouse(true)
@@ -256,10 +281,14 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
         .build()?;
     let quick = WebviewWindowBuilder::new(app, "quick", url("quick"))
         .title("Familiar")
+        // Files dragged in from Finder reach the page's drop handler; Tauri's own handler
+        // takes every file drop and the composer never sees it.
+        .disable_drag_drop_handler()
         .inner_size(QUICK_SIZE.0, QUICK_SIZE.1)
+        .min_inner_size(QUICK_MIN.0, QUICK_SIZE.1)
         .transparent(true)
         .decorations(false)
-        .resizable(false)
+        .resizable(true)
         .skip_taskbar(true)
         .visible(false)
         .accept_first_mouse(true)
@@ -273,9 +302,11 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
         .build()?
         .to_panel::<QuickPanel>()?;
     quick.set_level(PanelLevel::PopUpMenu.value());
+    // Like the pet: on every Space, so switching desktops keeps the bar where it is.
     quick.set_collection_behavior(
         CollectionBehavior::new()
-            .move_to_active_space()
+            .can_join_all_spaces()
+            .stationary()
             .full_screen_auxiliary()
             .value(),
     );
@@ -283,10 +314,21 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
         .set_style_mask(
             StyleMask::empty()
                 .borderless()
+                .resizable()
                 .nonactivating_panel()
                 .value(),
         )
         .map_err(|e| std::io::Error::other(format!("Quick panel style mask: {e:?}")))?;
+    if let Ok(bytes) = std::fs::read(app.state::<Paths>().data.join("quick-window.json")) {
+        if let Ok(f) = serde_json::from_slice::<QuickFrame>(&bytes) {
+            if [f.x, f.y, f.width, f.height].iter().all(|v| v.is_finite())
+                && f.width >= QUICK_MIN.0
+                && f.height >= QUICK_MIN.1
+            {
+                *QUICK_FRAME.lock().unwrap() = Some(f);
+            }
+        }
+    }
     let tray_panel = WebviewWindowBuilder::new(app, "panel", url("panel"))
         .title("Familiar")
         .inner_size(PANEL_SIZE.0, PANEL_SIZE.1)
@@ -354,6 +396,9 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
             }
             tauri::WindowEvent::CloseRequested { .. } => h.exit(0),
             tauri::WindowEvent::Moved(_) if label == "chat" => settle_chat(&h),
+            tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) if label == "quick" => {
+                remember_quick(&h)
+            }
             tauri::WindowEvent::Focused(focused) => {
                 if !*focused && label != "settings" {
                     report_blur(&h);
@@ -485,20 +530,33 @@ pub fn action(app: &tauri::AppHandle, action: crate::protocol::UiAction) -> taur
         }
         UiAction::ShowQuick => {
             let w = app.get_webview_window("quick").unwrap();
-            // Centered on the screen the pointer is on, a little below the middle.
-            let monitor = app
-                .cursor_position()
-                .ok()
-                .and_then(|p| app.monitor_from_point(p.x, p.y).ok().flatten())
-                .or_else(|| w.primary_monitor().ok().flatten());
-            if let Some(m) = monitor {
-                let scale = m.scale_factor();
-                let p = m.work_area().position.to_logical::<f64>(scale);
-                let s = m.work_area().size.to_logical::<f64>(scale);
-                w.set_position(LogicalPosition::new(
-                    p.x + (s.width - QUICK_SIZE.0) / 2.,
-                    p.y + s.height * 0.32,
-                ))?;
+            let scale = w.scale_factor()?;
+            let now = w.outer_size()?.to_logical::<f64>(scale);
+            let saved = *QUICK_FRAME.lock().unwrap();
+            // Where the user left it; otherwise the open box centered on the screen under the pointer.
+            let place = match saved {
+                Some(f) => Some((f.x, f.y, f.width, f.height)),
+                None => app
+                    .cursor_position()
+                    .ok()
+                    .and_then(|p| app.monitor_from_point(p.x, p.y).ok().flatten())
+                    .or_else(|| w.primary_monitor().ok().flatten())
+                    .map(|m| {
+                        let p = m.work_area().position.to_logical::<f64>(m.scale_factor());
+                        let s = m.work_area().size.to_logical::<f64>(m.scale_factor());
+                        (
+                            p.x + (s.width - QUICK_SIZE.0) / 2.,
+                            p.y + ((s.height - QUICK_OPEN_HEIGHT) / 2.).max(0.),
+                            QUICK_SIZE.0,
+                            QUICK_OPEN_HEIGHT,
+                        )
+                    }),
+            };
+            if let Some((x, y, width, open)) = place {
+                quick_quiet();
+                w.set_size(LogicalSize::new(width, now.height))?;
+                // Kept on a screen with room for the open box, so opening never runs off the edge.
+                w.set_position(clamp(&w, x, y, width, open)?)?;
             }
             if let Ok(panel) = app.get_webview_panel("quick") {
                 panel.show_and_make_key();
@@ -617,4 +675,117 @@ fn set_window_alpha(app: &tauri::AppHandle, value: f64) {
             let _: () = unsafe { msg_send![window, setAlphaValue: value] };
         }
     }
+}
+
+/// The quick-ask bar closed to its field or open to its box. Keeps the top edge where it is;
+/// the open box grows downward with the system's window animation when the bar is on screen.
+#[tauri::command]
+pub fn quick_fit(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    collapsed: f64,
+    open: bool,
+    animate: bool,
+) -> Result<(), String> {
+    if window.label() != "quick" {
+        return Err("Quick window required".into());
+    }
+    if !collapsed.is_finite() || !(40. ..=400.).contains(&collapsed) {
+        return Err("Invalid height".into());
+    }
+    let main = app.clone();
+    app.run_on_main_thread(move || {
+        if let Err(e) = fit_quick(&main, collapsed, open, animate) {
+            eprintln!("Fit quick bar: {e}");
+        }
+    })
+    .map_err(|e| e.to_string())
+}
+
+fn fit_quick(app: &tauri::AppHandle, collapsed: f64, open: bool, animate: bool) -> tauri::Result<()> {
+    use tauri_nspanel::objc2_foundation::{NSPoint, NSRect, NSSize};
+    QUICK_OPEN.store(open, std::sync::atomic::Ordering::Relaxed);
+    let w = app.get_webview_window("quick").unwrap();
+    let height = if open {
+        QUICK_FRAME.lock().unwrap().map_or(QUICK_OPEN_HEIGHT, |f| f.height)
+    } else {
+        collapsed
+    };
+    // Open: any height. Closed: the field's height only, so a drag at the edge changes the width.
+    if open {
+        w.set_max_size(None::<LogicalSize<f64>>)?;
+        w.set_min_size(Some(LogicalSize::new(QUICK_MIN.0, QUICK_MIN.1)))?;
+    } else {
+        w.set_min_size(Some(LogicalSize::new(QUICK_MIN.0, 40.)))?;
+        w.set_max_size(None::<LogicalSize<f64>>)?;
+    }
+    let Ok(panel) = app.get_webview_panel("quick") else {
+        return Ok(());
+    };
+    let ns = panel.as_panel();
+    let frame = ns.frame();
+    if (frame.size.height - height).abs() >= 0.5 {
+        // AppKit measures from the bottom: keeping the top means moving the origin down.
+        let top = frame.origin.y + frame.size.height;
+        let to = NSRect::new(
+            NSPoint::new(frame.origin.x, top - height),
+            NSSize::new(frame.size.width, height),
+        );
+        quick_quiet();
+        ns.setFrame_display_animate(to, true, animate && w.is_visible()?);
+    }
+    if !open {
+        w.set_min_size(Some(LogicalSize::new(QUICK_MIN.0, height)))?;
+        w.set_max_size(Some(LogicalSize::new(100_000., height)))?;
+    }
+    Ok(())
+}
+
+/// The user moved or resized the bar: remember it, and write it once they stop.
+fn remember_quick(app: &tauri::AppHandle) {
+    if now_ms() < QUICK_QUIET_UNTIL.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+    let Some(w) = app.get_webview_window("quick") else {
+        return;
+    };
+    if !w.is_visible().unwrap_or(false) {
+        return;
+    }
+    let read = || -> tauri::Result<QuickFrame> {
+        let scale = w.scale_factor()?;
+        let p = w.outer_position()?.to_logical::<f64>(scale);
+        let s = w.outer_size()?.to_logical::<f64>(scale);
+        Ok(QuickFrame { x: p.x, y: p.y, width: s.width, height: s.height })
+    };
+    let Ok(now) = read() else {
+        return;
+    };
+    {
+        let mut saved = QUICK_FRAME.lock().unwrap();
+        let open = QUICK_OPEN.load(std::sync::atomic::Ordering::Relaxed);
+        let height = if open {
+            now.height.max(QUICK_MIN.1)
+        } else {
+            saved.map_or(QUICK_OPEN_HEIGHT, |f| f.height)
+        };
+        *saved = Some(QuickFrame { height, ..now });
+    }
+    static CHANGES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seen = CHANGES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+    let path = app.state::<Paths>().data.join("quick-window.json");
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        if CHANGES.load(std::sync::atomic::Ordering::Relaxed) != seen {
+            return;
+        }
+        let frame = *QUICK_FRAME.lock().unwrap();
+        if let Some(f) = frame {
+            if let Ok(bytes) = serde_json::to_vec(&f) {
+                if let Err(e) = std::fs::write(&path, bytes) {
+                    eprintln!("Save quick bar place: {e}");
+                }
+            }
+        }
+    });
 }

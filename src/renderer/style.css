@@ -2167,22 +2167,30 @@ form.setting-row input {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  height: 100%;
   box-sizing: border-box;
   padding: 10px;
 }
 .quick-bar .composer-wrap {
   padding: 0;
 }
+/* Above the field: takes the room the window has and scrolls the rest, so while the window
+   grows the field stays at the bottom and the newest reply stays next to it. */
 .quick-reply {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 6px 10px;
+  font-size: 14px;
+  border-bottom: 0.5px solid var(--line);
+}
+.quick-thread {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-height: 380px;
-  overflow-y: auto;
-  padding: 4px 6px;
-  font-size: 14px;
-  border-top: 0.5px solid var(--line);
-  padding-top: 10px;
+}
+.quick-thread .message.assistant {
+  max-width: 100%;
 }
 .composer.quick {
   flex-shrink: 0;

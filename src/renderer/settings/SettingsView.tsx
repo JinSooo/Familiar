@@ -566,6 +566,27 @@ export function SettingsView() {
                   ))}
                 </div>
               </div>
+              <div className="setting-row">
+                <span title="从 Finder 拖文件进来要先离开它，所以默认保持；有草稿或正在回复时不收，按 Esc 也能收起">
+                  快捷问答条点击别处时
+                </span>
+                <div className="segmented">
+                  {([true, false] as const).map((hide) => (
+                    <button
+                      type="button"
+                      key={String(hide)}
+                      className={
+                        settings.quickAutoHide === hide ? 'selected' : ''
+                      }
+                      onClick={() =>
+                        change({ ...settings, quickAutoHide: hide })
+                      }
+                    >
+                      {hide ? '自动收起' : '保持显示'}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
             <h3 className="memory-heading">透明度</h3>
             <div className="group">

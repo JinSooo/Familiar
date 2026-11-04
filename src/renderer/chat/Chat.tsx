@@ -358,7 +358,7 @@ function Glyph({ d }: { d: string }) {
 }
 
 /** Copy, edit, regenerate and branch for one message; shown while the pointer is over it. */
-function MessageActions({
+export function MessageActions({
   align,
   text,
   onEdit,
@@ -369,7 +369,7 @@ function MessageActions({
   text: string
   onEdit?: () => void
   onRegenerate?: () => void
-  onBranch: () => void
+  onBranch?: () => void
 }) {
   const [copied, setCopied] = useState(false)
   useEffect(() => {
@@ -402,7 +402,7 @@ function MessageActions({
         )}
       {onEdit && button('编辑后重新发送', glyphs.edit, onEdit)}
       {onRegenerate && button('重新生成', glyphs.regenerate, onRegenerate)}
-      {button('从这里分支成新对话', glyphs.branch, onBranch)}
+      {onBranch && button('从这里分支成新对话', glyphs.branch, onBranch)}
     </div>
   )
 }

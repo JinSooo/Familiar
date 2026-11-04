@@ -91,6 +91,8 @@ export const settingsSchema = z.object({
   workspaceSnapshots: z.boolean().default(true),
   /** Close the chat panel and capsule when the user clicks another app. */
   chatAutoHide: z.boolean().default(true),
+  /** Close the quick-ask bar when the user clicks another app. Off by default: files are dragged in from Finder. */
+  quickAutoHide: z.boolean().default(false),
   /** Image generation, separate from the chat model (the ChatGPT plan route cannot make images). */
   imageModel: z
     .object({

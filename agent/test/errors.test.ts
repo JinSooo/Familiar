@@ -53,6 +53,21 @@ describe('what the user is told', () => {
   ])('%s', (_, error, expected) => {
     expect(agentError(error).message).toContain(expected)
   })
+  // Reported 2026-11-03: a finished reply ended in 模型运行失败 and nothing said why, so it could
+  // not be traced. An error nothing recognises now carries what the service said.
+  test('an unrecognised error keeps a short form of the original', () => {
+    const message = agentError(
+      new Error('Type validation failed: Value: {"choices":[]}'),
+    ).message
+    expect(message).toContain('模型运行失败')
+    expect(message).toContain('Type validation failed')
+    expect(agentError(new Error('x'.repeat(300))).message.length).toBeLessThan(
+      160,
+    )
+    expect(agentError({}).message).toBe(
+      '模型运行失败，请检查模型设置或稍后重试。',
+    )
+  })
 })
 
 describe('relay fetch', () => {

@@ -44,6 +44,50 @@ describe('reminders file', () => {
     ])
   })
 
+  test('a line without a date is a to-do: no time, after the dated ones, kept on a round trip', () => {
+    const text = formatReminders([
+      { id: 't1', text: '买牛奶', kind: 'todo' },
+      { id: 'a', at: at(10), text: '交周报', kind: 'reminder' },
+    ])
+    expect(text.indexOf('交周报')).toBeLessThan(text.indexOf('买牛奶'))
+    expect(text).toContain('- [ ] 买牛奶 <!--')
+    // A hand-written line with no date counts; a malformed date is dropped, not read as a to-do.
+    const back = parseReminders(
+      `${text}- [ ] 取快递\n- [x] 2026-11-03 08:30 旧的\n- [ ] 2026-13-45 99:99 坏日期\n`,
+    )
+    expect(back.map((r) => [r.text, r.kind, r.at !== undefined])).toEqual([
+      ['交周报', 'reminder', true],
+      ['旧的', 'reminder', true],
+      ['买牛奶', 'todo', false],
+      ['取快递', 'todo', false],
+    ])
+    expect(parseReminders(formatReminders(back)).map((r) => r.id)).toEqual(
+      back.map((r) => r.id),
+    )
+  })
+
+  test('add_todo writes an undated line, list_reminders shows it without a time, a timed text goes to remind', async () => {
+    const tools = createReminderTools(() => {})
+    const call = (name: 'add_todo' | 'list_reminders', input: unknown) =>
+      (tools[name]!.execute as (i: unknown, o: unknown) => Promise<unknown>)(
+        input,
+        {},
+      )
+    expect(await call('add_todo', { text: '2026-11-05 10:00 开会' })).toEqual({
+      error: '有具体时间的事请用 remind',
+    })
+    expect(await call('add_todo', { text: '买牛奶' })).toMatchObject({
+      text: '买牛奶',
+    })
+    expect(await readFile(join(dataDir, 'reminders.md'), 'utf8')).toContain(
+      '- [ ] 买牛奶 <!--',
+    )
+    expect(await call('list_reminders', {})).toEqual([
+      { id: expect.any(String), text: '买牛奶', kind: 'todo' },
+    ])
+    await updateReminders(() => ({ list: [], result: undefined }))
+  })
+
   test('the remind tool writes a line and refuses times already past', async () => {
     const tools = createReminderTools(() => {})
     const run = (input: unknown) =>

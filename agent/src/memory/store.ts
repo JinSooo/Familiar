@@ -10,14 +10,14 @@ import { sensitiveReason } from './sensitive'
  * the user's own notes) is kept as is. A list item without the comment counts as written by
  * the user and confirmed; its id is derived from its text so it stays stable until rewritten.
  *
- * Files: profile.md, habits.md, topics/<topic>.md, pending.md (inferred, waiting for the user)
+ * Files: profile.md, habits.md, lessons.md, topics/<topic>.md, pending.md (inferred, waiting for the user)
  * and timeline/<period>.md, where a period is a day (2026-10-27), ISO week (2026-W44) or
  * month (2026-10).
  */
 export type MemoryCategory =
-  'profile' | 'habits' | 'topic' | 'pending' | 'timeline'
+  'profile' | 'habits' | 'lessons' | 'topic' | 'pending' | 'timeline'
 /** Where a confirmed memory can live. */
-export type KeptCategory = 'profile' | 'habits' | 'topic'
+export type KeptCategory = 'profile' | 'habits' | 'lessons' | 'topic'
 export type MemoryStatus = 'confirmed' | 'superseded' | 'pending'
 
 export interface MemoryMeta {
@@ -59,6 +59,7 @@ const marker = / <!-- familiar (\{.*\}) -->$/
 const titles = {
   profile: '画像',
   habits: '习惯',
+  lessons: '经验',
   pending: '待确认（它对我的判断）',
 } as const
 /** Distinct conversations that must show the same inference before it is kept unasked. */
@@ -222,10 +223,12 @@ export class MemoryStore {
     { category: MemoryCategory; key?: string; path: string }[]
   > {
     return [
-      ...(['profile', 'habits', 'pending'] as const).map((category) => ({
-        category,
-        path: this.file(category),
-      })),
+      ...(['profile', 'habits', 'lessons', 'pending'] as const).map(
+        (category) => ({
+          category,
+          path: this.file(category),
+        }),
+      ),
       ...(await this.topics()).map((key) => ({
         category: 'topic' as const,
         key,
@@ -529,10 +532,15 @@ export class MemoryStore {
   }
 }
 
-/** What goes into the system prompt every turn: confirmed profile and habits, plus topic names. */
+/**
+ * What goes into the system prompt every turn: confirmed profile and habits, plus topic names.
+ * Lessons have a budget of their own (newest first; 0 leaves them out), since they are read
+ * before acting and must not crowd out the profile.
+ */
 export async function memoryContext(
   store: MemoryStore,
   limit = 3000,
+  lessonLimit = 800,
 ): Promise<string> {
   const entries = (await store.list()).filter((e) => e.status === 'confirmed')
   const topics = await store.topics()
@@ -552,6 +560,23 @@ export async function memoryContext(
     }
     if (lines.length)
       sections.push(`${titles[category]}：\n${lines.join('\n')}`)
+  }
+  if (lessonLimit > 0) {
+    const lessons: string[] = []
+    let lessonUsed = 0
+    for (const e of entries
+      .filter((e) => e.category === 'lessons')
+      .sort((a, b) => b.at.localeCompare(a.at))) {
+      const line = `- [${e.id}] ${e.text}`
+      if (lessonUsed + line.length > lessonLimit) {
+        dropped++
+        continue
+      }
+      lessonUsed += line.length
+      lessons.push(line)
+    }
+    if (lessons.length)
+      sections.push(`${titles.lessons}：\n${lessons.join('\n')}`)
   }
   if (topics.length) sections.push(`已有主题：${topics.join('、')}`)
   if (dropped) sections.push(`（还有 ${dropped} 条未列出）`)

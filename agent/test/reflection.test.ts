@@ -74,6 +74,24 @@ describe('pending inferences', () => {
     })
   })
 
+  test('a lesson waits in pending, then is kept as a lesson', async () => {
+    const s = store()
+    const { entry } = await s.infer({
+      target: 'lessons',
+      text: '删文件之前，要先列出清单让用户确认',
+      confidence: 0.9,
+      evidence: '删之前先告诉我',
+      conversation: 'c1',
+    })
+    expect(entry.status).toBe('pending')
+    expect(entry.target).toBe('lessons')
+    const kept = await s.confirm(entry.id)
+    expect(kept.category).toBe('lessons')
+    const all = await s.list()
+    expect(all.filter((e) => e.status === 'pending')).toEqual([])
+    expect(all.filter((e) => e.category === 'lessons')).toHaveLength(1)
+  })
+
   test('correcting a kept memory keeps the old one struck through', async () => {
     const s = store()
     const kept = await s.add({ category: 'habits', text: '晚上写代码' })
@@ -91,6 +109,13 @@ describe('reflection', () => {
     expect(r.candidates.map((c) => c.text)).toEqual(['用户每天跑步'])
     expect(r.summary).toBe('聊了跑步')
     expect(() => parseReflection('没有内容')).toThrow()
+  })
+
+  test('a lessons candidate is a valid target', () => {
+    const r = parseReflection(
+      '{"candidates":[{"target":"lessons","text":"删文件之前，要先列出清单让用户确认","confidence":0.9,"evidence":"删之前先告诉我"}],"summary":""}',
+    )
+    expect(r.candidates.map((c) => c.target)).toEqual(['lessons'])
   })
 
   test('applies candidates into pending and the summary into the day', async () => {

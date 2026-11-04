@@ -266,6 +266,7 @@ function toolDescription(name: string, input: unknown): string {
     use_skill: '使用技能',
     fetch_page: '读网页',
     remind: '设提醒',
+    add_todo: '记待办',
     list_reminders: '查看提醒',
     cancel_reminder: '取消提醒',
   }
@@ -285,15 +286,17 @@ function toolDescription(name: string, input: unknown): string {
             ? field('query') || field('topic') || '全部记忆'
             : name === 'remind'
               ? `${field('at')} ${field('text')}`
-              : name === 'use_skill'
-                ? field('name')
-                : name === 'web_search'
-                  ? field('query')
-                  : name === 'fetch_page'
-                    ? (field('url')
-                        .replace(/^https?:\/\/(www\.)?/, '')
-                        .split('/')[0] ?? '')
-                    : (field('path').split('/').filter(Boolean).at(-1) ?? '')
+              : name === 'add_todo'
+                ? field('text')
+                : name === 'use_skill'
+                  ? field('name')
+                  : name === 'web_search'
+                    ? field('query')
+                    : name === 'fetch_page'
+                      ? (field('url')
+                          .replace(/^https?:\/\/(www\.)?/, '')
+                          .split('/')[0] ?? '')
+                      : (field('path').split('/').filter(Boolean).at(-1) ?? '')
   const short = target.length > 40 ? `${target.slice(0, 39)}…` : target
   const mcp = /^mcp__(.+?)__(.+)$/.exec(name)
   if (mcp) return `调用 ${mcp[1]} · ${mcp[2]}`

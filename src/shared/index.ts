@@ -544,11 +544,14 @@ export interface FamiliarAPI {
 /** One line of ~/.familiar/reminders.md. */
 export interface Reminder {
   id: string
-  /** When it is due, epoch ms. */
-  at: number
+  /** When it is due, epoch ms; a to-do has none. */
+  at?: number
   text: string
-  /** `reminder`: the user asked for it, always shown. `follow-up`: the pet's own idea, budgeted. */
-  kind: 'reminder' | 'follow-up'
+  /**
+   * `reminder`: the user asked for it, always shown. `follow-up`: the pet's own idea, budgeted.
+   * `todo`: no time, never goes off by itself; only mentioned when the pet decides what to say.
+   */
+  kind: 'reminder' | 'follow-up' | 'todo'
   /** Set once it was shown (or skipped); done reminders stay a day for the list, then go. */
   done?: number
 }
@@ -687,14 +690,14 @@ export interface ShortcutFailure {
 /** One line of ~/.familiar/memory as the memory page shows it; see agent/src/memory/store.ts. */
 export interface MemoryItem {
   id: string
-  category: 'profile' | 'habits' | 'topic' | 'pending' | 'timeline'
+  category: 'profile' | 'habits' | 'lessons' | 'topic' | 'pending' | 'timeline'
   /** Topic name, or timeline period (2026-10-27, 2026-W44, 2026-10). */
   key?: string
   text: string
   at: string
   source: 'user' | 'reflection'
   status: 'confirmed' | 'superseded' | 'pending'
-  target?: 'profile' | 'habits' | 'topic'
+  target?: 'profile' | 'habits' | 'lessons' | 'topic'
   targetTopic?: string
   confidence?: number
   evidence?: string

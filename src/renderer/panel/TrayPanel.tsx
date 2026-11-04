@@ -71,7 +71,7 @@ export function TrayPanel() {
   const [pending, setPending] = useState(0)
   const [usage, setUsage] = useState<UsageToday>()
   const [last, setLast] = useState<ConversationSummary>()
-  const [next, setNext] = useState<Reminder>()
+  const [next, setNext] = useState<Reminder & { at: number }>()
   const [icons, setIcons] = useState<Record<string, string>>({})
   /** Bumped on every open: the window loads at launch, possibly before the pet skin is known. */
   const [opened, setOpened] = useState(0)
@@ -93,7 +93,12 @@ export function TrayPanel() {
     void api
       .proactiveStatus()
       .then((s) =>
-        setNext(s.reminders.find((r) => !r.done && r.kind === 'reminder')),
+        setNext(
+          s.reminders.find(
+            (r): r is Reminder & { at: number } =>
+              !r.done && r.kind === 'reminder' && r.at !== undefined,
+          ),
+        ),
       )
       .catch(console.error)
     void api

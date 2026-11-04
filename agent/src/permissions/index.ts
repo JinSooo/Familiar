@@ -42,6 +42,7 @@ const memoryTools = new Set([
   'recall',
   // Reminders are Familiar's own file too.
   'remind',
+  'add_todo',
   'list_reminders',
   'cancel_reminder',
 ])

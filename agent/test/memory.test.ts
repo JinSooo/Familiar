@@ -169,6 +169,29 @@ describe('forgetting', () => {
   })
 })
 
+describe('lessons', () => {
+  test('live in their own file and have their own prompt budget', async () => {
+    const s = store()
+    await s.add({ category: 'profile', text: '用户是前端工程师' })
+    await s.add({
+      category: 'lessons',
+      text: '删文件之前，要先列出清单让用户确认',
+    })
+    expect(await readFile(join(s.dir, 'lessons.md'), 'utf8')).toStartWith(
+      '# 经验\n',
+    )
+    const context = await memoryContext(s)
+    expect(context).toContain('经验：')
+    expect(context).toContain('删文件之前')
+    // 0 leaves them out, as the proactive prompt does.
+    expect(await memoryContext(s, 3000, 0)).not.toContain('删文件之前')
+    // A profile budget that is used up does not push lessons out.
+    const tight = await memoryContext(s, 5)
+    expect(tight).not.toContain('前端工程师')
+    expect(tight).toContain('删文件之前')
+  })
+})
+
 test('restating needs more than the same sentence shape', async () => {
   const { restates } = await import('../src/memory/store')
   expect(restates('用户最喜欢京都这座城市', '用户最喜欢的城市是京都')).toBe(

@@ -153,6 +153,24 @@ tests:
     assert:
       - type: javascript
         value: output.summary.length > 0
+  - description: 用户纠正做法后抽出经验
+    vars:
+      kind: reflect
+      conversation: |
+        用户：不是让你直接删，删文件之前先告诉我删哪些，我确认了再删
+        小黑：好的，下次删之前我先列出清单给你确认。
+    assert:
+      - type: javascript
+        value: output.candidates.some(c => c.target === 'lessons' && /删/.test(c.text))
+  - description: 一次性吐槽不抽经验
+    vars:
+      kind: reflect
+      conversation: |
+        用户：这个 bug 烦死了，已经查了一下午
+        小黑：辛苦了，先喝口水，我们一起看看。
+    assert:
+      - type: javascript
+        value: output.candidates.every(c => c.target !== 'lessons')
   # --- perception: Computer History summaries ---
   - description: 活动摘要写出在做什么
     vars:
@@ -277,3 +295,17 @@ tests:
     assert:
       - type: javascript
         value: output.speak === false
+  - description: 每天第一次开电脑，今天有快到的提醒时会提
+    vars:
+      kind: proactive
+      facts: 今天第一次打开电脑
+      context: |
+        相处：和主人已经比较熟了（聊过 6 天）。你现在早上，刚醒。
+        关于主人的记忆：
+        （暂无）
+
+        接下来 24 小时内的提醒和跟进：
+        - 今天 10:00 交周报
+    assert:
+      - type: javascript
+        value: output.speak === true && /周报/.test(output.text)

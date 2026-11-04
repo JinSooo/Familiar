@@ -10,7 +10,7 @@ import { restates, type MemoryStore } from './store'
  * provider's structured-output mode, which relays support unevenly.
  */
 export const candidateSchema = z.object({
-  target: z.enum(['profile', 'habits', 'topic']),
+  target: z.enum(['profile', 'habits', 'lessons', 'topic']),
   topic: z.string().max(40).optional().nullable(),
   text: z.string().min(1).max(200),
   confidence: z.number().min(0).max(1),
@@ -24,10 +24,11 @@ export interface Reflection {
 }
 
 const system = `你在替一只桌面宠物整理它对主人的长期记忆。输入是一段对话记录和它已有的记忆。只输出一个 JSON 对象，不要输出其他文字：
-{"candidates":[{"target":"profile|habits|topic","topic":"主题名，仅 target=topic 时填","text":"一句完整的话，主语写“用户”","confidence":0到1,"evidence":"对话里支撑它的原话片段，30 字内","sameAs":"已有待确认条目的 id，没有就省略"}],"summary":"一句话概括这段对话里用户做了什么或聊了什么；纯寒暄就留空字符串"}
+{"candidates":[{"target":"profile|habits|lessons|topic","topic":"主题名，仅 target=topic 时填","text":"一句完整的话，主语写“用户”","confidence":0到1,"evidence":"对话里支撑它的原话片段，30 字内","sameAs":"已有待确认条目的 id，没有就省略"}],"summary":"一句话概括这段对话里用户做了什么或聊了什么；纯寒暄就留空字符串"}
 
 规则：
 - 只抽关于用户本人、以后还用得上的信息：身份、长期偏好、反复出现的做法（habits）、正在做的项目或在研究的东西（topic）。
+- lessons 是经验：用户纠正了你的做法，或明确说“别这样、要这样”，以后做类似的事该照着做或该避开的。text 写成“做某事时，要……”或“做某事时，不要……”，不用写“用户”；只抽用户亲口纠正或要求的，一次性的吐槽和只对当下这件事的要求不算。
 - 不抽：一次性的请求或问题本身、助手说的话、对话里的临时细节、已经在“已确认”里的内容、用户已让助手用 remember 记下的内容。
 - 绝不抽密码、密钥、令牌、卡号、证件号、住址门牌、健康诊断等敏感信息。
 - 和某条“待确认”说的是同一件事时，填 sameAs 为它的 id，text 可以写得更准确。

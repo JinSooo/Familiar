@@ -113,7 +113,7 @@ export function companionContext(state: ProactiveState, now: Date): string {
   return `相处：和主人${closeness}（聊过 ${days} 天）。你现在${energy}。`
 }
 
-export const reminderInstructions = `用户要你在某个时间提醒他时，用 remind，时间按下面给的“现在”换算成绝对时间；只说“待会儿”这类没有时间的，先问清楚。用户问有哪些提醒用 list_reminders，要取消用 cancel_reminder。设好后用一句话复述时间和内容。
+export const reminderInstructions = `用户要你在某个时间提醒他时，用 remind，时间按下面给的“现在”换算成绝对时间；只说“待会儿”这类没有时间的，先问清楚。用户让你记一件没有具体时间的待办（“记一下要买牛奶”“别忘了回邮件”）时，用 add_todo，不要自己编时间；待办不会到点弹出，只在合适的时候被想起。用户问有哪些提醒或待办用 list_reminders，要取消用 cancel_reminder。设好后用一句话复述时间和内容。
 用户提到之后要发生的具体事情（面试、考试、出差、交付），并且值得过后关心一下时，可以用 remind 的 follow_up=true 记一个跟进，时间定在那件事之后；不用告诉用户，也不要滥用，一次对话最多一个。`
 
 export function createReminderTools(onChange: () => void): ToolSet {
@@ -155,21 +155,43 @@ export function createReminderTools(onChange: () => void): ToolSet {
         return { id, at: stamp(time), text }
       },
     }),
+    add_todo: tool({
+      description:
+        '记一件没有具体时间的待办（比如“记一下要买牛奶”）；它不会到点弹出，只在合适的时候被想起。有具体时间的用 remind。',
+      inputSchema: z.object({
+        text: z.string().min(1).max(200).describe('待办的内容'),
+      }),
+      execute: async ({ text }) => {
+        const body = text.replace(/\s+/g, ' ').trim()
+        if (!body) return { error: '内容为空' }
+        // A line that starts with a date and time would be read back as a reminder.
+        if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}( |$)/.test(body))
+          return { error: '有具体时间的事请用 remind' }
+        const id = newReminderId()
+        await updateReminders((list) => ({
+          list: [...list, { id, text: body, kind: 'todo' }],
+          result: undefined,
+        }))
+        onChange()
+        return { id, text: body }
+      },
+    }),
     list_reminders: tool({
-      description: '列出还没到的提醒和跟进。',
+      description: '列出还没到的提醒、跟进和待办。',
       inputSchema: z.object({}),
       execute: async () =>
         (await readReminders())
           .filter((r) => !r.done)
           .map((r) => ({
             id: r.id,
-            at: stamp(r.at),
+            ...(r.at === undefined ? {} : { at: stamp(r.at) }),
             text: r.text,
             kind: r.kind,
           })),
     }),
     cancel_reminder: tool({
-      description: '取消一个提醒，id 来自 list_reminders 或 remind 的结果。',
+      description:
+        '取消一个提醒或待办，id 来自 list_reminders、remind 或 add_todo 的结果。',
       inputSchema: z.object({ id: z.string() }),
       execute: async ({ id }) => {
         const found = await updateReminders((list) => ({

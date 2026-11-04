@@ -7,6 +7,7 @@ import type {
   ProactiveMessage,
   ProactiveStatus,
   ProactiveTrigger,
+  Reminder,
 } from '../../../src/shared'
 import { getSettings } from '../settings'
 import { idleSeconds } from '../system'
@@ -211,14 +212,43 @@ const responses = {
   quiet: '别烦我',
   ignored: '没理',
 } as const
-/** Memory, closeness and energy, and what was said lately: what the model decides from. */
-async function material(now: number) {
+/** Reminders and follow-ups due in the next day, so "his deadline is near" can be noticed; with `todos`, also the open to-dos that have no time. */
+async function upcoming(now: number, todos = false): Promise<string> {
+  const open = (await readReminders().catch(() => [])).filter((r) => !r.done)
+  const soon = open
+    .filter(
+      (r): r is Reminder & { at: number } =>
+        r.at !== undefined && r.at > now && r.at <= now + 24 * 60 * minute,
+    )
+    .slice(0, 8)
+  const today = new Date(now).toDateString()
+  const parts: string[] = []
+  if (soon.length)
+    parts.push(
+      `接下来 24 小时内的提醒和跟进：\n${soon
+        .map(
+          (r) =>
+            `- ${new Date(r.at).toDateString() === today ? '今天' : '明天'} ${stamp(r.at).slice(11)} ${r.text}`,
+        )
+        .join('\n')}`,
+    )
+  const undated = todos ? open.filter((r) => r.kind === 'todo').slice(0, 5) : []
+  if (undated.length)
+    parts.push(
+      `还没做的待办（没有时间）：\n${undated.map((r) => `- ${r.text}`).join('\n')}`,
+    )
+  return parts.join('\n\n')
+}
+/** Memory, closeness and energy, upcoming reminders, and what was said lately: what the model decides from. */
+async function material(now: number, todos = false) {
   const state = await readState()
   const memory = openMemory()
+  const reminders = await upcoming(now, todos)
   return {
     context: [
       companionContext(state, new Date(now)),
-      `关于主人的记忆：\n${(await memoryContext(memory.store, 1500).catch(() => '')) || '（暂无）'}`,
+      `关于主人的记忆：\n${(await memoryContext(memory.store, 1500, 0).catch(() => '')) || '（暂无）'}`,
+      ...(reminders ? [reminders] : []),
     ].join('\n\n'),
     recent: state.history
       .filter((m) => now - m.at < 86400000)
@@ -278,8 +308,11 @@ export async function noticeActivity(digest: {
 }
 
 async function dueReminders(now: number) {
-  const due = (await readReminders()).filter((r) => !r.done && r.at <= now)
-  return due
+  // To-dos have no time and never come due.
+  return (await readReminders()).filter(
+    (r): r is Reminder & { at: number } =>
+      !r.done && r.at !== undefined && r.at <= now,
+  )
 }
 
 async function tick() {
@@ -386,7 +419,7 @@ async function tick() {
       model: backgroundModel(),
       name: settings.pet.name,
       facts,
-      ...(await material(now)),
+      ...(await material(now, trigger === 'firstToday')),
     })
     if (!decision.speak) return
     // Things may have changed while the model thought.

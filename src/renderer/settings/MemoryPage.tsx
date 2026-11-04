@@ -5,6 +5,7 @@ import { api } from '../api'
 const targetLabel = {
   profile: '画像',
   habits: '习惯',
+  lessons: '经验',
   topic: '主题',
 } as const
 const failure = (e: unknown) =>
@@ -283,6 +284,7 @@ export function MemoryPage({ section }: { section: MemorySection }) {
             '还没有。可以对它说「记住……」。',
           )}
           {group('习惯', kept('habits'), 'kept', '还没有。')}
+          {group('经验', kept('lessons'), 'kept', '还没有。')}
         </>
       )}
       {section === 'topics' &&

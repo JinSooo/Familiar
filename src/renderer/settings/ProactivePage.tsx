@@ -210,10 +210,12 @@ export function ProactivePage({
             <div className="setting-row" key={r.id}>
               <div className="ch-label">
                 <span>{r.text}</span>
-                <span className="muted">
-                  {when(r.at)}
-                  {r.kind === 'follow-up' ? ' · 跟进' : ''}
-                </span>
+                {r.at !== undefined && (
+                  <span className="muted">
+                    {when(r.at)}
+                    {r.kind === 'follow-up' ? ' · 跟进' : ''}
+                  </span>
+                )}
               </div>
               <button
                 type="button"

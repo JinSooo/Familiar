@@ -32,7 +32,11 @@ if (vars.kind === 'recall') {
       await store.appendTimeline(where.slice(9), text)
     else if (where.startsWith('topic:'))
       await store.add({ category: 'topic', topic: where.slice(6), text })
-    else await store.add({ category: where as 'profile' | 'habits', text })
+    else
+      await store.add({
+        category: where as 'profile' | 'habits' | 'lessons',
+        text,
+      })
   }
   const index = new MemoryIndex(store, join(dir, 'index.sqlite'))
   const hits = await index.search(vars.query!)

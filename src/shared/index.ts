@@ -290,6 +290,8 @@ export interface Source {
   title: string
   /** A picture from the page (og:image or first large image), when it was read. */
   image?: string
+  /** A knowledge base file (url is its file:// address): where it is and the part used. */
+  file?: { path: string; location?: string }
   /** How much of the reply text came before it; none means after the text (older transcripts). */
   at?: number
 }
@@ -661,6 +663,21 @@ export interface ProactiveStatus {
   quietUntil?: number
   /** Lines that went unseen and can still be shown again, newest first. */
   missed: ProactiveMessage[]
+  /** Times it thought about speaking and did not, newest first (last two days). */
+  held: ProactiveHeld[]
+}
+/**
+ * A moment a trigger went off but no bubble came of it: the model chose silence, the call
+ * failed, or a line it had ready went stale waiting for a good moment.
+ */
+export interface ProactiveHeld {
+  at: number
+  trigger: ProactiveTrigger
+  kind: 'silent' | 'failed' | 'expired'
+  /** The model's reason for staying quiet, the error, or why the line never came out. */
+  reason: string
+  /** The line it had in mind (expired only). */
+  text?: string
 }
 export interface PerceptionEvent {
   at: number

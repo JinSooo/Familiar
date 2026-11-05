@@ -7,7 +7,11 @@ import { createWorkspaceTools, ensureWorkspace, snapshot } from '../workspace'
 import { createMemoryTools, memoryInstructions, openMemory } from '../memory'
 import { createWebTools, sourcesOf, webInstructions } from '../web'
 import { activeEmbedder } from '../embedding'
-import { createKnowledgeTools, knowledgeInstructions } from '../knowledge'
+import {
+  createKnowledgeTools,
+  knowledgeInstructions,
+  knowledgeSources,
+} from '../knowledge'
 import { mcpTools } from '../extensions/mcp'
 import {
   createSkillTools,
@@ -64,7 +68,10 @@ export async function runAgent(
         ...images,
         ...external,
       },
-      sources: sourcesOf,
+      sources: (name, output) => [
+        ...sourcesOf(name, output),
+        ...knowledgeSources(name, output),
+      ],
       instructions: `${createPersona(
         workspacePath,
         settings.permissionMode,

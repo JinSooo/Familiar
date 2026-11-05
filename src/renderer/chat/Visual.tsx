@@ -198,42 +198,102 @@ const host = (url: string) => {
     return url
   }
 }
-export function SourceCards({ sources }: { sources: Source[] }) {
+const fileName = (path: string) => path.split('/').at(-1) ?? path
+/**
+ * Knowledge files the reply actually names: a search returns several files and most are not
+ * what the answer used. When the reply names none of them, all are shown.
+ */
+export function citedSources(sources: Source[], reply: string): Source[] {
+  const files = sources.filter((s) => s.file)
+  const named = files.filter((s) => {
+    const name = fileName(s.file!.path)
+    return [s.title, name, name.replace(/\.[^.]+$/, '')].some(
+      (n) => n.length >= 2 && reply.includes(n),
+    )
+  })
+  const keep = new Set(named.length ? named : files)
+  return sources.filter((s) => !s.file || keep.has(s))
+}
+
+function FileCard({ source }: { source: Source }) {
+  const file = source.file!
+  return (
+    <button
+      type="button"
+      className="source-card"
+      title={file.path}
+      onClick={() => api.revealKnowledge(file.path)}
+    >
+      <span className="source-title">{source.title}</span>
+      <span className="source-host muted">
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M6 3h8l4 4v14H6zM14 3v4h4" />
+        </svg>
+        {fileName(file.path)}
+        {file.location ? ` · ${file.location}` : ''}
+      </span>
+    </button>
+  )
+}
+
+export function SourceCards({
+  sources: all,
+  reply = '',
+}: {
+  sources: Source[]
+  /** The whole reply text, to pick the knowledge files it cites. */
+  reply?: string
+}) {
+  const sources = citedSources(all, reply)
   if (!sources.length) return null
   return (
     <div className="sources">
       <span className="muted sources-label">来源 · {sources.length}</span>
       <div className="source-row">
-        {sources.map((s) => (
-          <button
-            type="button"
-            key={s.url}
-            className="source-card"
-            title={s.url}
-            onClick={() => void openUrl(s.url).catch(console.error)}
-          >
-            {s.image && (
-              <img
-                className="source-thumb"
-                src={s.image}
-                alt=""
-                loading="lazy"
-                referrerPolicy="no-referrer"
-                onError={(e) => e.currentTarget.remove()}
-              />
-            )}
-            <span className="source-title">{s.title}</span>
-            <span className="source-host muted">
-              <img
-                src={`https://${host(s.url)}/favicon.ico`}
-                alt=""
-                referrerPolicy="no-referrer"
-                onError={(e) => (e.currentTarget.style.visibility = 'hidden')}
-              />
-              {host(s.url)}
-            </span>
-          </button>
-        ))}
+        {sources.map((s) =>
+          s.file ? (
+            <FileCard key={s.url} source={s} />
+          ) : (
+            <button
+              type="button"
+              key={s.url}
+              className="source-card"
+              title={s.url}
+              onClick={() => void openUrl(s.url).catch(console.error)}
+            >
+              {s.image && (
+                <img
+                  className="source-thumb"
+                  src={s.image}
+                  alt=""
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                  onError={(e) => e.currentTarget.remove()}
+                />
+              )}
+              <span className="source-title">{s.title}</span>
+              <span className="source-host muted">
+                <img
+                  src={`https://${host(s.url)}/favicon.ico`}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                  onError={(e) => (e.currentTarget.style.visibility = 'hidden')}
+                />
+                {host(s.url)}
+              </span>
+            </button>
+          ),
+        )}
       </div>
     </div>
   )

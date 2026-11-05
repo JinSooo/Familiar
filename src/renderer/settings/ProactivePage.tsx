@@ -25,6 +25,16 @@ const responses = {
   ignored: '没理',
   missed: '没看到',
 } as const
+const held = { silent: '没开口', failed: '出错', expired: '没说出口' } as const
+/** What set it thinking, for a held-back row. */
+const moments: Record<string, string> = {
+  firstToday: '今天第一次打开电脑',
+  back: '你回来了',
+  longWork: '你连续工作了很久',
+  activity: '看了你在做的事',
+  lateNight: '深夜还在用电脑',
+  'follow-up': '到了跟进的时候',
+}
 const when = (at: number) => {
   const d = new Date(at)
   const today = new Date()
@@ -60,6 +70,10 @@ export function ProactivePage({
     }
   }, [refresh])
   const pending = status?.reminders.filter((r) => !r.done) ?? []
+  // What it said and the times it thought about it and kept quiet, in one timeline.
+  const recent = [...(status?.history ?? []), ...(status?.held ?? [])]
+    .sort((a, b) => b.at - a.at)
+    .slice(0, 20)
   return (
     <>
       <div className="group">
@@ -238,20 +252,36 @@ export function ProactivePage({
 
       <h3 className="memory-heading">最近说过的</h3>
       <div className="group">
-        {status?.history.length ? (
-          status.history.slice(0, 20).map((m) => (
-            <div className="setting-row" key={m.id}>
-              <div className="ch-label">
-                <span>{m.text}</span>
+        {recent.length ? (
+          recent.map((r) =>
+            'id' in r ? (
+              <div className="setting-row" key={r.id}>
+                <div className="ch-label">
+                  <span>{r.text}</span>
+                  <span className="muted">
+                    {when(r.at)} · {r.reason}
+                  </span>
+                </div>
                 <span className="muted">
-                  {when(m.at)} · {m.reason}
+                  {r.response ? responses[r.response] : '在显示'}
                 </span>
               </div>
-              <span className="muted">
-                {m.response ? responses[m.response] : '在显示'}
-              </span>
-            </div>
-          ))
+            ) : (
+              <div className="setting-row held" key={`${r.at}-${r.kind}`}>
+                <div className="ch-label">
+                  <span className="muted">
+                    {r.text ?? `${moments[r.trigger] ?? r.trigger}，没开口`}
+                  </span>
+                  <span className="muted">
+                    {when(r.at)} · {r.reason}
+                  </span>
+                </div>
+                <span className={r.kind === 'failed' ? 'warn' : 'muted'}>
+                  {held[r.kind]}
+                </span>
+              </div>
+            ),
+          )
         ) : (
           <p className="muted empty-row">还没有主动说过话</p>
         )}

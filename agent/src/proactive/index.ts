@@ -1,16 +1,14 @@
 import { execFile } from 'node:child_process'
-import { existsSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import type {
+  ProactiveHeld,
   ProactiveMessage,
   ProactiveStatus,
   ProactiveTrigger,
   Reminder,
 } from '../../../src/shared'
 import { getSettings } from '../settings'
-import { idleSeconds } from '../system'
+import { idleSeconds, sensorPath } from '../system'
 import { buffer } from '../perception'
 import { backgroundModel } from '../memory/jobs'
 import { memoryContext, openMemory } from '../memory'
@@ -56,15 +54,6 @@ export interface Speaker {
   changed(status: ProactiveStatus): void
 }
 
-function sensorPath(): string | null {
-  const candidates = [
-    join(dirname(process.execPath), 'familiar-sensor'),
-    fileURLToPath(
-      new URL('../../../sensor/.build/familiar-sensor', import.meta.url),
-    ),
-  ]
-  return candidates.find((p) => existsSync(p)) ?? null
-}
 /** Full screen, a meeting app in front, or the microphone in use. Unknown counts as fine. */
 async function inTheWay(): Promise<string | undefined> {
   const path = sensorPath()
@@ -126,8 +115,22 @@ export async function proactiveStatus(): Promise<ProactiveStatus> {
       ? { quietUntil: state.quietUntil }
       : {}),
     missed: missedLines(state.history, now),
+    held: state.held,
   }
 }
+
+/** Notes a trigger that came to nothing (see ProactiveHeld); the page lists them. */
+async function hold(entry: ProactiveHeld) {
+  await updateState((s) => {
+    s.held.unshift(entry)
+  })
+  void changed()
+}
+const failure = (error: unknown) =>
+  `调用失败：${error instanceof Error ? error.message : String(error)}`.slice(
+    0,
+    120,
+  )
 async function changed() {
   speaker?.changed(await proactiveStatus())
 }
@@ -351,15 +354,33 @@ export async function noticeActivity(digest: {
     )
       return
     const facts = `这段时间主人在做的事：${digest.title}。${digest.summary}`
-    const decision = await decide({
-      model: backgroundModel(),
-      name: settings.pet.name,
-      facts,
-      ...(await material(now)),
-    })
+    let decision
+    try {
+      decision = await decide({
+        model: backgroundModel(),
+        name: settings.pet.name,
+        facts,
+        ...(await material(now)),
+      })
+    } catch (error) {
+      await hold({
+        at: now,
+        trigger: 'activity',
+        kind: 'failed',
+        reason: failure(error),
+      })
+      throw error
+    }
     await updateState((s) => {
       s.fired.activity = now
     })
+    if (!decision.speak)
+      await hold({
+        at: now,
+        trigger: 'activity',
+        kind: 'silent',
+        reason: decision.reason || '觉得没什么要说的',
+      })
     if (decision.speak)
       queued = {
         text: decision.text,
@@ -430,7 +451,16 @@ async function tick() {
       ? await buffer.read(now - 4 * 60 * minute).catch(() => [])
       : []
     const moment = breakpoint({ events, now, idle })
-    if (queued && queued.expires < now) queued = undefined
+    if (queued && queued.expires < now) {
+      await hold({
+        at: now,
+        trigger: 'activity',
+        kind: 'expired',
+        reason: '一直没等到不打扰你的时机',
+        text: queued.text,
+      })
+      queued = undefined
+    }
 
     // The day's start and coming back are good moments in themselves.
     const care = watching
@@ -486,13 +516,27 @@ async function tick() {
         list: list.map((r) => (r.id === followUp.id ? { ...r, done: now } : r)),
         result: undefined,
       }))
-    const decision = await decide({
-      model: backgroundModel(),
-      name: settings.pet.name,
-      facts,
-      ...(await material(now, trigger === 'firstToday')),
-    })
-    if (!decision.speak) return
+    let decision
+    try {
+      decision = await decide({
+        model: backgroundModel(),
+        name: settings.pet.name,
+        facts,
+        ...(await material(now, trigger === 'firstToday')),
+      })
+    } catch (error) {
+      await hold({ at: now, trigger, kind: 'failed', reason: failure(error) })
+      throw error
+    }
+    if (!decision.speak) {
+      await hold({
+        at: now,
+        trigger,
+        kind: 'silent',
+        reason: decision.reason || '觉得没什么要说的',
+      })
+      return
+    }
     // Things may have changed while the model thought.
     if (showing || speaker.busy()) return
     await show(

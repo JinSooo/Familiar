@@ -2,8 +2,7 @@ import { spawn, execFile, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { promisify } from 'node:util'
 import type {
@@ -16,7 +15,7 @@ import { listConversations, loadConversation } from '../conversations'
 import { openMemory } from '../memory'
 import { backgroundModel } from '../memory/jobs'
 import { getSettings } from '../settings'
-import { dataDir, readKey, writeKey } from '../system'
+import { dataDir, readKey, sensorPath, writeKey } from '../system'
 import { ensureWorkspace, snapshot } from '../workspace'
 import { admit, segments } from './activity'
 import { keepHours, PerceptionBuffer } from './buffer'
@@ -29,17 +28,6 @@ export const buffer = new PerceptionBuffer(
   () => readKey(keyAccount),
   (key) => writeKey(key, keyAccount),
 )
-
-/** Release: beside the agent binary in Contents/MacOS. Development: built by `pnpm sensor:build`. */
-function sensorPath(): string | null {
-  const candidates = [
-    join(dirname(process.execPath), 'familiar-sensor'),
-    fileURLToPath(
-      new URL('../../../sensor/.build/familiar-sensor', import.meta.url),
-    ),
-  ]
-  return candidates.find((p) => existsSync(p)) ?? null
-}
 
 let child: ChildProcess | undefined
 let restartTimer: ReturnType<typeof setTimeout> | undefined

@@ -431,12 +431,6 @@ summary:focus-visible {
 .tool-group summary::-webkit-details-marker {
   display: none;
 }
-.tool-group summary::after {
-  content: ' ›';
-}
-.tool-group[open] summary::after {
-  content: ' ⌄';
-}
 .tool-group p,
 .tool-group .tool-step {
   margin: 4px 0 0 12px;
@@ -449,11 +443,15 @@ summary:focus-visible {
 .tool-step summary::-webkit-details-marker {
   display: none;
 }
-.tool-step summary::after {
-  content: ' ›';
+/* The arrow after a tool row's label: an icon turned by the open state, so it stays centred
+   on the text (the ⌄ glyph sat on the baseline). */
+.tool summary .disclosure {
+  margin-left: 4px;
+  vertical-align: -1px;
+  transition: transform 0.15s ease;
 }
-.tool-step[open] > summary::after {
-  content: ' ⌄';
+.tool[open] > summary > .disclosure {
+  transform: rotate(90deg);
 }
 .tool-io {
   margin: 6px 0 2px 12px;
@@ -2327,4 +2325,7 @@ form.setting-row input {
   height: 4px;
   margin: 0 0 8px;
   accent-color: var(--accent);
+}
+.setting-row.held > .warn {
+  color: var(--orange);
 }

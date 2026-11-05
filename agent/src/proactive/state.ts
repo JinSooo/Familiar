@@ -8,7 +8,7 @@ import {
 import { join } from 'node:path'
 import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
-import type { ProactiveMessage } from '../../../src/shared'
+import type { ProactiveHeld, ProactiveMessage } from '../../../src/shared'
 import { dataDir } from '../system'
 import {
   newReminderId,
@@ -27,6 +27,8 @@ import {
  */
 export interface ProactiveState {
   history: ProactiveMessage[]
+  /** Triggers that came to nothing, so the settings page can say why it stayed quiet. */
+  held: ProactiveHeld[]
   fired: Record<string, number>
   quietUntil?: number
   /** "YYYY-MM-DD" → messages the user sent that day. */
@@ -42,6 +44,7 @@ export async function readState(): Promise<ProactiveState> {
     ) as Partial<ProactiveState>
     cache = {
       history: Array.isArray(raw.history) ? raw.history : [],
+      held: Array.isArray(raw.held) ? raw.held : [],
       fired: raw.fired && typeof raw.fired === 'object' ? raw.fired : {},
       days: raw.days && typeof raw.days === 'object' ? raw.days : {},
       ...(typeof raw.quietUntil === 'number'
@@ -49,7 +52,7 @@ export async function readState(): Promise<ProactiveState> {
         : {}),
     }
   } catch {
-    cache = { history: [], fired: {}, days: {} }
+    cache = { history: [], held: [], fired: {}, days: {} }
   }
   return cache
 }
@@ -65,6 +68,10 @@ export function updateState(
       .filter((m) => m.at > week)
       .sort((a, b) => b.at - a.at)
       .slice(0, 200)
+    state.held = state.held
+      .filter((h) => h.at > Date.now() - 2 * 86400000)
+      .sort((a, b) => b.at - a.at)
+      .slice(0, 30)
     const days = Object.keys(state.days).sort()
     for (const d of days.slice(0, Math.max(0, days.length - 120)))
       delete state.days[d]
@@ -115,7 +122,11 @@ export function companionContext(state: ProactiveState, now: Date): string {
   return `相处：和主人${closeness}（聊过 ${days} 天）。你现在${energy}。`
 }
 
-export const reminderInstructions = `用户要你在某个时间提醒他时，用 remind，时间按下面给的“现在”换算成绝对时间；只说“待会儿”这类没有时间的，先问清楚。用户让你记一件没有具体时间的待办（“记一下要买牛奶”“别忘了回邮件”）时，用 add_todo，不要自己编时间；待办不会到点弹出，只在合适的时候被想起。用户问有哪些提醒或待办用 list_reminders，要取消用 cancel_reminder。设好后用一句话复述时间和内容。
+/** Words that name a later day: such a line is a reminder for that day, not a to-do. */
+const laterDay =
+  /明天|明早|明晚|后天|下周|周末|(?:周|星期|礼拜)[一二三四五六日天]|\d{1,2}\s*月\s*\d{1,2}\s*[日号]/
+
+export const reminderInstructions = `用户要你在某个时间提醒他时，用 remind，时间按下面给的“现在”换算成绝对时间；只说“待会儿”这类没有时间的，先问清楚。只说了哪天、没说几点的（“明天要修复两个问题”“周五前交报告”），也是提醒不是待办：用 remind 定在那天早上 9:00（“明晚”定 20:00，“周末”定周六 9:00），复述时说清楚“明早 9 点提醒你”，用户可以改。用户让你记一件没有具体时间的待办（“记一下要买牛奶”“别忘了回邮件”）时，用 add_todo，不要自己编时间；待办不会到点弹出，只在合适的时候被想起。用户问有哪些提醒或待办用 list_reminders，要取消用 cancel_reminder。设好后用一句话复述时间和内容。
 用户提到之后要发生的具体事情（面试、考试、出差、交付），并且值得过后关心一下时，可以用 remind 的 follow_up=true 记一个跟进，时间定在那件事之后；不用告诉用户，也不要滥用，一次对话最多一个。`
 
 export function createReminderTools(onChange: () => void): ToolSet {
@@ -159,7 +170,7 @@ export function createReminderTools(onChange: () => void): ToolSet {
     }),
     add_todo: tool({
       description:
-        '记一件没有具体时间的待办（比如“记一下要买牛奶”）；它不会到点弹出，只在合适的时候被想起。有具体时间的用 remind。',
+        '记一件没有日期也没有时间的待办（比如“记一下要买牛奶”）；它不会到点弹出，只在合适的时候被想起。说了哪天（明天、周五、11 月 8 日）或几点的都用 remind，只有日期时定在那天 9:00。',
       inputSchema: z.object({
         text: z.string().min(1).max(200).describe('待办的内容'),
       }),
@@ -169,6 +180,12 @@ export function createReminderTools(onChange: () => void): ToolSet {
         // A line that starts with a date and time would be read back as a reminder.
         if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}( |$)/.test(body))
           return { error: '有具体时间的事请用 remind' }
+        // A to-do never pops up, so "明天要……" saved as one is silently never brought up.
+        if (laterDay.test(body))
+          return {
+            error:
+              '说了哪一天的事请用 remind（没说几点就定在那天 9:00），待办不会到点提醒',
+          }
         const id = newReminderId()
         await updateReminders((list) => ({
           list: [...list, { id, text: body, kind: 'todo' }],

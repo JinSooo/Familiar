@@ -13,6 +13,7 @@ import { sensitiveReason } from '../memory/sensitive'
 import {
   chunk,
   extract,
+  pdfReader,
   searchText,
   titleOf,
   walk,
@@ -56,6 +57,25 @@ export class KnowledgeIndex {
     this.db.run(
       'CREATE TABLE IF NOT EXISTS kroots (root TEXT PRIMARY KEY, truncated INTEGER NOT NULL)',
     )
+    // A PDF's pages as read (OCR included), so read_knowledge does not recognize them again.
+    this.db.run(
+      'CREATE TABLE IF NOT EXISTS kpages (path TEXT NOT NULL, page INTEGER NOT NULL, text TEXT NOT NULL, PRIMARY KEY (path, page))',
+    )
+    this.db.run(
+      'CREATE TABLE IF NOT EXISTS kmeta (key TEXT PRIMARY KEY, value TEXT NOT NULL)',
+    )
+    // PDFs read by an older reader (before OCR, say) are read again on the next sync.
+    const reader = this.db
+      .query<{ value: string }, [string]>(
+        'SELECT value FROM kmeta WHERE key = ?',
+      )
+      .get('pdfReader')
+    if (reader?.value !== pdfReader) {
+      this.db.run("UPDATE kfiles SET mtime = -1 WHERE kind = 'pdf'")
+      this.db
+        .query('INSERT OR REPLACE INTO kmeta (key, value) VALUES (?, ?)')
+        .run('pdfReader', pdfReader)
+    }
     this.vectors = new VectorCache(this.db, 'knowledge_vectors')
   }
 
@@ -102,7 +122,7 @@ export class KnowledgeIndex {
         }
         const chunks = error ? [] : chunk(pages, file.kind)
         if (!error && !chunks.length && file.kind === 'pdf')
-          error = '没有可读的文字（可能是扫描件）'
+          error = '没有识别出文字'
         this.replace(
           file.path,
           {
@@ -112,6 +132,7 @@ export class KnowledgeIndex {
             mtime: file.mtime,
             title: titleOf(file.path, pages),
             error,
+            ...(file.kind === 'pdf' && !error ? { pages } : {}),
           },
           chunks.map((c) => {
             const text = searchText(file.path, c)
@@ -159,6 +180,7 @@ export class KnowledgeIndex {
       mtime: number
       title: string
       error: string | null
+      pages?: string[]
     } | null,
     chunks: {
       heading: string
@@ -183,6 +205,11 @@ export class KnowledgeIndex {
     this.db.transaction(() => {
       for (const { id } of ids) dropFts.run(id)
       this.db.query('DELETE FROM kchunks WHERE path = ?').run(path)
+      this.db.query('DELETE FROM kpages WHERE path = ?').run(path)
+      const addPage = this.db.prepare(
+        'INSERT INTO kpages (path, page, text) VALUES (?, ?, ?)',
+      )
+      file?.pages?.forEach((text, i) => addPage.run(path, i + 1, text))
       if (!file) {
         this.db.query('DELETE FROM kfiles WHERE path = ?').run(path)
         return
@@ -213,6 +240,16 @@ export class KnowledgeIndex {
         addFts.run(lastInsertRowid, c.search)
       }
     })()
+  }
+
+  /** A PDF's pages as last read, or undefined when they were not kept. */
+  pages(path: string): string[] | undefined {
+    const rows = this.db
+      .query<{ text: string }, [string]>(
+        'SELECT text FROM kpages WHERE path = ? ORDER BY page',
+      )
+      .all(path)
+    return rows.length ? rows.map((r) => r.text) : undefined
   }
 
   /** Makes the next sync read every file again. */

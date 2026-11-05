@@ -494,7 +494,7 @@ export function Reply({
     ) : part.kind === 'tools' ? (
       <ToolSteps key={k} tools={part.tools} view={view} />
     ) : part.kind === 'sources' ? (
-      <SourceCards key={k} sources={part.sources} />
+      <SourceCards key={k} sources={part.sources} reply={message.content} />
     ) : (
       <Attachments key={k} items={part.files} />
     ),
@@ -542,6 +542,26 @@ function ApprovalDetail({
 
 /** One line per tool step; more than three fold into a summary like 「搜索 4 次 · 读网页 9 次」. */
 /** One line per step; a step with its command or result opens to show them in full. */
+/** Points right while closed and turns down when its <details> opens (see .disclosure). */
+function Chevron() {
+  return (
+    <svg
+      className="disclosure"
+      width="10"
+      height="10"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M9 6l6 6-6 6" />
+    </svg>
+  )
+}
+
 function ToolSteps({
   tools,
   view,
@@ -564,12 +584,12 @@ function ToolSteps({
         </p>
       )
     return (
-      <details
-        className="tool tool-step muted"
-        key={t.id}
-        open={view === 'full'}
-      >
-        <summary>{label}</summary>
+      // Closed in every view: 详细 lists each step on its own line, opened on demand.
+      <details className="tool tool-step muted" key={t.id}>
+        <summary>
+          {label}
+          <Chevron />
+        </summary>
         {t.detail && <pre className="tool-io">{t.detail}</pre>}
         {t.output && <pre className="tool-io output">{t.output}</pre>}
       </details>
@@ -591,6 +611,7 @@ function ToolSteps({
         <summary>
           {running.length ? '' : '✓ '}
           {summary}
+          <Chevron />
         </summary>
         {tools.filter((t) => t.done).map(row)}
       </details>

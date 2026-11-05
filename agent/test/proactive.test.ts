@@ -89,15 +89,29 @@ describe('reminders file', () => {
     expect(await call('add_todo', { text: '2026-11-05 10:00 开会' })).toEqual({
       error: '有具体时间的事请用 remind',
     })
+    // A to-do never pops up: "明天……" saved as one was never brought up (2026-11-05).
+    for (const text of [
+      '明天（周五）修复广州市政院的两个问题',
+      '周五前交报告',
+      '11 月 8 日去体检',
+    ])
+      expect(await call('add_todo', { text })).toMatchObject({
+        error: expect.stringContaining('remind'),
+      })
+    expect(await call('add_todo', { text: '去 3 号楼拿快递' })).toMatchObject({
+      text: '去 3 号楼拿快递',
+    })
     expect(await call('add_todo', { text: '买牛奶' })).toMatchObject({
       text: '买牛奶',
     })
     expect(await readFile(join(dataDir, 'reminders.md'), 'utf8')).toContain(
       '- [ ] 买牛奶 <!--',
     )
-    expect(await call('list_reminders', {})).toEqual([
-      { id: expect.any(String), text: '买牛奶', kind: 'todo' },
-    ])
+    expect(await call('list_reminders', {})).toContainEqual({
+      id: expect.any(String),
+      text: '买牛奶',
+      kind: 'todo',
+    })
     await updateReminders(() => ({ list: [], result: undefined }))
   })
 

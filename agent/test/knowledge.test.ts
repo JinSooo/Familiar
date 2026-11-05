@@ -1,11 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import { mkdtempSync } from 'node:fs'
-import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { normalize, type Embedder } from '../src/embedding'
 import { chunk, KnowledgeIndex } from '../src/knowledge'
 import { extract } from '../src/knowledge/files'
+import { sensorPath } from '../src/system'
 import { MemoryIndex, MemoryStore } from '../src/memory'
 
 const temp = (prefix: string) => mkdtempSync(join(tmpdir(), prefix))
@@ -71,13 +72,40 @@ describe('chunk', () => {
   })
 })
 
+const fixture = (name: string) => join(import.meta.dir, 'fixtures', name)
+
 describe('pdf', () => {
+  // 2026-11-05: three résumés exported as page pictures were listed as unreadable.
+  test.skipIf(!sensorPath())(
+    'a page that is only a picture is recognized; a picture on a text page adds its words',
+    async () => {
+      const [scan] = await extract(fixture('image-only.pdf'), 'pdf')
+      expect(scan).toContain('先切流量')
+      const [mixed] = await extract(fixture('text-and-image.pdf'), 'pdf')
+      expect(mixed).toContain('发布窗口是周一到周四')
+      expect(mixed).toContain('【图中文字】')
+      expect(mixed!.split('【图中文字】')[1]).toContain('再回退镜像')
+      // The text layer is not repeated as picture text.
+      expect(mixed!.split('【图中文字】')[1]).not.toContain('发布窗口')
+
+      // Indexed pages are kept, so read_knowledge does not run OCR again.
+      const index = new KnowledgeIndex(join(temp('familiar-kbdb-'), 'i.sqlite'))
+      const dir = temp('familiar-kbpdf-')
+      await writeFile(
+        join(dir, 'scan.pdf'),
+        await readFile(fixture('image-only.pdf')),
+      )
+      await index.sync([dir])
+      expect((await index.search('回退镜像')).length).toBe(1)
+      expect(index.pages(join(dir, 'scan.pdf'))?.[0]).toContain('先切流量')
+      index.close()
+    },
+    60_000,
+  )
+
   // Printed by macOS, the text comes out with Kangxi radicals (⼝ U+2F1D, ⼀ U+2F00).
   test('radical look-alikes become the characters people type', async () => {
-    const [page] = await extract(
-      join(import.meta.dir, 'fixtures', 'kangxi-radicals.pdf'),
-      'pdf',
-    )
+    const [page] = await extract(fixture('kangxi-radicals.pdf'), 'pdf')
     expect(page).toContain('发布窗口是周一到周四')
     expect(page).toContain('，')
   })

@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
-import type { KnowledgeStatus, Settings } from '../../../src/shared'
+import type { KnowledgeStatus, Settings, Source } from '../../../src/shared'
 import { systemFetch } from '../agent/fetch'
 import { activeEmbedder } from '../embedding'
 import { getSettings } from '../settings'
@@ -232,6 +232,50 @@ export async function savePage(
   return { path, title, replaced }
 }
 
+/**
+ * Source cards for knowledge results: one per file, with the first place it was found or the
+ * part that was read. The chat shows the ones the reply names (see SourceCards).
+ */
+export function knowledgeSources(toolName: string, output: unknown): Source[] {
+  if (!output || typeof output !== 'object' || 'error' in output) return []
+  const o = output as Record<string, unknown>
+  const items =
+    toolName === 'search_knowledge' && Array.isArray(o.results)
+      ? (o.results as Record<string, unknown>[])
+      : toolName === 'read_knowledge'
+        ? [
+            {
+              ...o,
+              location:
+                typeof o.lines === 'string'
+                  ? `第 ${o.lines.split(' /')[0]} 行`
+                  : typeof o.pages === 'string'
+                    ? `第 ${o.pages.split(' /')[0]} 页`
+                    : undefined,
+            },
+          ]
+        : []
+  const seen = new Set<string>()
+  return items.flatMap((item) => {
+    if (typeof item.path !== 'string') return []
+    const path = expand(item.path)
+    if (seen.has(path)) return []
+    seen.add(path)
+    return [
+      {
+        url: `file://${encodeURI(path)}`,
+        title: typeof item.title === 'string' && item.title ? item.title : path,
+        file: {
+          path,
+          ...(typeof item.location === 'string'
+            ? { location: item.location }
+            : {}),
+        },
+      },
+    ]
+  })
+}
+
 const run = async (work: () => Promise<unknown>) => {
   try {
     return await work()
@@ -291,7 +335,10 @@ export function createKnowledgeTools(settings: Settings): ToolSet {
           const full = expand(path)
           const file = knowledge.file(full)
           if (!file) return { error: '这个文件不在知识库里' }
-          const pages = await extract(full, file.kind)
+          // PDFs come from the index: reading one again may mean OCR on every page.
+          const pages =
+            (file.kind === 'pdf' && knowledge.pages(full)) ||
+            (await extract(full, file.kind))
           if (file.kind === 'pdf') {
             const start = Math.min(from ?? 1, pages.length)
             const end = Math.min(to ?? start + 2, start + 9, pages.length)

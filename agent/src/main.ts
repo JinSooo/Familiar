@@ -5,6 +5,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { optionalArg } from './ipc-args'
+import { startLog } from './log'
 import { grantedRule, withRule } from './permissions'
 import {
   IPC,
@@ -1074,7 +1075,8 @@ async function request(
       void reindexKnowledge()
       return
     case IPC.knowledgeReveal:
-      requireSender(window, ['settings'])
+      // Settings opens folders; the chat windows open a cited file.
+      requireSender(window, ['settings', 'chat', 'main', 'quick'])
       await revealKnowledge(z.string().min(1).parse(input))
       return
     case IPC.localModelStatus:
@@ -1433,6 +1435,7 @@ async function restoreLatest() {
 }
 async function start() {
   await mkdir(dataDir, { recursive: true })
+  startLog()
   await loadSettings()
   await migrate()
   skins = await listPets()

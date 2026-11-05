@@ -1,5 +1,7 @@
+import { execFile } from 'node:child_process'
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
+import { sensorPath } from '../system'
 
 /**
  * Which files the knowledge base reads and how they become chunks. Folders are read only:
@@ -97,25 +99,76 @@ export async function walk(
   return { files, truncated }
 }
 
+/** Bumped when PDF reading changes, so PDFs indexed by an older version are read again. */
+export const pdfReader = 'vision-1'
+
+/** Many PDFs set common characters with Kangxi radical glyphs (⼝ U+2F1D for 口): they look
+ * the same but never match a typed query. Only those are normalized; full-width punctuation
+ * stays as it is. */
+const radicals = (page: string) =>
+  page.replace(/[\u2E80-\u2EFF\u2F00-\u2FDF]/g, (c) => c.normalize('NFKC'))
+
+/**
+ * A PDF through familiar-sensor --pdf (PDFKit and Vision): the text layer where there is one,
+ * plus what images say; pages that are only pictures are recognized whole. About half a
+ * second per page that needs it, so the time allowed grows with the file.
+ */
+function readPdfOnMac(path: string, size: number): Promise<string[]> {
+  const sensor = sensorPath()
+  if (!sensor) return Promise.reject(new Error('找不到 familiar-sensor'))
+  return new Promise((resolve, reject) => {
+    execFile(
+      sensor,
+      ['--pdf', path],
+      {
+        timeout: 60_000 + Math.ceil(size / 1024 / 1024) * 20_000,
+        maxBuffer: 64 * 1024 * 1024,
+      },
+      (error, stdout, stderr) => {
+        if (error)
+          return reject(
+            new Error(
+              String(stderr)
+                .trim()
+                .replace(/^familiar-sensor: /, '') || error.message,
+            ),
+          )
+        try {
+          const { pages } = JSON.parse(stdout) as { pages: { text: string }[] }
+          resolve(pages.map((p) => p.text))
+        } catch (e) {
+          reject(e instanceof Error ? e : new Error(String(e)))
+        }
+      },
+    )
+  })
+}
+
+/** The text layer alone (unpdf), when the Mac reader is unavailable. */
+async function readPdfText(path: string): Promise<string[]> {
+  const { extractText, getDocumentProxy } = await import('unpdf')
+  const pdf = await getDocumentProxy(new Uint8Array(await readFile(path)))
+  try {
+    return (await extractText(pdf, { mergePages: false })).text
+  } finally {
+    // Typed loosely by unpdf; frees the parsed document.
+    await (pdf as unknown as { destroy?: () => Promise<void> }).destroy?.()
+  }
+}
+
 /** Text of a file; a PDF comes back one string per page. */
 export async function extract(path: string, kind: FileKind): Promise<string[]> {
   if (kind === 'pdf') {
-    const { extractText, getDocumentProxy } = await import('unpdf')
-    const pdf = await getDocumentProxy(new Uint8Array(await readFile(path)))
+    let pages: string[]
     try {
-      const { text } = await extractText(pdf, { mergePages: false })
-      // Many PDFs set common characters with Kangxi radical glyphs (⼝ U+2F1D for 口), which
-      // look the same but never match a typed query. Only those are normalized; full-width
-      // punctuation stays as it is.
-      return text.map((page) =>
-        page.replace(/[\u2E80-\u2EFF\u2F00-\u2FDF]/g, (c) =>
-          c.normalize('NFKC'),
-        ),
-      )
-    } finally {
-      // Typed loosely by unpdf; frees the parsed document.
-      await (pdf as unknown as { destroy?: () => Promise<void> }).destroy?.()
+      pages = await readPdfOnMac(path, (await stat(path)).size)
+    } catch (error) {
+      if (/encrypted/i.test(String(error)))
+        throw new Error('PDF 有密码，读不了')
+      console.error('PDF reader fell back to the text layer:', String(error))
+      pages = await readPdfText(path)
     }
+    return pages.map(radicals)
   }
   const text = await readFile(path, 'utf8')
   if (text.includes('\u0000')) throw new Error('不是文本文件')

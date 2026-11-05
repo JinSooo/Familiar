@@ -1,6 +1,8 @@
 import { execFile, spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 const exec = promisify(execFile)
 if (!process.env.FAMILIAR_DATA_DIR)
   throw new Error('FAMILIAR_DATA_DIR is required')
@@ -158,4 +160,15 @@ export async function directorySize(path: string): Promise<number> {
   }
   await walk(path)
   return total
+}
+
+/** familiar-sensor. Release: beside the agent in Contents/MacOS. Development: `pnpm sensor:build`. */
+export function sensorPath(): string | null {
+  const candidates = [
+    join(dirname(process.execPath), 'familiar-sensor'),
+    fileURLToPath(
+      new URL('../../sensor/.build/familiar-sensor', import.meta.url),
+    ),
+  ]
+  return candidates.find((p) => existsSync(p)) ?? null
 }

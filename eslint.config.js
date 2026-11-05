@@ -7,6 +7,7 @@ export default ts.config(
       'node_modules/**',
       'src-tauri/target/**',
       'src-tauri/gen/**',
+      'llama/.build/**',
     ],
   },
   js.configs.recommended,

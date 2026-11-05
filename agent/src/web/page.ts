@@ -63,6 +63,8 @@ export async function fetchPage(
   raw: string,
   fetchImpl: typeof globalThis.fetch,
   signal?: AbortSignal,
+  /** Longer for a page saved to the knowledge base than for one read into the chat. */
+  textLimit = maxText,
 ): Promise<Page> {
   let url = await assertPublic(raw)
   let response: Response | undefined
@@ -94,9 +96,9 @@ export async function fetchPage(
       title: '',
       description: '',
       images: [],
-      text: body.slice(0, maxText),
+      text: body.slice(0, textLimit),
     }
-  return parseHtml(body, url)
+  return parseHtml(body, url, textLimit)
 }
 
 async function readCapped(response: Response): Promise<string> {
@@ -163,7 +165,7 @@ function meta(html: string, key: string): string {
   return ''
 }
 
-export function parseHtml(html: string, base: URL): Page {
+export function parseHtml(html: string, base: URL, textLimit = maxText): Page {
   const title = decodeEntities(
     meta(html, 'og:title') ||
       (/<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1] ?? ''),
@@ -229,6 +231,6 @@ export function parseHtml(html: string, base: URL): Page {
     title,
     description,
     images,
-    text: text.length > maxText ? `${text.slice(0, maxText)}…` : text,
+    text: text.length > textLimit ? `${text.slice(0, textLimit)}…` : text,
   }
 }

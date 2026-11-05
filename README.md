@@ -4,11 +4,12 @@ macOS 桌面宠物：Tauri 壳（Rust）加一个用 Bun 运行的 TypeScript ag
 
 ## 开发
 
-需要 Node 26、pnpm、Bun 和 Rust 工具链：
+需要 Node 26、pnpm、Bun、Rust 工具链和 Xcode；本机向量的 `llama-server` 用 uv 临时调 cmake 编译（`pnpm llama:build`，第一次约 10 分钟，之后跳过）：
 
 ```sh
 pnpm install
 pnpm agent:build   # 首次 tauri dev 前生成 sidecar，见 src-tauri/README.md
+pnpm llama:build   # 本机向量用的 llama-server
 pnpm dev
 pnpm typecheck
 pnpm lint

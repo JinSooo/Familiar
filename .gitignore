@@ -10,3 +10,4 @@ src-tauri/gen/
 src-tauri/binaries/
 dist/
 sensor/.build/
+llama/.build/

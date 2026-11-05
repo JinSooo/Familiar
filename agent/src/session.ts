@@ -220,6 +220,8 @@ export function toolDetail(name: string, input: unknown): string {
     delete_path: 'path',
     web_search: 'query',
     fetch_page: 'url',
+    save_page: 'url',
+    search_knowledge: 'query',
     remember: 'text',
     use_skill: 'name',
   }
@@ -265,6 +267,9 @@ function toolDescription(name: string, input: unknown): string {
     web_search: '搜索',
     use_skill: '使用技能',
     fetch_page: '读网页',
+    save_page: '存网页',
+    search_knowledge: '查资料',
+    read_knowledge: '读资料',
     remind: '设提醒',
     add_todo: '记待办',
     list_reminders: '查看提醒',
@@ -292,11 +297,14 @@ function toolDescription(name: string, input: unknown): string {
                   ? field('name')
                   : name === 'web_search'
                     ? field('query')
-                    : name === 'fetch_page'
-                      ? (field('url')
-                          .replace(/^https?:\/\/(www\.)?/, '')
-                          .split('/')[0] ?? '')
-                      : (field('path').split('/').filter(Boolean).at(-1) ?? '')
+                    : name === 'search_knowledge'
+                      ? field('query')
+                      : name === 'fetch_page' || name === 'save_page'
+                        ? (field('url')
+                            .replace(/^https?:\/\/(www\.)?/, '')
+                            .split('/')[0] ?? '')
+                        : (field('path').split('/').filter(Boolean).at(-1) ??
+                          '')
   const short = target.length > 40 ? `${target.slice(0, 39)}…` : target
   const mcp = /^mcp__(.+?)__(.+)$/.exec(name)
   if (mcp) return `调用 ${mcp[1]} · ${mcp[2]}`

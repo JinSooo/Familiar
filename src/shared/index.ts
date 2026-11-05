@@ -116,6 +116,20 @@ export const settingsSchema = z.object({
       apiKey: z.string().default(''),
     })
     .prefault({}),
+  /** Embeddings for vector search over knowledge and memory; full-text search only until set. */
+  embeddingModel: z
+    .object({
+      /** remote: an OpenAI-compatible service (off until a model is set); local: llama.cpp on this Mac. */
+      source: z.enum(['remote', 'local']).default('remote'),
+      model: z.string().default(''),
+      baseURL: z.string().default('https://api.openai.com/v1'),
+      apiKey: z.string().default(''),
+    })
+    .prefault({}),
+  /** Folders the user added to the knowledge base (~/.familiar/knowledge is always in). */
+  knowledge: z
+    .object({ folders: z.array(z.string().min(1)).default([]) })
+    .prefault({}),
   /** How opaque the floating panels (capsule, bubble, chat panel, menu bar panel) are, 0.5 to 1. */
   panelOpacity: z.number().min(0.5).max(1).default(1),
   /** How opaque the settings and big conversation windows are, 0.5 to 1. */
@@ -191,13 +205,12 @@ export const settingsSchema = z.object({
     .prefault({}),
 })
 export type Settings = z.infer<typeof settingsSchema>
-export type PublicSettings = Omit<Settings, 'model' | 'imageModel'> & {
-  model: Omit<Settings['model'], 'apiKey'> & { apiKeySet: boolean }
-  imageModel: Omit<Settings['imageModel'], 'apiKey'> & { apiKeySet: boolean }
+type Keyed = 'model' | 'imageModel' | 'embeddingModel'
+export type PublicSettings = Omit<Settings, Keyed> & {
+  [K in Keyed]: Omit<Settings[K], 'apiKey'> & { apiKeySet: boolean }
 }
-export type SettingsUpdate = Omit<Settings, 'model' | 'imageModel'> & {
-  model: Omit<Settings['model'], 'apiKey'> & { apiKey?: string }
-  imageModel: Omit<Settings['imageModel'], 'apiKey'> & { apiKey?: string }
+export type SettingsUpdate = Omit<Settings, Keyed> & {
+  [K in Keyed]: Omit<Settings[K], 'apiKey'> & { apiKey?: string }
 }
 /** Model settings as edited in the settings window; no apiKey means the saved one. */
 export type ModelDraft = SettingsUpdate['model']
@@ -408,6 +421,19 @@ export const IPC = {
   /** Shows a line that went unseen again. */
   proactiveReopen: 'proactive:reopen',
   reminderCancel: 'reminder:cancel',
+  knowledgeStatus: 'knowledge:status',
+  /** Opens a folder picker and adds the chosen folder. */
+  knowledgeAdd: 'knowledge:add',
+  knowledgeRemove: 'knowledge:remove',
+  /** Reads every file again (and embeds what is missing). */
+  knowledgeReindex: 'knowledge:reindex',
+  knowledgeReveal: 'knowledge:reveal',
+  knowledgeChanged: 'knowledge:changed',
+  localModelStatus: 'local-model:status',
+  localModelDownload: 'local-model:download',
+  localModelCancel: 'local-model:cancel',
+  localModelDelete: 'local-model:delete',
+  localModelChanged: 'local-model:changed',
 } as const
 export type DragAction = 'start' | 'move' | 'end'
 /** Settings pages other windows can open directly. */
@@ -495,6 +521,20 @@ export interface FamiliarAPI {
   /** Opens a conversation file in its default app (Preview for images and PDFs). */
   openAttachment(path: string): void
   onMemoryChanged(callback: (change: MemoryChange) => void): () => void
+  knowledgeStatus(): Promise<KnowledgeStatus>
+  /** Resolves with the new status, or the old one when the picker was cancelled. */
+  addKnowledgeFolder(): Promise<KnowledgeStatus>
+  removeKnowledgeFolder(path: string): Promise<KnowledgeStatus>
+  reindexKnowledge(): void
+  /** Opens a knowledge folder (or a file in it) in Finder / its default app. */
+  revealKnowledge(path: string): void
+  onKnowledgeChanged(callback: (status: KnowledgeStatus) => void): () => void
+  localModelStatus(): Promise<LocalModelStatus>
+  /** Starts the download; progress arrives with onLocalModelChanged. */
+  downloadLocalModel(): void
+  cancelLocalModelDownload(): void
+  deleteLocalModel(): Promise<void>
+  onLocalModelChanged(callback: (status: LocalModelStatus) => void): () => void
   /** MCP servers (connecting them first when asked) and skills. */
   getExtensions(connect?: boolean): Promise<Extensions>
   setMcpAccess(name: string, access: McpServerStatus['access']): Promise<void>
@@ -730,6 +770,45 @@ export interface ReflectResult {
   promoted: number
   timeline: number
   failed: number
+}
+export interface KnowledgeFolder {
+  path: string
+  /** ~/.familiar/knowledge, which cannot be removed. */
+  builtIn: boolean
+  missing: boolean
+  files: number
+  chunks: number
+  /** Chunks that have a vector for the current embedding model. */
+  embedded: number
+  /** Files that could not be read, with the reason. */
+  failed: { path: string; error: string }[]
+  /** The folder had more files than are indexed. */
+  truncated: boolean
+}
+export interface KnowledgeStatus {
+  folders: KnowledgeFolder[]
+  /** Reading files or embedding right now. */
+  busy: boolean
+  /** An embedding model is set; without one search is full-text only. */
+  vectors: boolean
+  /** The vectors come from the model on this Mac, so file contents stay here. */
+  local: boolean
+  /** Last embedding failure, cleared by the next success. */
+  error?: string
+  syncedAt?: number
+}
+/** The downloadable embedding model (settings › 模型 › 向量 › 本机). */
+export interface LocalModelStatus {
+  name: string
+  /** Bytes. */
+  size: number
+  state: 'missing' | 'downloading' | 'ready'
+  /** While downloading, or what a stopped download left. */
+  received?: number
+  total?: number
+  error?: string
+  /** The llama-server program is present (missing only in an incomplete dev setup). */
+  server: boolean
 }
 export interface MemoryChange {
   reflect?: ReflectResult | { error: string }

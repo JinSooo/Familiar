@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
 import { dataDir } from '../system'
+import type { Embedder } from '../embedding'
 import { MemoryIndex } from './search'
 import { MemoryStore, memoryContext, mentions, type MemoryEntry } from './store'
 export { MemoryStore, memoryContext, mentions } from './store'
@@ -44,7 +45,10 @@ const run = async (work: () => Promise<unknown>) => {
 }
 
 /** Memory is Familiar's own state: these tools skip approval (see permissions). */
-export function createMemoryTools({ store, index }: Memory): ToolSet {
+export function createMemoryTools(
+  { store, index }: Memory,
+  embedder?: Embedder,
+): ToolSet {
   return {
     remember: tool({
       description:
@@ -102,7 +106,7 @@ export function createMemoryTools({ store, index }: Memory): ToolSet {
                   e.status === 'confirmed',
               )
             : input.query?.trim()
-              ? await index.search(input.query)
+              ? await index.search(input.query, 8, embedder)
               : overview(await store.list())
           return {
             memories: hits.map((e) => ({

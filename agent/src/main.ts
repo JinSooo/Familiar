@@ -90,6 +90,25 @@ import { updateReminders } from './proactive/reminders'
 import { mentions, openMemory } from './memory'
 import { recordFeedback } from './memory/feedback'
 import { reflectDue } from './memory/jobs'
+import {
+  addKnowledgeFolder,
+  knowledgeStatus,
+  reindexKnowledge,
+  removeKnowledgeFolder,
+  revealKnowledge,
+  startKnowledge,
+  stopKnowledge,
+  syncKnowledge,
+} from './knowledge/manage'
+import {
+  cancelLocalModelDownload,
+  deleteLocalModel,
+  downloadLocalModel,
+  localModelStatus,
+  onLocalModelChanged,
+  stopLeftoverServer,
+  stopLocalServer,
+} from './local-embedding'
 import { ensureWorkspace, snapshot } from './workspace'
 import {
   appCandidates,
@@ -646,11 +665,25 @@ async function request(
       requireSender(window, ['settings'])
       // The window only lists directory rules; approvals may have added one since it loaded.
       // Perception has its own channels (page and tray), so a stale form copy cannot undo them.
+      const before = getSettings().embeddingModel
       const saved = await saveSettings({
         ...(input as Parameters<typeof saveSettings>[0]),
         dirRules: getSettings().dirRules,
         perception: getSettings().perception,
+        // Folders are added and removed on the knowledge page's own channels.
+        knowledge: getSettings().knowledge,
       })
+      const after = getSettings().embeddingModel
+      // A new embedding model (or its key) means the knowledge base has vectors to make.
+      if (
+        before.source !== after.source ||
+        before.model !== after.model ||
+        before.baseURL !== after.baseURL ||
+        before.apiKey !== after.apiKey
+      ) {
+        if (after.source !== 'local') stopLocalServer()
+        void syncKnowledge()
+      }
       updatePet()
       broadcast(IPC.appearance, saved.panelOpacity)
       applyOpacity()
@@ -1027,6 +1060,40 @@ async function request(
       requireSender(window, ['settings'])
       await reveal(dataDir)
       return
+    case IPC.knowledgeStatus:
+      requireSender(window, ['settings'])
+      return knowledgeStatus()
+    case IPC.knowledgeAdd:
+      requireSender(window, ['settings'])
+      return addKnowledgeFolder()
+    case IPC.knowledgeRemove:
+      requireSender(window, ['settings'])
+      return removeKnowledgeFolder(z.string().min(1).parse(input))
+    case IPC.knowledgeReindex:
+      requireSender(window, ['settings'])
+      void reindexKnowledge()
+      return
+    case IPC.knowledgeReveal:
+      requireSender(window, ['settings'])
+      await revealKnowledge(z.string().min(1).parse(input))
+      return
+    case IPC.localModelStatus:
+      requireSender(window, ['settings'])
+      return localModelStatus()
+    case IPC.localModelDownload:
+      requireSender(window, ['settings'])
+      // Once it is in place the knowledge base has vectors to make.
+      await downloadLocalModel(() => void syncKnowledge())
+      return
+    case IPC.localModelCancel:
+      requireSender(window, ['settings'])
+      cancelLocalModelDownload()
+      return
+    case IPC.localModelDelete:
+      requireSender(window, ['settings'])
+      await deleteLocalModel()
+      void syncKnowledge()
+      return
     case IPC.memoryReveal: {
       requireSender(window, ['settings'])
       const { store } = await memory()
@@ -1382,6 +1449,9 @@ async function start() {
   applyOpacity()
   if (!getSettings().showPetOnLaunch) setPetVisible(false)
   startPerception((status) => broadcast(IPC.perceptionChanged, status))
+  onLocalModelChanged((status) => broadcast(IPC.localModelChanged, status))
+  void stopLeftoverServer().catch(console.error)
+  startKnowledge((status) => broadcast(IPC.knowledgeChanged, status))
   onActivityDigest((digest) => void noticeActivity(digest))
   startProactive({
     busy: () => Boolean(controller) || capsuleOpen || chatVisible || hasDraft,
@@ -1439,6 +1509,8 @@ async function start() {
     controller?.abort()
     void closeMcp()
     stopPerception()
+    stopKnowledge()
+    stopLocalServer()
     stopProactive()
     clearTimeout(bubbleTimer)
     for (const timer of [proxyTimer, idleTimer, stateTimer, reflectTimer])

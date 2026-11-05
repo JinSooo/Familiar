@@ -19,6 +19,8 @@ import { ExtensionsPage } from './ExtensionsPage'
 import { PerceptionPage } from './PerceptionPage'
 import { TimelinePage } from './TimelinePage'
 import { ProactivePage } from './ProactivePage'
+import { KnowledgePage } from './KnowledgePage'
+import { LocalModel } from './LocalModel'
 import { ShortcutsSection } from './Shortcuts'
 import { Switch } from './Switch'
 import { presetOf, providerPresets } from '../../shared/presets'
@@ -33,6 +35,7 @@ type Page =
   | 'memory'
   | 'topics'
   | 'pending'
+  | 'knowledge'
   | 'timeline'
   | 'capture'
   | 'raw'
@@ -64,6 +67,7 @@ const icons = {
     'M14 4a2 2 0 1 1 4 0v2h2v4h-2a2 2 0 1 0 0 4h2v4h-4v-2a2 2 0 1 0-4 0v2H6v-4H4a2 2 0 1 1 0-4h2V6h4V4z',
   lock: 'M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4',
   bell: 'M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0',
+  book: 'M4 5a2 2 0 0 1 2-2h13v15H6a2 2 0 0 0-2 2zM4 20a2 2 0 0 0 2 1h13v-3M8 7h7',
   chevron: 'M9 6l6 6-6 6',
 }
 const nav: (NavItem | NavGroup)[] = [
@@ -82,6 +86,7 @@ const nav: (NavItem | NavGroup)[] = [
       { page: 'pending', name: '待确认' },
     ],
   },
+  { page: 'knowledge', name: '知识库', icon: icons.book },
   {
     name: '感知',
     icon: icons.perception,
@@ -160,6 +165,7 @@ export function SettingsView() {
   const [settings, setSettings] = useState<PublicSettings>()
   const [key, setKey] = useState('')
   const [imageKey, setImageKey] = useState('')
+  const [embeddingKey, setEmbeddingKey] = useState('')
   const [notice, setNotice] = useState('')
   const [promptCopied, setPromptCopied] = useState(false)
   const [importNote, setImportNote] = useState('')
@@ -251,7 +257,7 @@ export function SettingsView() {
   /** Saves what is on screen; keys only when given, so a half-typed one never reaches the keychain. */
   async function persist(
     next: PublicSettings,
-    keys: { apiKey?: string; imageKey?: string } = {},
+    keys: { apiKey?: string; imageKey?: string; embeddingKey?: string } = {},
   ) {
     // Required fields wait until they are filled in again.
     if (!next.pet.name.trim() || !next.workspacePath.trim()) return
@@ -259,6 +265,9 @@ export function SettingsView() {
     const { apiKeySet, ...publicModel } = next.model
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { apiKeySet: imageKeySet, ...publicImage } = next.imageModel
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { apiKeySet: embeddingKeySet, ...publicEmbedding } =
+      next.embeddingModel
     try {
       const saved = await api.saveSettings({
         ...next,
@@ -269,6 +278,10 @@ export function SettingsView() {
         imageModel: {
           ...publicImage,
           ...(keys.imageKey ? { apiKey: keys.imageKey } : {}),
+        },
+        embeddingModel: {
+          ...publicEmbedding,
+          ...(keys.embeddingKey ? { apiKey: keys.embeddingKey } : {}),
         },
       })
       // Only the key flags come back: anything typed while saving stays on screen.
@@ -281,12 +294,17 @@ export function SettingsView() {
               ...s.imageModel,
               apiKeySet: saved.imageModel.apiKeySet,
             },
+            embeddingModel: {
+              ...s.embeddingModel,
+              apiKeySet: saved.embeddingModel.apiKeySet,
+            },
           },
       )
       if (saved.model.protocol !== 'chatgpt' && !presetOf(saved.model))
         setSavedRelay(saved.model)
       if (keys.apiKey) setKey('')
       if (keys.imageKey) setImageKey('')
+      if (keys.embeddingKey) setEmbeddingKey('')
       setNotice('')
     } catch {
       setNotice('保存失败，请检查设置或钥匙串是否可用。')
@@ -302,7 +320,8 @@ export function SettingsView() {
     typing.current = { timer: setTimeout(flush, wait), run }
   }
   const saveKeys = () => {
-    if (key || imageKey) void persist(settings, { apiKey: key, imageKey })
+    if (key || imageKey || embeddingKey)
+      void persist(settings, { apiKey: key, imageKey, embeddingKey })
   }
   const model = <K extends keyof PublicSettings['model']>(
     field: K,
@@ -492,6 +511,11 @@ export function SettingsView() {
             />
           </div>
         )}
+        {tab === 'knowledge' && (
+          <div className="settings">
+            <KnowledgePage />
+          </div>
+        )}
         {tab === 'timeline' && (
           <div className="settings">
             <TimelinePage />
@@ -515,7 +539,7 @@ export function SettingsView() {
             e.preventDefault()
             clearTimeout(typing.current?.timer)
             typing.current = undefined
-            void persist(settings, { apiKey: key, imageKey })
+            void persist(settings, { apiKey: key, imageKey, embeddingKey })
           }}
         >
           <section hidden={tab !== 'general'}>
@@ -974,6 +998,88 @@ export function SettingsView() {
                   }
                   value={imageKey}
                   onChange={(e) => setImageKey(e.target.value)}
+                  onBlur={saveKeys}
+                />
+              </label>
+            </div>
+          </section>
+          <section hidden={tab !== 'model'}>
+            <h3 className="memory-heading">向量</h3>
+            <div className="group">
+              <label>
+                来源
+                <select
+                  value={settings.embeddingModel.source}
+                  onChange={(e) =>
+                    change({
+                      ...settings,
+                      embeddingModel: {
+                        ...settings.embeddingModel,
+                        source: e.target.value as 'remote' | 'local',
+                      },
+                    })
+                  }
+                >
+                  <option value="local">本机</option>
+                  <option value="remote">在线服务</option>
+                </select>
+              </label>
+              {settings.embeddingModel.source === 'local' && <LocalModel />}
+            </div>
+            <div
+              className="group"
+              hidden={settings.embeddingModel.source === 'local'}
+            >
+              <label>
+                向量模型
+                <input
+                  value={settings.embeddingModel.model}
+                  placeholder="留空则只按关键词检索，例如 text-embedding-3-small"
+                  onChange={(e) =>
+                    change(
+                      {
+                        ...settings,
+                        embeddingModel: {
+                          ...settings.embeddingModel,
+                          model: e.target.value,
+                        },
+                      },
+                      typingDelay,
+                    )
+                  }
+                />
+              </label>
+              <label>
+                Base URL
+                <input
+                  value={settings.embeddingModel.baseURL}
+                  placeholder="https://api.openai.com/v1"
+                  onChange={(e) =>
+                    change(
+                      {
+                        ...settings,
+                        embeddingModel: {
+                          ...settings.embeddingModel,
+                          baseURL: e.target.value,
+                        },
+                      },
+                      typingDelay,
+                    )
+                  }
+                />
+              </label>
+              <label>
+                API Key
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  placeholder={
+                    settings.embeddingModel.apiKeySet
+                      ? '已保存在钥匙串'
+                      : '尚未设置'
+                  }
+                  value={embeddingKey}
+                  onChange={(e) => setEmbeddingKey(e.target.value)}
                   onBlur={saveKeys}
                 />
               </label>

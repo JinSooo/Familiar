@@ -511,6 +511,7 @@ const actions: Record<string, string> = {
   run_shell: '执行命令',
   web_search: '联网搜索',
   fetch_page: '读取网页',
+  save_page: '把网页存进知识库',
 }
 /** What an approval would do, in words plus the one detail that matters (path, command, URL). */
 function ApprovalDetail({

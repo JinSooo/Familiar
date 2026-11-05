@@ -4,7 +4,10 @@ declare module 'bun:sqlite' {
   export class Statement<Row = unknown, Params extends unknown[] = unknown[]> {
     all(...params: Params): Row[]
     get(...params: Params): Row | null
-    run(...params: Params): void
+    run(...params: Params): {
+      lastInsertRowid: number | bigint
+      changes: number
+    }
   }
   export class Database {
     constructor(filename: string, options?: { create?: boolean })

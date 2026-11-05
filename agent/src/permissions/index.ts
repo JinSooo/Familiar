@@ -45,9 +45,14 @@ const memoryTools = new Set([
   'add_todo',
   'list_reminders',
   'cancel_reminder',
+  // The knowledge base is read only and holds what the user gave it; read_knowledge refuses
+  // anything the index does not list.
+  'search_knowledge',
+  'read_knowledge',
 ])
 // Read-only web access: allowed in auto and full mode, asked in ask mode (shell network still asks).
-const webTools = new Set(['web_search', 'fetch_page'])
+// save_page fetches like fetch_page and writes only to ~/.familiar/knowledge/web.
+const webTools = new Set(['web_search', 'fetch_page', 'save_page'])
 
 export async function decideToolCall(
   call: ToolCall,

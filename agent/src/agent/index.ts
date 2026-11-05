@@ -6,6 +6,8 @@ import { decideToolCall } from '../permissions'
 import { createWorkspaceTools, ensureWorkspace, snapshot } from '../workspace'
 import { createMemoryTools, memoryInstructions, openMemory } from '../memory'
 import { createWebTools, sourcesOf, webInstructions } from '../web'
+import { activeEmbedder } from '../embedding'
+import { createKnowledgeTools, knowledgeInstructions } from '../knowledge'
 import { mcpTools } from '../extensions/mcp'
 import {
   createSkillTools,
@@ -54,7 +56,8 @@ export async function runAgent(
       model,
       tools: {
         ...createWorkspaceTools(settings),
-        ...createMemoryTools(memory),
+        ...createMemoryTools(memory, await activeEmbedder(settings)),
+        ...createKnowledgeTools(settings),
         ...createWebTools(settings),
         ...createSkillTools(skills),
         ...createReminderTools(() => void proactiveChanged()),
@@ -66,7 +69,7 @@ export async function runAgent(
         workspacePath,
         settings.permissionMode,
         settings.pet.name,
-      )}\n现在是 ${new Date().toLocaleString('zh-CN', { hour12: false, weekday: 'long' })}。\n\n${await memoryInstructions(memory.store)}\n\n${reminderInstructions}\n\n${webInstructions}\n\n${skillInstructions(skills)}${'generate_image' in images ? `\n\n${imageInstructions}` : ''}`,
+      )}\n现在是 ${new Date().toLocaleString('zh-CN', { hour12: false, weekday: 'long' })}。\n\n${await memoryInstructions(memory.store)}\n\n${knowledgeInstructions(settings)}\n\n${reminderInstructions}\n\n${webInstructions}\n\n${skillInstructions(skills)}${'generate_image' in images ? `\n\n${imageInstructions}` : ''}`,
       workspacePath,
       decide: (call) => decideToolCall(call, settings),
       snapshot,

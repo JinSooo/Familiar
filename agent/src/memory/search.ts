@@ -1,6 +1,13 @@
 import { Database } from 'bun:sqlite'
 import { stat } from 'node:fs/promises'
 import type { MemoryEntry, MemoryStore } from './store'
+import {
+  closest,
+  dot,
+  hashText,
+  VectorCache,
+  type Embedder,
+} from '../embedding'
 
 /**
  * Search index over the memory Markdown. It is only a cache: any change to the files (by
@@ -22,6 +29,7 @@ export interface SearchHit extends MemoryEntry {
 
 export class MemoryIndex {
   private db: Database
+  private vectors: VectorCache
   constructor(
     private store: MemoryStore,
     dbPath: string,
@@ -34,6 +42,7 @@ export class MemoryIndex {
     this.db.run(
       'CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)',
     )
+    this.vectors = new VectorCache(this.db, 'memory_vectors')
   }
 
   private async fingerprint(): Promise<string> {
@@ -62,11 +71,12 @@ export class MemoryIndex {
     const insert = this.db.prepare(
       'INSERT INTO memory (text, id, entry) VALUES (?, ?, ?)',
     )
+    const hashes = new Set(entries.map((e) => hashText(entryText(e))))
+    this.vectors.prune((hash) => hashes.has(hash))
     this.db.transaction(() => {
       this.db.run('DELETE FROM memory')
       for (const e of entries) {
-        const where = e.key ? `${e.key} ` : ''
-        insert.run(`${where}${e.text}`, e.id, JSON.stringify(e))
+        insert.run(entryText(e), e.id, JSON.stringify(e))
       }
       this.db
         .query('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)')
@@ -75,8 +85,15 @@ export class MemoryIndex {
     return true
   }
 
-  /** Kept and pending memories that best match the query; superseded ones are history only. */
-  async search(query: string, limit = 8): Promise<SearchHit[]> {
+  /**
+   * Kept and pending memories that best match the query; superseded ones are history only.
+   * With an embedder, memories close in meaning count too ("咖啡" finds "早上喝美式").
+   */
+  async search(
+    query: string,
+    limit = 8,
+    embedder?: Embedder,
+  ): Promise<SearchHit[]> {
     await this.refresh()
     const { grams, shorts } = terms(query)
     const scores = new Map<string, number>()
@@ -98,6 +115,16 @@ export class MemoryIndex {
         )
         .all(`%${short.replace(/[\\%_]/g, (c) => `\\${c}`)}%`))
         add(row.id, 1)
+    if (embedder)
+      try {
+        await this.addVectorScores(query, embedder, add)
+      } catch (error) {
+        // Full-text results still come back when the embedding service fails.
+        console.error(
+          'Memory vector search failed:',
+          error instanceof Error ? error.message : error,
+        )
+      }
     if (!scores.size) return []
     const entries = new Map(
       this.db
@@ -114,10 +141,42 @@ export class MemoryIndex {
       .slice(0, limit)
   }
 
+  /** Embeds memories not seen before (a few at a time, memory is small), then scores by meaning. */
+  private async addVectorScores(
+    query: string,
+    embedder: Embedder,
+    add: (id: string, value: number) => void,
+  ) {
+    const live = this.db
+      .query<{ id: string; text: string; entry: string }, []>(
+        'SELECT id, text, entry FROM memory',
+      )
+      .all()
+      .filter(
+        (r) => (JSON.parse(r.entry) as MemoryEntry).status !== 'superseded',
+      )
+      .map((r) => ({ id: r.id, hash: hashText(r.text), text: r.text }))
+    const signal = AbortSignal.timeout(20_000)
+    await this.vectors.fill(embedder, live, { batch: 64, signal })
+    const q = await embedder.query(query, signal)
+    const near = closest(
+      live.flatMap((m) => {
+        const v = this.vectors.get(embedder.key, m.hash)
+        return v ? [{ item: m.id, score: dot(q, v) }] : []
+      }),
+      8,
+    )
+    // The closest match weighs about as much as a solid full-text match.
+    near.forEach(({ item }, rank) => add(item, 3 - (rank * 2) / near.length))
+  }
+
   close(): void {
     this.db.close()
   }
 }
+
+/** What a memory is searched and embedded as: its topic or period, then the text. */
+const entryText = (e: MemoryEntry) => `${e.key ? `${e.key} ` : ''}${e.text}`
 
 /** Splits a query into FTS trigrams (CJK runs, ASCII words) and two-character LIKE terms. */
 export function terms(query: string): { grams: string[]; shorts: string[] } {

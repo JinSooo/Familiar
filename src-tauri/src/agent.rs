@@ -39,10 +39,16 @@ impl Agent {
             id,
             Pending {
                 sender,
-                // A conversation turn and a ChatGPT sign-in (the user is in the browser) take as long
-                // as they take; the agent times those out itself.
-                deadline: (!["agent:run", "agent:resend", "chatgpt:sign-in"].contains(&channel))
-                    .then(|| Instant::now() + Duration::from_secs(30)),
+                // A conversation turn, a ChatGPT sign-in (the user is in the browser) and picking a
+                // knowledge folder (the user is in the dialog) take as long as they take.
+                deadline: (![
+                    "agent:run",
+                    "agent:resend",
+                    "chatgpt:sign-in",
+                    "knowledge:add",
+                ]
+                .contains(&channel))
+                .then(|| Instant::now() + Duration::from_secs(30)),
             },
         );
         (

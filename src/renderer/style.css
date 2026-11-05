@@ -2294,3 +2294,37 @@ form.setting-row input {
   font-variant-numeric: tabular-nums;
   color: var(--muted);
 }
+/* Settings › 知识库 */
+.knowledge-folder .ext-sub.warn {
+  color: var(--orange);
+}
+.knowledge-folder .ext-sub .link {
+  font-size: inherit;
+  padding: 0;
+}
+.knowledge-failed {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+}
+.knowledge-failed li {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+.knowledge-failed code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60%;
+}
+.local-progress {
+  width: 100%;
+  height: 4px;
+  margin: 0 0 8px;
+  accent-color: var(--accent);
+}

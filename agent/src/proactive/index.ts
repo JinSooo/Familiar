@@ -26,6 +26,7 @@ import {
 import {
   companionContext,
   readState,
+  recordDecision,
   recordProactiveFeedback,
   updateState,
 } from './state'
@@ -269,7 +270,14 @@ const newId = () => `p${Date.now().toString(36)}`
 
 /** The model's take on the latest activity summary, waiting for a good moment to be said. */
 let queued:
-  { text: string; reason: string; facts: string; expires: number } | undefined
+  | {
+      text: string
+      reason: string
+      facts: string
+      decision: string
+      expires: number
+    }
+  | undefined
 /** A line about what the user is doing goes stale after this. */
 const freshFor = 40 * minute
 
@@ -330,6 +338,45 @@ async function material(now: number, todos = false) {
 }
 
 /**
+ * Asks the background model whether to say something, and logs the whole input with the answer
+ * (or the error) so the moment can become an eval case later. Failures are held and rethrown.
+ */
+async function consult(
+  trigger: ProactiveTrigger,
+  facts: string,
+  now: number,
+  todos = false,
+) {
+  const settings = getSettings()
+  const id = `d${now.toString(36)}${Math.random().toString(36).slice(2, 5)}`
+  const input = {
+    name: settings.pet.name,
+    facts,
+    ...(await material(now, todos)),
+  }
+  const row = {
+    id,
+    at: new Date(now).toISOString(),
+    trigger,
+    ...input,
+    model: settings.model.smallModel.trim() || settings.model.model,
+  }
+  try {
+    const decision = await decide({
+      model: backgroundModel(),
+      now: new Date(now),
+      ...input,
+    })
+    void recordDecision({ ...row, decision }).catch(console.error)
+    return { id, decision }
+  } catch (error) {
+    void recordDecision({ ...row, error: failure(error) }).catch(console.error)
+    await hold({ at: now, trigger, kind: 'failed', reason: failure(error) })
+    throw error
+  }
+}
+
+/**
  * A Computer History summary for the period that just ended: ask whether there is something
  * worth saying about it. Costs one small-model call per summary, and only when the budget
  * would let a line out at all.
@@ -354,23 +401,7 @@ export async function noticeActivity(digest: {
     )
       return
     const facts = `这段时间主人在做的事：${digest.title}。${digest.summary}`
-    let decision
-    try {
-      decision = await decide({
-        model: backgroundModel(),
-        name: settings.pet.name,
-        facts,
-        ...(await material(now)),
-      })
-    } catch (error) {
-      await hold({
-        at: now,
-        trigger: 'activity',
-        kind: 'failed',
-        reason: failure(error),
-      })
-      throw error
-    }
+    const { id, decision } = await consult('activity', facts, now)
     await updateState((s) => {
       s.fired.activity = now
     })
@@ -386,6 +417,7 @@ export async function noticeActivity(digest: {
         text: decision.text,
         reason: decision.reason || digest.title,
         facts,
+        decision: id,
         expires: now + freshFor,
       }
   } catch (error) {
@@ -487,6 +519,7 @@ async function tick() {
           trigger: 'activity',
           text: line.text,
           reason: line.reason,
+          decision: line.decision,
         },
         idle,
       )
@@ -516,18 +549,12 @@ async function tick() {
         list: list.map((r) => (r.id === followUp.id ? { ...r, done: now } : r)),
         result: undefined,
       }))
-    let decision
-    try {
-      decision = await decide({
-        model: backgroundModel(),
-        name: settings.pet.name,
-        facts,
-        ...(await material(now, trigger === 'firstToday')),
-      })
-    } catch (error) {
-      await hold({ at: now, trigger, kind: 'failed', reason: failure(error) })
-      throw error
-    }
+    const { id, decision } = await consult(
+      trigger,
+      facts,
+      now,
+      trigger === 'firstToday',
+    )
     if (!decision.speak) {
       await hold({
         at: now,
@@ -546,6 +573,7 @@ async function tick() {
         trigger,
         text: decision.text,
         reason: decision.reason || facts.slice(0, 30),
+        decision: id,
       },
       await idleSeconds().catch(() => 0),
     )

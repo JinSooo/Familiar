@@ -622,6 +622,8 @@ export interface ProactiveMessage {
    * answer. `missed`: no keyboard or mouse input the whole time it waited, so it went unseen.
    */
   response?: 'ok' | 'later' | 'quiet' | 'ignored' | 'missed'
+  /** The logged model decision it came from (evals/proactive-decisions.jsonl); reminders have none. */
+  decision?: string
 }
 /**
  * The buttons under a proactive bubble. A reminder the user set has nothing to tell the pet off

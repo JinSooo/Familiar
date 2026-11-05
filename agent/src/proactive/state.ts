@@ -8,8 +8,13 @@ import {
 import { join } from 'node:path'
 import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
-import type { ProactiveHeld, ProactiveMessage } from '../../../src/shared'
+import type {
+  ProactiveHeld,
+  ProactiveMessage,
+  ProactiveTrigger,
+} from '../../../src/shared'
 import { dataDir } from '../system'
+import type { Decision } from './decide'
 import {
   newReminderId,
   readReminders,
@@ -87,20 +92,46 @@ export function updateState(
   return next
 }
 
-/** What the user did with a proactive message, for future evaluation (docs/design.md §12). */
+async function appendEval(name: string, row: object) {
+  const dir = join(dataDir, 'evals')
+  await mkdir(dir, { recursive: true })
+  await appendFile(join(dir, name), `${JSON.stringify(row)}\n`, {
+    mode: 0o600,
+  })
+}
+
+/** What the user did with a proactive message, for evaluation (docs/design.md §12). */
 export async function recordProactiveFeedback(
   message: ProactiveMessage,
   /** Seconds without keyboard or mouse input when it appeared and when it ended. */
   evidence?: { idleAtShow: number; idleAtEnd: number },
 ): Promise<void> {
-  const dir = join(dataDir, 'evals')
-  await mkdir(dir, { recursive: true })
-  await appendFile(
-    join(dir, 'proactive-feedback.jsonl'),
-    `${JSON.stringify({ ...message, at: new Date(message.at).toISOString(), ...evidence })}\n`,
-    { mode: 0o600 },
-  )
+  await appendEval('proactive-feedback.jsonl', {
+    ...message,
+    at: new Date(message.at).toISOString(),
+    ...evidence,
+  })
 }
+
+/**
+ * One speak-or-not call with everything the model was given, so a real moment can be replayed
+ * as an eval case (agent/eval/real.ts). Feedback rows point back here through `decision`.
+ */
+export interface DecisionRecord {
+  id: string
+  /** ISO time it was asked; the prompt's "现在是" is rebuilt from it. */
+  at: string
+  trigger: ProactiveTrigger
+  name: string
+  facts: string
+  context: string
+  recent: string
+  model: string
+  decision?: Decision
+  error?: string
+}
+export const recordDecision = (row: DecisionRecord) =>
+  appendEval('proactive-decisions.jsonl', row)
 
 /**
  * Closeness from how many days the user talked to the pet; energy from the clock. Both are the

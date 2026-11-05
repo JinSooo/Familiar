@@ -7,7 +7,11 @@
  * - kind=recall: builds a throwaway memory from `memories` and prints what the index finds.
  * - kind=perception: one real Computer History summary of `activity` (segment lines as
  *   describe() writes them) with the background model.
- * - kind=proactive: one real speak-or-not decision for `facts`, with `context` and `recent`.
+ * - kind=proactive: one real speak-or-not decision for `facts`, with `context` and `recent`;
+ *   real cases (real-tests.ts) also pass the pet's `name` and the original moment `now`.
+ *
+ * FAMILIAR_EVAL_MODEL=<model name> runs the model calls with that model instead of the
+ * configured background model (same address and key), to compare models.
  */
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -20,6 +24,17 @@ console.log = console.error
 
 const { vars } = JSON.parse(process.argv[4] ?? '{}') as {
   vars: Record<string, string>
+}
+
+async function evalModel() {
+  const { loadSettings, getSettings } = await import('../src/settings')
+  const { backgroundModel } = await import('../src/memory/jobs')
+  const { createModel } = await import('../src/agent/provider')
+  await loadSettings()
+  const other = process.env.FAMILIAR_EVAL_MODEL?.trim()
+  return other
+    ? createModel({ ...getSettings().model, model: other })
+    : backgroundModel()
 }
 
 if (vars.kind === 'recall') {
@@ -42,38 +57,30 @@ if (vars.kind === 'recall') {
   const hits = await index.search(vars.query!)
   process.stdout.write(JSON.stringify({ hits: hits.map((h) => h.text) }))
 } else if (vars.kind === 'proactive') {
-  const { loadSettings } = await import('../src/settings')
-  const { backgroundModel } = await import('../src/memory/jobs')
   const { decide } = await import('../src/proactive/decide')
-  await loadSettings()
   const decision = await decide({
-    model: backgroundModel(),
-    name: '小黑',
+    model: await evalModel(),
+    name: vars.name || '小黑',
     facts: vars.facts!.trim(),
     context: vars.context?.trim() || '相处：和主人刚认识不久。你现在精神不错。',
     recent: vars.recent?.trim() ?? '',
+    ...(vars.now ? { now: new Date(vars.now) } : {}),
   })
   process.stdout.write(JSON.stringify(decision))
 } else if (vars.kind === 'perception') {
-  const { loadSettings } = await import('../src/settings')
-  const { backgroundModel } = await import('../src/memory/jobs')
   const { digestActivity } = await import('../src/perception/summarize')
-  await loadSettings()
   const digest = await digestActivity(
-    backgroundModel(),
+    await evalModel(),
     vars.activity!.trim(),
     vars.existing?.trim() ||
       '已确认：\n（无）\n\n待确认：\n（无）\n\n当天时间线：\n（无）',
   )
   process.stdout.write(JSON.stringify(digest))
 } else {
-  const { loadSettings } = await import('../src/settings')
-  const { backgroundModel } = await import('../src/memory/jobs')
   const { reflectOn } = await import('../src/memory/reflect')
   const { sensitiveReason } = await import('../src/memory/sensitive')
-  await loadSettings()
   const reflection = await reflectOn(
-    backgroundModel(),
+    await evalModel(),
     vars.conversation!.trim(),
     vars.existing?.trim() || '已确认：\n（无）\n\n待确认：\n（无）',
   )

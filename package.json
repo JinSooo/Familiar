@@ -17,6 +17,9 @@
     "typecheck": "tsc --noEmit && tsc -p agent",
     "test": "bun test --preload ./agent/test/setup.ts agent/test",
     "eval": "PROMPTFOO_DISABLE_TELEMETRY=1 pnpm dlx promptfoo@0.124.1 eval -c agent/eval/promptfooconfig.yaml --no-cache",
+    "eval:repeat": "PROMPTFOO_DISABLE_TELEMETRY=1 pnpm dlx promptfoo@0.124.1 eval -c agent/eval/promptfooconfig.yaml --no-cache --repeat 3 --max-concurrency 2 -o \"${FAMILIAR_DATA_DIR:-$HOME/.familiar}/evals/last-run.json\"; bun agent/eval/rate.ts \"${FAMILIAR_DATA_DIR:-$HOME/.familiar}/evals/last-run.json\"",
+    "eval:label": "bun agent/eval/label.ts",
+    "eval:report": "bun agent/eval/report.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
     "tauri": "tauri"

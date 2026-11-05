@@ -50,12 +50,15 @@ export async function decide(input: {
   context: string
   /** Proactive lines from the last day with what the user did with them. */
   recent: string
+  /** When it is asked; a replayed eval case passes the original moment. */
+  now?: Date
   signal?: AbortSignal
 }): Promise<Decision> {
+  const now = input.now ?? new Date()
   const { text } = await generateText({
     model: input.model,
     system: system(input.name),
-    prompt: `${input.context}\n\n最近主动说过的话：\n${input.recent || '（没有）'}\n\n现在的情况：${input.facts}\n\n现在是 ${new Date().toLocaleString('zh-CN', { hour12: false, weekday: 'long' })}。`,
+    prompt: `${input.context}\n\n最近主动说过的话：\n${input.recent || '（没有）'}\n\n现在的情况：${input.facts}\n\n现在是 ${now.toLocaleString('zh-CN', { hour12: false, weekday: 'long' })}。`,
     maxRetries: 1,
     abortSignal: input.signal ?? AbortSignal.timeout(60000),
   })

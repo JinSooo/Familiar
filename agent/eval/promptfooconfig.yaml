@@ -1,6 +1,6 @@
-# Minimal eval set (docs/design.md §12). Run: pnpm eval
+# Eval set (docs/design.md §12). Run: pnpm eval (once) or pnpm eval:repeat (3 times, pass rates).
 # reflect, perception and proactive cases make one real request each with the configured
-# background model.
+# background model. The last entry adds the labeled real moments on this Mac (real-tests.ts).
 description: Familiar memory and proactive
 prompts: ['{{kind}}']
 providers:
@@ -309,3 +309,5 @@ tests:
     assert:
       - type: javascript
         value: output.speak === true && /周报/.test(output.text)
+  # --- real moments from ~/.familiar/evals, labeled with pnpm eval:label ---
+  - file://real-tests.ts

@@ -27,3 +27,14 @@ describe('pet size and speed', () => {
     expect(petDimensions(1.3).width).toBeGreaterThan(petDimensions(0.5).width)
   })
 })
+
+// P6 (2026-11-06): only a real first run asks for the pet's name.
+describe('naming the pet', () => {
+  test('a fresh install has not named it; settings from before naming existed have', () => {
+    expect(settingsSchema.parse({}).pet.named).toBe(false)
+    expect(settingsSchema.parse({ pet: { name: '小黑' } }).pet.named).toBe(true)
+    expect(
+      settingsSchema.parse({ pet: { name: '小黑', named: false } }).pet.named,
+    ).toBe(false)
+  })
+})

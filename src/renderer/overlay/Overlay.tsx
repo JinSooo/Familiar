@@ -2,6 +2,7 @@ import { bubblePlainText } from '../chat/content'
 import { useEffect, useState, type CSSProperties } from 'react'
 import {
   proactiveChoices,
+  type PetState,
   type ProactiveMessage,
   type Session,
 } from '../../shared'
@@ -62,6 +63,44 @@ function ProactiveBubble({ message }: { message: ProactiveMessage }) {
       </div>
       <span className="tail" />
     </div>
+  )
+}
+/** First run: the pet asks for its name (docs/design.md §2). */
+function NamingCard({ initial, done }: { initial: string; done: () => void }) {
+  const [name, setName] = useState(initial)
+  const [error, setError] = useState('')
+  const submit = () => {
+    const value = name.trim()
+    if (!value) return
+    api
+      .namePet(value)
+      .then(done)
+      .catch(() => setError('没存上，再试一次'))
+  }
+  return (
+    <form
+      data-hit
+      className="bubble proactive naming"
+      onSubmit={(e) => {
+        e.preventDefault()
+        submit()
+      }}
+    >
+      <span>{error || '你好！给我起个名字吧'}</span>
+      <div className="naming-row">
+        <input
+          value={name}
+          maxLength={40}
+          aria-label="名字"
+          onPointerDown={() => api.focusPet()}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <button type="submit" disabled={!name.trim()}>
+          就叫这个
+        </button>
+      </div>
+      <span className="tail" />
+    </form>
   )
 }
 /**
@@ -153,6 +192,7 @@ export function Overlay() {
     return () => clearTimeout(timer)
   }, [capsule])
   const [name, setName] = useState('小黑')
+  const [named, setNamed] = useState(true)
   const [scale, setScale] = useState<number>(0.73)
   useEffect(() => {
     const off = [
@@ -166,6 +206,7 @@ export function Overlay() {
         .getSettings()
         .then((s) => {
           setName(s.pet.name)
+          setNamed(s.pet.named)
           setScale(s.pet.scale)
         })
         .catch(console.error)
@@ -178,6 +219,16 @@ export function Overlay() {
     }
   }, [])
   const status = useTurnStatus(session, name)
+  // Anything on show brings an edge-tucked pet out, and keeps it out (docs/design.md §9).
+  const [petState, setPetState] = useState<PetState>('idle')
+  useEffect(() => api.onState(setPetState), [])
+  const hold =
+    capsule !== 'closed' ||
+    !named ||
+    session.running ||
+    Boolean(session.proactive || session.bubble || missed[0]) ||
+    !['idle', 'sleeping'].includes(petState)
+  useEffect(() => api.edgeHold(hold), [hold])
   return (
     <div
       className="overlay"
@@ -203,6 +254,18 @@ export function Overlay() {
           onClick={() =>
             void api.reopenProactive(missed[0]!.id).catch(console.error)
           }
+        />
+      )}
+      {!named && !session.proactive && !open && !session.running && (
+        <NamingCard
+          initial={name}
+          done={() => {
+            setNamed(true)
+            void api
+              .getSettings()
+              .then((s) => setName(s.pet.name))
+              .catch(console.error)
+          }}
         />
       )}
       {session.proactive && !open && !session.running && (

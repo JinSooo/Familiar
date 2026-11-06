@@ -10,7 +10,8 @@ tauri_panel! {
     // Borderless NSWindows refuse key status, which swallowed first clicks and blocked typing.
     // Not main-capable: a non-activating panel that may become main spends a click on that.
     panel!(ChatPanel { config: { can_become_key_window: true } })
-    // The menu bar panel: key so it can tell when the user clicks elsewhere and hide.
+    // The menu bar panel. Not key-capable (with two key-capable panels the menu bar showed three
+    // Familiar icons), so it never hears about losing focus; `hide_panel_on_outside_click` closes it.
     panel!(TrayPanel { config: { can_become_key_window: false } })
     // The quick-ask bar: key so its field takes typing.
     panel!(QuickPanel { config: { can_become_key_window: true } })
@@ -41,6 +42,41 @@ fn quick_quiet() {
 /// When the menu bar panel last hid itself on losing focus, in ms since the epoch. A click on the
 /// tray icon while the panel is open first takes its focus away; that click must not reopen it.
 static PANEL_HIDDEN_AT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// When the menu bar panel last opened: the press that opened it is not a click elsewhere.
+static PANEL_SHOWN_AT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// A mouse button was down on the last check, so only a new press counts.
+static PANEL_PRESSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Called every frame (hit.rs): a mouse press outside the open menu bar panel hides it. The panel
+/// is non-activating and not key-capable, so clicking back into the app that was already in front
+/// never took focus from it and it stayed open (reported 2026-11-06). A press on the tray icon
+/// hides it here too; the 300ms guard in `toggle_panel` keeps that click from reopening it.
+pub fn hide_panel_on_outside_click(app: &tauri::AppHandle, mouse: tauri_nspanel::NSPoint) {
+    use std::sync::atomic::Ordering::Relaxed;
+    let pressed = tauri_nspanel::objc2_app_kit::NSEvent::pressedMouseButtons() != 0;
+    let new_press = pressed && !PANEL_PRESSED.swap(pressed, Relaxed);
+    if !pressed {
+        PANEL_PRESSED.store(false, Relaxed);
+    }
+    if !new_press || now_ms().saturating_sub(PANEL_SHOWN_AT.load(Relaxed)) < 300 {
+        return;
+    }
+    let Ok(panel) = app.get_webview_panel("panel") else {
+        return;
+    };
+    let ns = panel.as_panel();
+    if !ns.isVisible() || panel_holds(ns.frame(), mouse) {
+        return;
+    }
+    PANEL_HIDDEN_AT.store(now_ms(), Relaxed);
+    panel.hide();
+}
+fn panel_holds(frame: tauri_nspanel::NSRect, mouse: tauri_nspanel::NSPoint) -> bool {
+    mouse.x >= frame.origin.x
+        && mouse.x <= frame.origin.x + frame.size.width
+        && mouse.y >= frame.origin.y
+        && mouse.y <= frame.origin.y + frame.size.height
+}
 fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -77,6 +113,7 @@ pub fn toggle_panel(app: &tauri::AppHandle, icon: tauri::Rect) -> tauri::Result<
     // The page sizes the window to its content, so keep whatever height it set last.
     let height = w.outer_size()?.to_logical::<f64>(w.scale_factor()?).height;
     w.set_position(clamp(&w, x, y, PANEL_SIZE.0, height)?)?;
+    PANEL_SHOWN_AT.store(now_ms(), std::sync::atomic::Ordering::Relaxed);
     match app.get_webview_panel("panel") {
         Ok(panel) => panel.show_and_make_key(),
         Err(_) => {

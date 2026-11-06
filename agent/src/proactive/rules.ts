@@ -188,7 +188,11 @@ export function missedLines(
 }
 
 /** Active stretches from the raw record: gaps of idle (or no events) ≥ `away` split them. */
-function stretches(events: PerceptionEvent[], away: number, now: number) {
+export function stretches(
+  events: PerceptionEvent[],
+  away: number,
+  now: number,
+) {
   const list: { start: number; end: number }[] = []
   let current: { start: number; end: number } | undefined
   for (const e of events) {

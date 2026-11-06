@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "sheet": "familiar-extra.webp",
+  "rows": {
+    "listening": {
+      "row": 0,
+      "frames": 6,
+      "loop": true
+    },
+    "talking": {
+      "row": 1,
+      "frames": 6,
+      "loop": true
+    },
+    "sleeping": {
+      "row": 2,
+      "frames": 6,
+      "loop": true
+    },
+    "petted": {
+      "row": 3,
+      "frames": 6,
+      "loop": false
+    },
+    "poked": {
+      "row": 4,
+      "frames": 4,
+      "loop": false
+    },
+    "worried": {
+      "row": 5,
+      "frames": 6,
+      "loop": true
+    },
+    "peeking": {
+      "row": 6,
+      "frames": 6,
+      "loop": true
+    },
+    "happy": {
+      "row": 7,
+      "frames": 6,
+      "loop": true
+    },
+    "curious": {
+      "row": 8,
+      "frames": 6,
+      "loop": true
+    },
+    "drowsy": {
+      "row": 9,
+      "frames": 6,
+      "loop": true
+    }
+  }
+}

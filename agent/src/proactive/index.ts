@@ -13,6 +13,8 @@ import { buffer } from '../perception'
 import { backgroundModel } from '../memory/jobs'
 import { memoryContext, openMemory } from '../memory'
 import { today } from '../memory/store'
+import { personaText } from '../agent/persona'
+import { moodLine } from '../mood'
 import { decide } from './decide'
 import { readReminders, stamp, updateReminders } from './reminders'
 import {
@@ -322,7 +324,7 @@ async function material(now: number, todos = false) {
   const reminders = await upcoming(now, todos)
   return {
     context: [
-      companionContext(state, new Date(now)),
+      `${companionContext(state, new Date(now))}${moodLine()}`,
       `关于主人的记忆：\n${(await memoryContext(memory.store, 1500, 0).catch(() => '')) || '（暂无）'}`,
       ...(reminders ? [reminders] : []),
     ].join('\n\n'),
@@ -351,6 +353,7 @@ async function consult(
   const id = `d${now.toString(36)}${Math.random().toString(36).slice(2, 5)}`
   const input = {
     name: settings.pet.name,
+    persona: await personaText(),
     facts,
     ...(await material(now, todos)),
   }

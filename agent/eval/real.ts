@@ -21,6 +21,7 @@ export interface DecisionRow {
   at: string
   trigger: string
   name: string
+  persona?: string
   facts: string
   context: string
   recent: string
@@ -153,6 +154,7 @@ export function realCases() {
       vars: {
         kind: 'proactive',
         name: m.decision.name,
+        persona: m.decision.persona ?? '',
         facts: m.decision.facts,
         context: m.decision.context,
         recent: m.decision.recent,

@@ -305,6 +305,26 @@ summary:focus-visible {
   background: #a6d46a;
   box-shadow: 0 0 0 2px var(--glass);
 }
+/* 感知指示 at the pet's feet: filled while watching, a hollow ring while paused. */
+.pet .perception {
+  position: absolute;
+  left: 22%;
+  bottom: 6%;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  pointer-events: none;
+  box-shadow: 0 0 0 1.5px var(--glass);
+}
+.pet .perception.capturing {
+  background: #a6d46a;
+}
+.pet .perception.paused {
+  background: var(--glass);
+  box-shadow:
+    inset 0 0 0 1.5px #9a958c,
+    0 0 0 1.5px var(--glass);
+}
 /* A line the pet said while the user was away: click to see it again. */
 .missed-dot {
   position: absolute;
@@ -343,6 +363,27 @@ summary:focus-visible {
   gap: 6px;
 }
 .proactive-actions button {
+  padding: 3px 10px;
+  font-size: 12px;
+}
+.naming-row {
+  display: flex;
+  gap: 6px;
+}
+.naming-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--settings, #0000000d);
+  font: inherit;
+  font-size: 14px;
+  color: inherit;
+  outline: none;
+  box-shadow: inset 0 0 0 0.5px var(--line);
+}
+.naming-row button {
   padding: 3px 10px;
   font-size: 12px;
 }
@@ -631,6 +672,16 @@ summary:focus-visible {
   gap: 12px;
   padding: 8px 0;
   border-bottom: 0.5px solid var(--line);
+}
+.group > label.stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+.group > label.stacked textarea {
+  resize: vertical;
+  font: inherit;
+  line-height: 1.5;
 }
 .group > label:last-child,
 .group > .setting-row:last-child {

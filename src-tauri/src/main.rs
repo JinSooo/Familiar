@@ -1,4 +1,5 @@
 mod agent;
+mod edge;
 mod hit;
 mod login;
 mod protocol;
@@ -15,10 +16,12 @@ fn main() {
         .manage(shortcuts::Bindings::default())
         .manage(agent::Agent::default())
         .manage(hit::Hit::default())
+        .manage(edge::Edge::default())
         .invoke_handler(tauri::generate_handler![
             agent::familiar_invoke,
             hit::pet_hit,
             hit::pet_drag_start,
+            edge::pet_edge_hold,
             tray::pet_menu,
             login::login_item,
             login::set_login_item,
@@ -103,4 +106,3 @@ fn migrate(old: &std::path::Path, new: &std::path::Path) {
     }
     // The search index is a cache; the agent rebuilds it in the new place.
 }
-

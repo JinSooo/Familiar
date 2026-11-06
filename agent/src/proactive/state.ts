@@ -123,6 +123,8 @@ export interface DecisionRecord {
   at: string
   trigger: ProactiveTrigger
   name: string
+  /** Absent in rows logged before personas existed. */
+  persona?: string
   facts: string
   context: string
   recent: string

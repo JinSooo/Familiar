@@ -7,7 +7,8 @@ import { z } from 'zod'
  */
 const system = (
   name: string,
-) => `你是桌面宠物"${name}"，在决定要不要主动对主人说一句话。只输出一个 JSON 对象，不要输出其他文字：
+  persona: string,
+) => `你是桌面宠物"${name}"，在决定要不要主动对主人说一句话。${persona ? `\n你的人设（说话的语气和称呼照着来，下面的规则仍然优先）：\n${persona}\n` : ''}只输出一个 JSON 对象，不要输出其他文字：
 {"speak":true或false,"text":"要说的话，一到两句，30 字以内，口语、像朋友","reason":"给主人看的，15 字以内：要说时写为什么现在说（比如“你已经连续工作两小时”），不说时写为什么不说（比如“你在专注写代码”）"}
 
 规则：
@@ -44,6 +45,8 @@ export function parseDecision(raw: string): Decision {
 export async function decide(input: {
   model: LanguageModel
   name: string
+  /** The user's persona text; empty in older logged moments. */
+  persona?: string
   /** What happened now. */
   facts: string
   /** Memory, recent timeline, closeness and energy, as text. */
@@ -57,7 +60,7 @@ export async function decide(input: {
   const now = input.now ?? new Date()
   const { text } = await generateText({
     model: input.model,
-    system: system(input.name),
+    system: system(input.name, input.persona ?? ''),
     prompt: `${input.context}\n\n最近主动说过的话：\n${input.recent || '（没有）'}\n\n现在的情况：${input.facts}\n\n现在是 ${now.toLocaleString('zh-CN', { hour12: false, weekday: 'long' })}。`,
     maxRetries: 1,
     abortSignal: input.signal ?? AbortSignal.timeout(60000),

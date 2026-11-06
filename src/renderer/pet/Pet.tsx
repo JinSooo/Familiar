@@ -1,23 +1,35 @@
 import { useEffect, useRef, useState } from 'react'
-import type { PetGesture, PetSkin, PetState } from '../../shared'
+import type { Mood, PetGesture, PetSkin, PetState } from '../../shared'
 import { api, subscribe } from '../api'
-import { IPC } from '../../shared'
+import { IPC, perceptionMode } from '../../shared'
 import { alphaHit, overlayHit } from './hit'
 import {
   animation,
   clickSequence,
+  idleAction,
+  moodRate,
   sweep,
   type Action,
   type Sweep,
 } from './logic'
 
-export function PerceptionIndicator({
-  mode,
-}: {
-  mode: 'capturing' | 'paused' | 'chat-only'
-}) {
-  return mode === 'chat-only' ? null : (
-    <span className={`perception ${mode}`} aria-label={mode} />
+/** At the pet's feet: a dot while it watches, a ring while paused, nothing when it only chats. */
+function PerceptionIndicator() {
+  const [mode, setMode] = useState<ReturnType<typeof perceptionMode>>()
+  useEffect(() => {
+    const off = api.onPerceptionChanged((s) => setMode(perceptionMode(s)))
+    void api
+      .perceptionStatus()
+      .then((s) => setMode(perceptionMode(s)))
+      .catch(console.error)
+    return off
+  }, [])
+  if (!mode || mode === 'chat-only') return null
+  return (
+    <span
+      className={`perception ${mode}`}
+      aria-label={mode === 'paused' ? '感知已暂停' : '正在感知'}
+    />
   )
 }
 export function Pet({
@@ -34,8 +46,12 @@ export function Pet({
   const [size, setSize] = useState<number>(0.73)
   const [speed, setSpeed] = useState<number>(1)
   const [state, setState] = useState<PetState>('idle')
+  const [mood, setMood] = useState<Mood>()
+  const lastMood = useRef<Mood>(undefined)
   const [gesture, setGesture] = useState<PetGesture>()
   const [direction, setDirection] = useState<'running-left' | 'running-right'>()
+  /** Tucked into a screen edge; the peeking row faces left, so the left edge mirrors it. */
+  const [tucked, setTucked] = useState<'left' | 'right'>()
   const [reduced, setReduced] = useState(
     matchMedia('(prefers-reduced-motion: reduce)').matches,
   )
@@ -48,12 +64,29 @@ export function Pet({
       api.onSkin(setSkin),
       api.onSize(setSize),
       api.onSpeed(setSpeed),
+      api.onMood(({ mood: next }) => {
+        // Turning happy shows once, with a hop.
+        if (next === 'happy' && lastMood.current !== 'happy') {
+          setGesture('jump')
+          setGestureKey(++sequence.current)
+        }
+        lastMood.current = next
+        setMood(next)
+      }),
       api.onGesture((g) => {
         setGesture(g)
         setGestureKey(++sequence.current)
       }),
     ]
     void api.getPetSkin().then(setSkin).catch(console.error)
+    if (!embedded)
+      void api
+        .getMood()
+        .then((m) => {
+          lastMood.current = m.mood
+          setMood(m.mood)
+        })
+        .catch(console.error)
     void api
       .getSettings()
       .then((s) => {
@@ -78,8 +111,12 @@ export function Pet({
     // cursor is not dropped to click-through while the next atlas row loads.
     const action: Action = reduced
       ? 'idle'
-      : (forceState ?? direction ?? gesture ?? state)
+      : (forceState ??
+        direction ??
+        gesture ??
+        (tucked && !embedded ? 'peeking' : idleAction(state, mood)))
     const spec = animation(action, skin)
+    const mirror = action === 'peeking' && tucked === 'left'
     const image = new Image()
     image.crossOrigin = 'anonymous'
     image.onload = () => {
@@ -91,6 +128,8 @@ export function Pet({
       const draw = () => {
         context.clearRect(0, 0, 192, 208)
         context.globalAlpha = spec.opacity
+        // Mirrored in the drawing itself, so the hit test reads the pixels as they show.
+        context.setTransform(mirror ? -1 : 1, 0, 0, 1, mirror ? 192 : 0, 0)
         context.drawImage(
           image,
           frame * 192,
@@ -102,6 +141,7 @@ export function Pet({
           192,
           208,
         )
+        context.setTransform(1, 0, 0, 1, 0, 0)
         const pixels = context.getImageData(0, 0, 192, 208).data
         hit.current = (x, y) => {
           const rect = canvas.current!.getBoundingClientRect()
@@ -120,7 +160,10 @@ export function Pet({
           frame %= spec.frames
           draw()
         },
-        1000 / (direction ? spec.fps : spec.fps * speed),
+        1000 /
+          (direction
+            ? spec.fps
+            : spec.fps * speed * moodRate(state, mood, skin)),
       )
     }
     image.onerror = () => {
@@ -137,7 +180,19 @@ export function Pet({
       disposed = true
       clearInterval(timer)
     }
-  }, [skin, state, gesture, gestureKey, direction, reduced, forceState, speed])
+  }, [
+    skin,
+    state,
+    mood,
+    tucked,
+    embedded,
+    gesture,
+    gestureKey,
+    direction,
+    reduced,
+    forceState,
+    speed,
+  ])
   useEffect(() => {
     if (embedded) return
     let down: { x: number; y: number; moved: boolean } | undefined
@@ -148,6 +203,10 @@ export function Pet({
       api.onCapsule((open) => {
         capsuleOpen = open
       }),
+      subscribe<{ side: '' | 'left' | 'right'; tucked: boolean }>(
+        IPC.petEdge,
+        ({ side, tucked }) => setTucked(tucked && side ? side : undefined),
+      ),
       subscribe<'left' | 'right' | 'none'>(IPC.petDrag, (value) => {
         setDirection(value === 'none' ? undefined : `running-${value}`)
         if (value === 'none' && down?.moved) down = undefined
@@ -271,7 +330,7 @@ export function Pet({
         }}
         aria-label={`Familiar, ${state}`}
       />
-      <PerceptionIndicator mode="chat-only" />
+      {!embedded && <PerceptionIndicator />}
     </div>
   )
 }

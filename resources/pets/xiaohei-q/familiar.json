@@ -31,6 +31,26 @@
       "row": 5,
       "frames": 6,
       "loop": true
+    },
+    "peeking": {
+      "row": 6,
+      "frames": 6,
+      "loop": true
+    },
+    "happy": {
+      "row": 7,
+      "frames": 6,
+      "loop": true
+    },
+    "curious": {
+      "row": 8,
+      "frames": 6,
+      "loop": true
+    },
+    "drowsy": {
+      "row": 9,
+      "frames": 6,
+      "loop": true
     }
   }
 }

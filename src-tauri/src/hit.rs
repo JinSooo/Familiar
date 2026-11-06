@@ -42,6 +42,7 @@ pub fn pet_drag_start(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Re
     let frame = ns.frame();
     let mouse = NSEvent::mouseLocation();
     ns.setIgnoresMouseEvents(false);
+    crate::edge::picked_up(&app);
     *app.state::<Hit>().dragging.lock().unwrap() = Some(Drag {
         offset_x: mouse.x - frame.origin.x,
         offset_y: mouse.y - frame.origin.y,
@@ -67,6 +68,7 @@ fn tick(app: &tauri::AppHandle) {
     let ns = panel.as_panel();
     let frame = ns.frame();
     let mouse = NSEvent::mouseLocation();
+    crate::windows::hide_panel_on_outside_click(app, mouse);
     let x = mouse.x - frame.origin.x;
     let y = frame.size.height - (mouse.y - frame.origin.y);
     let state = app.state::<Hit>();
@@ -90,8 +92,13 @@ fn tick(app: &tauri::AppHandle) {
                 serde_json::json!({"name":"pet-drag","phase":"end","dx":0}),
             );
             crate::windows::persist(app);
+            crate::edge::dropped(app, ns.frame());
         }
         return;
+    }
+    drop(dragging);
+    if let Some(origin) = crate::edge::tick(app, frame, mouse) {
+        ns.setFrameOrigin(origin);
     }
     let mut cursor = state.cursor.lock().unwrap();
     let mut last_emit = state.last_emit.lock().unwrap();

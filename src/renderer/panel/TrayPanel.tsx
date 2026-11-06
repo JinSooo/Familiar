@@ -2,12 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { LogicalSize } from '@tauri-apps/api/dpi'
 import {
+  moodNames,
   shortDuration,
   type ConversationSummary,
   type MemoryItem,
   type ProactiveMessage,
   type Reminder,
   type PerceptionStatus,
+  type PetMood,
   type PetState,
   type UsageToday,
 } from '../../shared'
@@ -66,6 +68,7 @@ export function TrayPanel() {
   const [name, setName] = useState('')
   const [summon, setSummon] = useState('')
   const [state, setState] = useState<PetState>('idle')
+  const [mood, setMood] = useState<PetMood>()
   const [perception, setPerception] = useState<PerceptionStatus>()
   const [enabled, setEnabled] = useState(false)
   const [items, setItems] = useState<MemoryItem[]>()
@@ -93,6 +96,7 @@ export function TrayPanel() {
       })
       .catch(console.error)
     void api.perceptionStatus().then(setPerception).catch(console.error)
+    void api.getMood().then(setMood).catch(console.error)
     void api
       .proactiveStatus()
       .then((s) => {
@@ -129,6 +133,7 @@ export function TrayPanel() {
   useEffect(() => {
     load()
     const offState = api.onState(setState)
+    const offMood = api.onMood(setMood)
     const offPerception = api.onPerceptionChanged(setPerception)
     const offMemory = api.onMemoryChanged(load)
     const open = () => {
@@ -140,6 +145,7 @@ export function TrayPanel() {
     window.addEventListener('focus', open)
     return () => {
       offState()
+      offMood()
       offPerception()
       offMemory()
       window.removeEventListener('focus', open)
@@ -223,7 +229,10 @@ export function TrayPanel() {
                 <i className={`dot ${watching.tone}`} aria-hidden="true" />
               </button>
             </strong>
-            <span className="muted">{stateLabel[state]}</span>
+            <span className="muted">
+              {stateLabel[state]}
+              {mood && ` · ${moodNames[mood.mood]}，${mood.reason}`}
+            </span>
           </div>
           <button
             type="button"

@@ -129,6 +129,39 @@ const formPages: Page[] = [
 ]
 /** How long typing pauses before a text field saves. */
 const typingDelay = 600
+/** ~/.familiar/persona.md: who the pet is. Saved as you type, like the rest of the page. */
+function PersonaField() {
+  const [text, setText] = useState<string>()
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  useEffect(() => {
+    void api
+      .getPersona()
+      .then((p) => setText(p.text))
+      .catch(console.error)
+    return () => clearTimeout(timer.current)
+  }, [])
+  if (text === undefined) return null
+  return (
+    <label className="stacked">
+      人设
+      <textarea
+        rows={4}
+        maxLength={2000}
+        value={text}
+        placeholder="它是什么样的性格、怎么说话、怎么称呼你"
+        onChange={(e) => {
+          const next = e.target.value
+          setText(next)
+          clearTimeout(timer.current)
+          timer.current = setTimeout(
+            () => void api.savePersona(next).catch(console.error),
+            typingDelay,
+          )
+        }}
+      />
+    </label>
+  )
+}
 
 function Glyph({ d, size = 16 }: { d: string; size?: number }) {
   return (
@@ -1322,6 +1355,7 @@ export function SettingsView() {
                   }
                 />
               </label>
+              <PersonaField />
               <Tuning
                 label="大小"
                 value={settings.pet.scale}

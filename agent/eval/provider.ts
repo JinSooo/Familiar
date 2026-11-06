@@ -61,6 +61,7 @@ if (vars.kind === 'recall') {
   const decision = await decide({
     model: await evalModel(),
     name: vars.name || '小黑',
+    persona: vars.persona ?? '',
     facts: vars.facts!.trim(),
     context: vars.context?.trim() || '相处：和主人刚认识不久。你现在精神不错。',
     recent: vars.recent?.trim() ?? '',

@@ -29,6 +29,8 @@ function legacyPet(value: unknown) {
   if (!value || typeof value !== 'object') return value
   const { size, speed, ...rest } = value as Record<string, unknown>
   const pet: Record<string, unknown> = { ...rest }
+  // Settings saved before naming existed already carry the name the user kept or chose.
+  if (pet.named === undefined && typeof pet.name === 'string') pet.named = true
   if (
     pet.scale === undefined &&
     typeof size === 'string' &&
@@ -69,6 +71,8 @@ export const settingsSchema = z.object({
       .object({
         id: z.string().default('xiaohei-q'),
         name: z.string().trim().min(1).max(40).default('小黑'),
+        /** The user has given the pet its name; until then the pet asks for one. */
+        named: z.boolean().default(false),
         /** Size as a multiplier of the sprite; small / medium / large are 0.5 / 0.73 / 0.95. */
         scale: z
           .number()
@@ -238,6 +242,20 @@ export type PetState =
   | 'done'
   | 'failed'
   | 'sleeping'
+/** How the pet feels (docs/design.md §9): shapes its idle pose and its tone. */
+export type Mood = 'happy' | 'worried' | 'sleepy' | 'curious' | 'calm'
+export interface PetMood {
+  mood: Mood
+  /** Why, in a few words, for the menu bar panel. */
+  reason: string
+}
+export const moodNames: Record<Mood, string> = {
+  happy: '开心',
+  worried: '担心',
+  sleepy: '困',
+  curious: '好奇',
+  calm: '平静',
+}
 /** One-shot animations that play once and fall back to the current PetState. */
 export type PetGesture = 'wave' | 'jump' | 'petted' | 'poked'
 
@@ -339,6 +357,11 @@ export const IPC = {
   petsImport: 'pets:import',
   petsCreatePrompt: 'pets:create-prompt',
   petsDelete: 'pets:delete',
+  petName: 'pet:name',
+  petMood: 'pet:mood',
+  petFocus: 'pet:focus',
+  personaGet: 'persona:get',
+  personaSave: 'persona:save',
   ready: 'window:ready',
   session: 'session:changed',
   sessionGet: 'session:get',
@@ -350,6 +373,8 @@ export const IPC = {
   settingsPage: 'settings:page',
   // Tauri migration (see protocol.ts): Rust → pet webview cursor position for hit testing.
   petCursor: 'pet:cursor',
+  /** From the shell: tucked into a screen edge (docs/design.md §9, 贴边藏起). */
+  petEdge: 'pet:edge',
   // agent → pet webview: drag direction for the running-left/right rows.
   petDrag: 'pet:drag',
   // Tray menu → agent.
@@ -468,6 +493,8 @@ export interface FamiliarAPI {
   stop(): void
   approve(id: string, decision: ApprovalChoice): void
   hit(inside: boolean): void
+  /** The pet has something on show: an edge-tucked pet comes out and stays out. */
+  edgeHold(hold: boolean): void
   drag(action: DragAction): void
   toggleChat(): void
   /** Close the chat panel and the capsule, leaving only the pet. */
@@ -505,6 +532,15 @@ export interface FamiliarAPI {
   petCreatePrompt(): Promise<string>
   /** Moves a pet the user added to the Trash; returns the pets that are left. */
   deletePet(id: string): Promise<PetSkin[]>
+  getMood(): Promise<PetMood>
+  onMood(callback: (mood: PetMood) => void): () => void
+  /** Names the pet from the first-run card. */
+  namePet(name: string): Promise<void>
+  /** Lets the pet window take typing (the naming card's field). */
+  focusPet(): void
+  /** The persona file's text, or the default when there is none. */
+  getPersona(): Promise<{ text: string; isDefault: boolean }>
+  savePersona(text: string): Promise<void>
   onGesture(callback: (gesture: PetGesture) => void): () => void
   onSkin(callback: (skin: PetSkin) => void): () => void
   listMemory(): Promise<MemoryItem[]>
@@ -707,6 +743,17 @@ export interface PerceptionStatus {
   lastEventAt?: number
   lastSummaryAt?: number
   summary?: { timeline: number; pending: number } | { error: string }
+}
+/**
+ * What the mark on the pet says (docs/design.md §9, 感知指示): watching only when the sensor is
+ * really running with Accessibility access; turned off or not running shows nothing.
+ */
+export function perceptionMode(
+  s: PerceptionStatus,
+): 'capturing' | 'paused' | 'chat-only' {
+  if (!s.enabled) return 'chat-only'
+  if (s.paused) return 'paused'
+  return s.running && s.trusted !== false ? 'capturing' : 'chat-only'
 }
 /** Today's active time and top apps, for the menu bar panel. */
 export interface UsageToday {

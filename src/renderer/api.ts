@@ -52,6 +52,12 @@ export const api: FamiliarAPI = {
   importCodexPets: () => request(IPC.petsImport),
   petCreatePrompt: () => request(IPC.petsCreatePrompt),
   deletePet: (id) => request(IPC.petsDelete, id),
+  namePet: (name) => request(IPC.petName, name),
+  getMood: () => request(IPC.petMood),
+  onMood: (cb) => subscribe(IPC.petMood, cb),
+  focusPet: () => send(IPC.petFocus),
+  getPersona: () => request(IPC.personaGet),
+  savePersona: (text) => request(IPC.personaSave, text),
   onGesture: (cb) => subscribe(IPC.petGesture, cb),
   onSkin: (cb) => subscribe(IPC.petSkin, cb),
   getSettings: () => request(IPC.settingsGet),
@@ -61,6 +67,9 @@ export const api: FamiliarAPI = {
   branch: (index) => request(IPC.conversationsBranch, index),
   stop: () => send(IPC.agentStop),
   approve: (id, decision) => send(IPC.approval, id, decision),
+  edgeHold: (hold) => {
+    void invoke('pet_edge_hold', { hold }).catch(console.error)
+  },
   hit: (inside) => {
     void invoke('pet_hit', { inside }).catch(console.error)
   },

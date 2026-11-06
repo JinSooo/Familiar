@@ -44,6 +44,10 @@ EXTRA = [
     ("petted", 6, False),
     ("poked", 4, False),
     ("worried", 6, True),
+    ("peeking", 6, True),
+    ("happy", 6, True),
+    ("curious", 6, True),
+    ("drowsy", 6, True),
 ]
 BUNDLED = {"xiaohei-q", "dango", "matsuko", "momo"}
 

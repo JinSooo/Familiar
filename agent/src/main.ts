@@ -45,6 +45,12 @@ import {
   rewind,
 } from './session'
 import { runAgent, resolveApproval } from './agent'
+import {
+  defaultPersona,
+  personaLimit,
+  readPersona,
+  savePersona,
+} from './agent/persona'
 import { listModels, testModel } from './agent/probe'
 import {
   cancelSignIn,
@@ -124,7 +130,10 @@ import {
   startPerception,
   stopPerception,
   summarizeDue,
+  buffer as perceptionBuffer,
 } from './perception'
+import { currentMood, moodOf, setMood } from './mood'
+import { readState as readProactiveState } from './proactive/state'
 import type {
   Extensions,
   MemoryChange,
@@ -351,6 +360,34 @@ async function openConversation(id: string) {
   publishSession()
   reflectSoon()
 }
+let failedAt: number | undefined
+let chattedAt: number | undefined
+/** Recomputes the mood from what already happened and tells the pet and the panel if it moved. */
+async function refreshMood() {
+  const now = Date.now()
+  const settings = getSettings()
+  const watching = settings.perception.enabled && !settings.perception.paused
+  const events = watching
+    ? await perceptionBuffer.read(now - 4 * 3600000).catch(() => [])
+    : []
+  const welcomedAt = (
+    await readProactiveState().catch(() => undefined)
+  )?.history
+    .filter((m) => m.response === 'ok' && m.trigger !== 'reminder')
+    .reduce((t, m) => Math.max(t, m.at), 0)
+  const next = moodOf({
+    now,
+    hour: new Date(now).getHours(),
+    events,
+    failedAt,
+    chattedAt,
+    welcomedAt: welcomedAt || undefined,
+  })
+  if (setMood(next)) {
+    emit(IPC.petMood, next, 'pet')
+    emit(IPC.petMood, next, 'panel')
+  }
+}
 function refreshState() {
   // A proactive bubble waiting for an answer keeps the pet in its waiting pose, like an approval.
   const next = resolveState({
@@ -427,7 +464,9 @@ function sizePet() {
   ui({
     type: 'pet-size',
     ...size,
-    height: size.height + (session.proactive ? 90 : 0),
+    // The first-run naming card needs the same room.
+    height:
+      size.height + (session.proactive || !getSettings().pet.named ? 90 : 0),
   })
 }
 function updatePet() {
@@ -469,6 +508,8 @@ async function run(
       await saveAttachment(session.id, u.name, Buffer.from(u.data, 'base64')),
     )
   noteConversation()
+  chattedAt = Date.now()
+  void refreshMood()
   await turn(window, text, attachments)
 }
 /**
@@ -601,6 +642,8 @@ async function turn(
     }
     if (item.type === 'error') {
       activity.failed = true
+      failedAt = Date.now()
+      void refreshMood()
       activity.done = false
     }
     if (item.type === 'finish')
@@ -667,8 +710,15 @@ async function request(
       // The window only lists directory rules; approvals may have added one since it loaded.
       // Perception has its own channels (page and tray), so a stale form copy cannot undo them.
       const before = getSettings().embeddingModel
+      const form = input as Parameters<typeof saveSettings>[0]
       const saved = await saveSettings({
-        ...(input as Parameters<typeof saveSettings>[0]),
+        ...form,
+        // A name changed on the settings page counts as the pet being named.
+        pet: {
+          ...form.pet,
+          named:
+            getSettings().pet.named || form.pet.name !== getSettings().pet.name,
+        },
         dirRules: getSettings().dirRules,
         perception: getSettings().perception,
         // Folders are added and removed on the knowledge page's own channels.
@@ -916,6 +966,38 @@ async function request(
       rebuildTray()
       return skins
     }
+    case IPC.petMood:
+      requireSender(window, ['pet', 'panel'])
+      return currentMood()
+    case IPC.petName: {
+      requireSender(window, ['pet'])
+      const name = settingsSchema.shape.pet.parse({ name: input }).name
+      const settings = publicSettings()
+      await saveSettings({
+        ...settings,
+        model: { ...settings.model, apiKey: undefined },
+        imageModel: { ...settings.imageModel, apiKey: undefined },
+        pet: { ...settings.pet, name, named: true },
+      })
+      sizePet()
+      rebuildTray()
+      publishSession()
+      emit(IPC.petGesture, 'wave', 'pet')
+      return
+    }
+    case IPC.petFocus:
+      requireSender(window, ['pet'])
+      ui({ type: 'focus-pet' })
+      return
+    case IPC.personaGet: {
+      requireSender(window, ['settings'])
+      const text = await readPersona()
+      return { text: text || defaultPersona, isDefault: !text }
+    }
+    case IPC.personaSave:
+      requireSender(window, ['settings'])
+      await savePersona(z.string().max(personaLimit).parse(input))
+      return
     case IPC.petsImport:
       skins = await importCodexPets()
       updatePet()
@@ -1172,7 +1254,7 @@ async function request(
       await removeSkill(z.string().parse(input))
       return
     case IPC.perceptionStatus:
-      requireSender(window, ['settings', 'panel'])
+      requireSender(window, ['settings', 'panel', 'pet'])
       return perceptionStatus()
     case IPC.usageToday:
       requireSender(window, ['panel'])
@@ -1491,6 +1573,7 @@ async function start() {
         const late = hour >= 23 || hour < 6
         activity.sleeping = seconds >= (late ? 120 : 600)
         refreshState()
+        return refreshMood()
       })
       .catch(console.error)
   }, 30000)

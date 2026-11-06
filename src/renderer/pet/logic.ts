@@ -1,4 +1,4 @@
-import type { PetGesture, PetSkin, PetState } from '../../shared'
+import type { Mood, PetGesture, PetSkin, PetState } from '../../shared'
 
 export function atlasVersion(width: number, height: number): 1 | 2 | undefined {
   return width === 1536
@@ -39,7 +39,18 @@ export function resolveState(
 ): PetState | PetGesture {
   return gesture ?? priority.find((s) => active[s]) ?? 'idle'
 }
-export type Action = PetState | PetGesture | 'running-left' | 'running-right'
+export type Action =
+  | PetState
+  | PetGesture
+  | 'running-left'
+  | 'running-right'
+  /** Idle poses for the mood (extension rows; plain idle without them). */
+  | 'worried'
+  | 'happy'
+  | 'curious'
+  | 'drowsy'
+  /** Tucked into a screen edge, looking in (an extension row; plain idle without one). */
+  | 'peeking'
 export function animation(action: Action, skin?: PetSkin) {
   const extra = skin?.extension?.rows[action]
   if (extra)
@@ -67,6 +78,11 @@ export function animation(action: Action, skin?: PetSkin) {
     done: [8, 6, true],
     listening: [0, 6, true],
     sleeping: [0, 1, true],
+    worried: [0, 6, true],
+    happy: [0, 6, true],
+    curious: [0, 6, true],
+    drowsy: [0, 6, true],
+    peeking: [0, 6, true],
   }
   const [row, frames, loop] = rows[action]
   return {
@@ -78,6 +94,22 @@ export function animation(action: Action, skin?: PetSkin) {
     opacity: action === 'sleeping' ? 0.7 : 1,
   }
 }
+const moodPose: Record<Mood, Action> = {
+  worried: 'worried',
+  happy: 'happy',
+  curious: 'curious',
+  sleepy: 'drowsy',
+  calm: 'idle',
+}
+/** The idle pose follows the mood; every other state plays as it is. */
+export function idleAction(state: PetState, mood?: Mood): Action {
+  return state === 'idle' && mood ? moodPose[mood] : state
+}
+/** Sleepy with no drowsy row of its own: the plain idle pose slows down instead. */
+export const moodRate = (state: PetState, mood?: Mood, skin?: PetSkin) =>
+  state === 'idle' && mood === 'sleepy' && !skin?.extension?.rows.drowsy
+    ? 0.6
+    : 1
 export function clickSequence(times: number[], now: number) {
   const next = [...times.filter((t) => now - t <= 1000), now]
   return { times: next.length >= 3 ? [] : next, poked: next.length >= 3 }

@@ -1,15 +1,15 @@
 import { setTimeout } from 'node:timers/promises'
-import {
-  ToolLoopAgent,
-  isStepCount,
-  type LanguageModel,
-  type ToolSet,
-} from 'ai'
-import type { ModelMessage } from 'ai'
+import { ToolLoopAgent, type LanguageModel, type ToolSet } from 'ai'
+import type { JSONValue, ModelMessage } from 'ai'
 import type { AgentEvent, Source } from '../../../src/shared'
 import type { ToolCall, ToolDecision } from '../permissions'
 import { waitForApproval } from './approvals'
 import { agentError } from './errors'
+import {
+  computerOutputText,
+  computerToolNames,
+  withLatestScreenshot,
+} from '../computer'
 
 const mutations = new Set([
   'write_file',
@@ -28,6 +28,8 @@ export interface AgentDependencies {
   workspacePath: string
   decide: (call: ToolCall) => Promise<ToolDecision>
   snapshot: (path: string, message: string) => Promise<void>
+  /** Per-provider request options for every step (the ChatGPT plan route needs store:false). */
+  providerOptions?: Record<string, Record<string, JSONValue>>
   /** Source cards a tool result adds to the reply (web tools). */
   sources?: (toolName: string, output: unknown) => Source[]
 }
@@ -36,7 +38,10 @@ function preview(output: unknown): string {
   const text =
     typeof output === 'string'
       ? output
-      : (commandText(output) ?? JSON.stringify(output) ?? String(output))
+      : (commandText(output) ??
+        computerOutputText(output) ??
+        JSON.stringify(output) ??
+        String(output))
   return text.length > 2000 ? `${text.slice(0, 1999)}…` : text
 }
 
@@ -114,7 +119,21 @@ export async function runAgentCore(
       instructions: dependencies.instructions,
       // Lets the SDK retry failures before the response starts (5xx, 429, refused connections).
       maxRetries: 2,
-      stopWhen: isStepCount(20),
+      ...(dependencies.providerOptions
+        ? { providerOptions: dependencies.providerOptions }
+        : {}),
+      // Operating an app takes a step per click; give those runs more room.
+      stopWhen: ({ steps }) =>
+        steps.length >=
+        (steps.some((s) =>
+          s.toolCalls.some((c) => computerToolNames.has(c.toolName)),
+        )
+          ? 60
+          : 20),
+      prepareStep: ({ messages }) => {
+        const next = withLatestScreenshot(messages)
+        return next ? { messages: next } : {}
+      },
       toolApproval: async ({ toolCall }) => {
         signal.throwIfAborted()
         const call = {

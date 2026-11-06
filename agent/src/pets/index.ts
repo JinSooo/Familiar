@@ -120,6 +120,16 @@ export async function listPets(): Promise<PetSkin[]> {
   }
   return [...library.values()].map((item) => item.skin)
 }
+/** The sheet file on disk, for the Computer Use cursor drawn outside any webview. */
+export async function currentSheetPath(
+  id: string,
+): Promise<string | undefined> {
+  const item = library.get(id) ?? library.get('xiaohei-q')
+  if (!item) return undefined
+  const [sheet] = item.files // The base sheet is added first.
+  if (!sheet) return undefined
+  return contained(item.directory, sheet).catch(() => undefined)
+}
 export function currentSkin(id: string): PetSkin {
   const skin = library.get(id)?.skin ?? library.get('xiaohei-q')?.skin
   if (!skin) throw new Error('Default pet skin is missing')

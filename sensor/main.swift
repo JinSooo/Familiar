@@ -18,6 +18,8 @@ setvbuf(stdout, nil, _IOLBF, 0)
 let arguments = CommandLine.arguments
 // `familiar-sensor --pdf <path>`: a PDF's text for the knowledge base, with OCR (pdf.swift).
 if arguments.count == 3 && arguments[1] == "--pdf" { runPdf(arguments[2]) }
+// `familiar-sensor --control`: Computer Use requests over stdin (control.swift).
+if arguments.count == 2 && arguments[1] == "--control" { runControl() }
 if arguments.count == 4 && arguments[1] == "--icon" {
   guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: arguments[2]) else {
     exit(1)

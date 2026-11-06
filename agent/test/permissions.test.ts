@@ -207,3 +207,44 @@ describe('an approval leaves a rule', () => {
     expect(grantedRule({ toolName: 'run_shell', input: {} })).toBeUndefined()
   })
 })
+
+// Computer Use follows the permission mode (user's choice, 2026-11-06).
+describe('computer use', () => {
+  test('ask mode asks for every step, auto and full access go ahead', async () => {
+    const click = { element: 3 }
+    expect(
+      (await decide('click', click, { permissionMode: 'ask' })).decision,
+    ).toBe('ask')
+    expect(
+      (
+        await decide(
+          'read_window',
+          { app: 'Safari' },
+          { permissionMode: 'ask' },
+        )
+      ).reason,
+    ).toBe('读取「Safari」的窗口')
+    for (const mode of ['auto', 'full'] as const)
+      expect(
+        (await decide('type_text', { text: 'hi' }, { permissionMode: mode }))
+          .decision,
+      ).toBe('allow')
+    expect(
+      (await decide('list_apps', {}, { permissionMode: 'ask' })).decision,
+    ).toBe('allow')
+  })
+})
+
+// Taking the real pointer and keyboard asks in every mode (user's rule, 2026-11-06).
+test('global control asks even in full access', async () => {
+  for (const mode of ['ask', 'auto', 'full'] as const)
+    expect(
+      (
+        await decide(
+          'take_over',
+          { reason: '拖文件' },
+          { permissionMode: mode },
+        )
+      ).decision,
+    ).toBe('ask')
+})

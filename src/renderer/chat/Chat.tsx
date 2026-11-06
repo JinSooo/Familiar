@@ -538,6 +538,16 @@ const actions: Record<string, string> = {
   web_search: '联网搜索',
   fetch_page: '读取网页',
   save_page: '把网页存进知识库',
+  read_window: '操作电脑',
+  screenshot: '操作电脑',
+  click: '操作电脑',
+  type_text: '操作电脑',
+  press_key: '操作电脑',
+  set_value: '操作电脑',
+  scroll: '操作电脑',
+  open_app: '操作电脑',
+  drag: '操作电脑',
+  take_over: '全局控制',
 }
 /** What an approval would do, in words plus the one detail that matters (path, command, URL). */
 function ApprovalDetail({

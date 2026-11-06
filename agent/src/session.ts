@@ -1,5 +1,6 @@
 import type { AgentEvent, Attachment, Session } from '../../src/shared'
 import { newConversationId } from './conversations'
+import { computerStep, computerToolNames } from './computer'
 export const emptySession = (): Session => ({
   id: '',
   updatedAt: 0,
@@ -306,7 +307,52 @@ function toolDescription(name: string, input: unknown): string {
                         : (field('path').split('/').filter(Boolean).at(-1) ??
                           '')
   const short = target.length > 40 ? `${target.slice(0, 39)}…` : target
+  if (computerToolNames.has(name)) return computerStep(name, input)
   const mcp = /^mcp__(.+?)__(.+)$/.exec(name)
   if (mcp) return `调用 ${mcp[1]} 的 ${mcp[2]}`
   return `${labels[name] ?? name}${short ? ` ${short}` : ''}`
+}
+
+/**
+ * What goes to the model for the earlier turns: each reply plus what it actually did. Without the
+ * steps a later turn cannot see its own work, so it disowned real actions and made up reasons
+ * (reported 2026-11-06: 「前面说已经操作微信……没有依据」 after it had opened and read WeChat).
+ */
+export function modelHistory(session: Pick<Session, 'messages' | 'tools'>): {
+  role: 'user' | 'assistant'
+  content: string
+  attachments?: Attachment[]
+}[] {
+  const perTurn = 1500
+  return session.messages
+    .map((m, i) => {
+      let content = m.content
+      if (m.role === 'assistant') {
+        const steps = session.tools.filter((t) => t.turn === i && t.done)
+        if (steps.length) {
+          let record = steps
+            .map((t, n) => {
+              const result = (t.output ?? '')
+                .split('\n')
+                .find((line) => line.trim())
+                ?.trim()
+              const short =
+                result && result.length > 120
+                  ? `${result.slice(0, 119)}…`
+                  : result
+              return `${n + 1}. ${t.name}${short ? ` → ${short}` : ''}`
+            })
+            .join('\n')
+          if (record.length > perTurn)
+            record = `${record.slice(0, perTurn)}\n…（后面还有）`
+          content = `${content}${content ? '\n\n' : ''}［系统记录：这一轮实际执行过的操作］\n${record}`
+        }
+      }
+      return {
+        role: m.role,
+        content,
+        ...(m.attachments?.length ? { attachments: m.attachments } : {}),
+      }
+    })
+    .filter((m) => m.content || m.attachments?.length)
 }

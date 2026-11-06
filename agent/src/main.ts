@@ -43,6 +43,7 @@ import {
   quickStartsFresh,
   bubbleTimeout,
   rewind,
+  modelHistory,
 } from './session'
 import { runAgent, resolveApproval } from './agent'
 import {
@@ -61,10 +62,12 @@ import {
 import {
   listPets,
   currentSkin,
+  currentSheetPath,
   importCodexPets,
   petCreatePrompt,
   deletePet,
 } from './pets'
+import { setComputerHooks, stopComputer } from './computer'
 import {
   clearConversations,
   conversationTitle,
@@ -282,6 +285,15 @@ function setPetVisible(visible: boolean) {
   if (!visible) dismissChat()
   ui({ type: 'pet-visible', visible })
 }
+// While Computer Use acts, the pet rides its cursor instead of sitting on the desktop.
+setComputerHooks({
+  petVisible: (visible) => {
+    if (!petHidden) ui({ type: 'pet-visible', visible })
+  },
+  stop: () => controller?.abort(),
+  sheet: () => currentSheetPath(getSettings().pet.id),
+  rate: () => getSettings().pet.rate,
+})
 function shortcut(action: ShortcutAction) {
   if (action === 'togglePet') return setPetVisible(petHidden)
   if (action === 'quick') {
@@ -596,13 +608,7 @@ async function turn(
     attachments,
   )
   persist()
-  const messages = session.messages
-    .filter((m) => m.content || m.attachments?.length)
-    .map(({ role, content, attachments }) => ({
-      role,
-      content,
-      ...(attachments?.length ? { attachments } : {}),
-    }))
+  const messages = modelHistory(session)
   publishSession()
   resetRequested = false
   const run = new AbortController()
@@ -1600,6 +1606,7 @@ async function start() {
     stopKnowledge()
     stopLocalServer()
     stopProactive()
+    stopComputer()
     clearTimeout(bubbleTimer)
     for (const timer of [proxyTimer, idleTimer, stateTimer, reflectTimer])
       clearInterval(timer)

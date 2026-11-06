@@ -25,6 +25,11 @@ import { moodLine } from '../mood'
 import { createReminderTools, reminderInstructions } from '../proactive/state'
 import { proactiveChanged } from '../proactive'
 import { agentError } from './errors'
+import {
+  computerInstructions,
+  createComputerTools,
+  endComputerTurn,
+} from '../computer'
 export { resolveApproval } from './approvals'
 
 export async function runAgent(
@@ -66,6 +71,7 @@ export async function runAgent(
         ...createWebTools(settings),
         ...createSkillTools(skills),
         ...createReminderTools(() => void proactiveChanged()),
+        ...createComputerTools(settings),
         ...images,
         ...external,
       },
@@ -78,7 +84,13 @@ export async function runAgent(
         settings.permissionMode,
         settings.pet.name,
         await personaText(),
-      )}\n现在是 ${new Date().toLocaleString('zh-CN', { hour12: false, weekday: 'long' })}。${moodLine()}\n\n${await memoryInstructions(memory.store)}\n\n${knowledgeInstructions(settings)}\n\n${reminderInstructions}\n\n${webInstructions}\n\n${skillInstructions(skills)}${'generate_image' in images ? `\n\n${imageInstructions}` : ''}`,
+      )}\n现在是 ${new Date().toLocaleString('zh-CN', { hour12: false, weekday: 'long' })}。${moodLine()}\n\n${await memoryInstructions(memory.store)}\n\n${knowledgeInstructions(settings)}\n\n${reminderInstructions}\n\n${webInstructions}\n\n${computerInstructions}\n\n${skillInstructions(skills)}${'generate_image' in images ? `\n\n${imageInstructions}` : ''}`,
+      // The ChatGPT plan route keeps nothing (store:false). Told so, the SDK sends each step's
+      // reasoning back encrypted instead of by id; by id the next step failed with 404 「Item
+      // with id 'rs_…' not found」 (2026-11-07, a Computer Use turn on the plan).
+      ...(settings.model.protocol === 'chatgpt'
+        ? { providerOptions: { openai: { store: false } } }
+        : {}),
       workspacePath,
       decide: (call) => decideToolCall(call, settings),
       snapshot,
@@ -86,5 +98,7 @@ export async function runAgent(
   } catch (error) {
     if (signal.aborted) onEvent({ type: 'finish', stopped: true })
     else throw agentError(error)
+  } finally {
+    await endComputerTurn()
   }
 }

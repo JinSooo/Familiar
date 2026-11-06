@@ -11,6 +11,7 @@ import {
 } from './paths'
 import { mcpAccess } from '../extensions/mcp'
 import { sharedSkillsDir } from '../extensions/skills'
+import { computerToolNames, describeComputerCall } from '../computer'
 
 export interface ToolCall {
   id: string
@@ -76,6 +77,19 @@ export async function decideToolCall(
         reason: `使用 MCP 服务器「${mcp.server}」的工具`,
         server: mcp.server,
       }
+    }
+    // Computer Use follows the mode (2026-11-06, user's choice): ask mode asks every step, auto
+    // and full access go ahead. The hard limits (keychain, passwords, secure fields) sit in the
+    // helper and hold in every mode.
+    if (computerToolNames.has(call.toolName)) {
+      if (call.toolName === 'list_apps')
+        return result('allow', '查看打开的应用')
+      // Taking the real pointer and keyboard asks in every mode (user's rule, 2026-11-06).
+      if (call.toolName === 'take_over')
+        return result('ask', describeComputerCall(call.toolName, call.input))
+      return settings.permissionMode === 'ask'
+        ? result('ask', describeComputerCall(call.toolName, call.input))
+        : result('allow', '按权限模式允许操作电脑')
     }
     if (webTools.has(call.toolName))
       return settings.permissionMode === 'ask'

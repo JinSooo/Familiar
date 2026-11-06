@@ -43,6 +43,7 @@ pub fn pet_drag_start(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Re
     let mouse = NSEvent::mouseLocation();
     ns.setIgnoresMouseEvents(false);
     crate::edge::picked_up(&app);
+    crate::walk::picked_up(&app);
     *app.state::<Hit>().dragging.lock().unwrap() = Some(Drag {
         offset_x: mouse.x - frame.origin.x,
         offset_y: mouse.y - frame.origin.y,
@@ -98,6 +99,8 @@ fn tick(app: &tauri::AppHandle) {
     }
     drop(dragging);
     if let Some(origin) = crate::edge::tick(app, frame, mouse) {
+        ns.setFrameOrigin(origin);
+    } else if let Some(origin) = crate::walk::tick(app, frame, mouse, ns.isVisible()) {
         ns.setFrameOrigin(origin);
     }
     let mut cursor = state.cursor.lock().unwrap();

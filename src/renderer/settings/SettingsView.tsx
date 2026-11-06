@@ -1392,6 +1392,18 @@ export function SettingsView() {
                   )
                 }
               />
+              <div className="setting-row">
+                <span title="空闲时每隔几分钟走一小段再回来；深夜不走">
+                  自己走动
+                </span>
+                <Switch
+                  on={settings.pet.wander}
+                  label="自己走动"
+                  onChange={(wander) =>
+                    change({ ...settings, pet: { ...settings.pet, wander } })
+                  }
+                />
+              </div>
             </div>
           </section>
           <section hidden={tab !== 'privacy'}>

@@ -477,6 +477,7 @@ function updatePet() {
   emit(IPC.petSize, settings.pet.scale, 'pet')
   // The chat panel's perched pet animates too.
   emit(IPC.petSpeed, settings.pet.rate, 'all')
+  emit(IPC.petWander, settings.pet.wander, 'pet')
 }
 /** Files sent with a message: name and base64 bytes, saved before the turn starts. */
 const uploadSchema = z
@@ -1059,6 +1060,7 @@ async function request(
         emit(IPC.petSkin, currentSkin(getSettings().pet.id), 'pet')
         emit(IPC.petSize, getSettings().pet.scale, 'pet')
         emit(IPC.petSpeed, getSettings().pet.rate, 'pet')
+        emit(IPC.petWander, getSettings().pet.wander, 'pet')
         petReady = true
         await greet()
       }

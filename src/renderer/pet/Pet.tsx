@@ -45,6 +45,7 @@ export function Pet({
   const [skin, setSkin] = useState<PetSkin>()
   const [size, setSize] = useState<number>(0.73)
   const [speed, setSpeed] = useState<number>(1)
+  const [wander, setWander] = useState(false)
   const [state, setState] = useState<PetState>('idle')
   const [mood, setMood] = useState<Mood>()
   const lastMood = useRef<Mood>(undefined)
@@ -64,6 +65,7 @@ export function Pet({
       api.onSkin(setSkin),
       api.onSize(setSize),
       api.onSpeed(setSpeed),
+      api.onWander(setWander),
       api.onMood(({ mood: next }) => {
         // Turning happy shows once, with a hop.
         if (next === 'happy' && lastMood.current !== 'happy') {
@@ -92,6 +94,7 @@ export function Pet({
       .then((s) => {
         setSize(s.pet.scale)
         setSpeed(s.pet.rate)
+        setWander(s.pet.wander)
       })
       .catch(console.error)
     const media = matchMedia('(prefers-reduced-motion: reduce)')
@@ -193,6 +196,28 @@ export function Pet({
     forceState,
     speed,
   ])
+  // Idle and awake: the shell may walk it a little way and back (docs/design.md §9). Never at
+  // night, even when worry outranks sleepiness in the mood; re-sent each minute for the clock.
+  useEffect(() => {
+    if (embedded) return
+    const send = () => {
+      const hour = new Date().getHours()
+      api.petRest(
+        wander &&
+          !reduced &&
+          state === 'idle' &&
+          mood !== 'sleepy' &&
+          hour >= 6 &&
+          hour < 23,
+      )
+    }
+    send()
+    const timer = setInterval(send, 60_000)
+    return () => {
+      clearInterval(timer)
+      api.petRest(false)
+    }
+  }, [embedded, wander, reduced, state, mood])
   useEffect(() => {
     if (embedded) return
     let down: { x: number; y: number; moved: boolean } | undefined
@@ -206,6 +231,9 @@ export function Pet({
       subscribe<{ side: '' | 'left' | 'right'; tucked: boolean }>(
         IPC.petEdge,
         ({ side, tucked }) => setTucked(tucked && side ? side : undefined),
+      ),
+      subscribe<'left' | 'right' | 'none'>(IPC.petWalk, (value) =>
+        setDirection(value === 'none' ? undefined : `running-${value}`),
       ),
       subscribe<'left' | 'right' | 'none'>(IPC.petDrag, (value) => {
         setDirection(value === 'none' ? undefined : `running-${value}`)

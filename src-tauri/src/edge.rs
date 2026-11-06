@@ -85,7 +85,8 @@ pub fn pushed_side(pet: NSRect, screen: NSRect, others: &[NSRect]) -> Option<Sid
     }
 }
 
-fn pet_rect(frame: NSRect) -> NSRect {
+/// The pet's own rect inside a pet window `frame`, screen coordinates.
+pub(crate) fn pet_rect(frame: NSRect) -> NSRect {
     let w = pet_width(frame.size.width);
     let h = w * 208. / 192.;
     NSRect::new(
@@ -135,6 +136,13 @@ pub fn dropped(app: &tauri::AppHandle, frame: NSRect) {
     s.out = false;
     s.near_at = None;
     s.armed = false;
+}
+
+/// Something on show, or tucked into an edge: no walking about (walk.rs).
+pub fn busy(app: &tauri::AppHandle) -> bool {
+    let edge = app.state::<Edge>();
+    let s = edge.state.lock().unwrap();
+    s.hold || s.side.is_some()
 }
 
 /// A drag started: whatever edge it was in, it is in the hand now.

@@ -47,6 +47,7 @@ export const api: FamiliarAPI = {
   animationFinished: () => send(IPC.petFinished),
   onSize: (cb) => subscribe(IPC.petSize, cb),
   onSpeed: (cb) => subscribe(IPC.petSpeed, cb),
+  onWander: (cb) => subscribe(IPC.petWander, cb),
   getPetSkin: () => request(IPC.petSkin),
   listPets: () => request(IPC.petsList),
   importCodexPets: () => request(IPC.petsImport),
@@ -69,6 +70,9 @@ export const api: FamiliarAPI = {
   approve: (id, decision) => send(IPC.approval, id, decision),
   edgeHold: (hold) => {
     void invoke('pet_edge_hold', { hold }).catch(console.error)
+  },
+  petRest: (rest) => {
+    void invoke('pet_rest', { rest }).catch(console.error)
   },
   hit: (inside) => {
     void invoke('pet_hit', { inside }).catch(console.error)

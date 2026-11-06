@@ -81,6 +81,8 @@ export const settingsSchema = z.object({
           .default(0.73),
         /** Playback rate of the pet's own animations (drag running follows the hand instead). */
         rate: z.number().min(petRateRange.min).max(petRateRange.max).default(1),
+        /** Now and then, idle, it walks a little way off and comes back (docs/design.md §9). */
+        wander: z.boolean().default(true),
       })
       .prefault({}),
   ),
@@ -345,6 +347,9 @@ export const IPC = {
   petState: 'pet:state',
   petSize: 'pet:size',
   petSpeed: 'pet:speed',
+  petWander: 'pet:wander',
+  /** From the shell: walking on its own, which way (`none` when it stops). */
+  petWalk: 'pet:walk',
   petFinished: 'pet:finished',
   typing: 'pet:typing',
   petHit: 'pet:hit',
@@ -495,6 +500,8 @@ export interface FamiliarAPI {
   hit(inside: boolean): void
   /** The pet has something on show: an edge-tucked pet comes out and stays out. */
   edgeHold(hold: boolean): void
+  /** The pet is idle and awake, with walking on: the shell may take it for a short walk. */
+  petRest(rest: boolean): void
   drag(action: DragAction): void
   toggleChat(): void
   /** Close the chat panel and the capsule, leaving only the pet. */
@@ -524,6 +531,7 @@ export interface FamiliarAPI {
   animationFinished(): void
   onSize(callback: (scale: number) => void): () => void
   onSpeed(callback: (rate: number) => void): () => void
+  onWander(callback: (on: boolean) => void): () => void
   getPetSkin(): Promise<PetSkin>
   listPets(): Promise<PetSkin[]>
   /** Copies pets from ~/.codex/pets into Familiar's own pet library. */

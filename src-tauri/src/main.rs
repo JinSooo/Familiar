@@ -5,6 +5,7 @@ mod login;
 mod protocol;
 mod shortcuts;
 mod tray;
+mod walk;
 mod windows;
 use tauri::Manager;
 fn main() {
@@ -17,11 +18,13 @@ fn main() {
         .manage(agent::Agent::default())
         .manage(hit::Hit::default())
         .manage(edge::Edge::default())
+        .manage(walk::Walk::default())
         .invoke_handler(tauri::generate_handler![
             agent::familiar_invoke,
             hit::pet_hit,
             hit::pet_drag_start,
             edge::pet_edge_hold,
+            walk::pet_rest,
             tray::pet_menu,
             login::login_item,
             login::set_login_item,

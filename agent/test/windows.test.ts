@@ -128,3 +128,35 @@ describe('where a running turn moves', () => {
     )
   })
 })
+
+// Found 2026-11-06: pet_edge_hold and pet_rest were registered but never allowed, so Tauri
+// refused every call — a tucked pet did not come out for bubbles, and it never went walking.
+describe('shell commands', () => {
+  test('every command the pages invoke is allowed for some window', async () => {
+    const root = join(import.meta.dir, '../..')
+    const { stdout } = Bun.spawnSync(
+      ['git', 'grep', '-ohE', "invoke(<[^>]*>)?\\('[a-z_]+'", '--', 'src'],
+      { cwd: root },
+    )
+    const invoked = new Set(
+      [...stdout.toString().matchAll(/\('([a-z_]+)'/g)].map((m) => m[1]!),
+    )
+    expect(invoked.size).toBeGreaterThan(0)
+    const toml = await readFile(
+      join(root, 'src-tauri/permissions/commands.toml'),
+      'utf8',
+    )
+    const granted = new Set<string>()
+    const capabilities = await Promise.all(
+      ['default', 'panel', 'quick', 'settings'].map((name) =>
+        readFile(join(root, `src-tauri/capabilities/${name}.json`), 'utf8'),
+      ),
+    )
+    for (const block of toml.split('[[permission]]').slice(1)) {
+      const id = /identifier = "([^"]+)"/.exec(block)?.[1]
+      if (!id || !capabilities.some((c) => c.includes(`"${id}"`))) continue
+      for (const m of block.matchAll(/"([a-z_]+)"/g)) granted.add(m[1]!)
+    }
+    for (const command of invoked) expect(granted).toContain(command)
+  })
+})

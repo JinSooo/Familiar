@@ -16,3 +16,9 @@ commands.allow = ["login_item", "set_login_item"]
 [[permission]]
 identifier = "allow-quick-fit"
 commands.allow = ["quick_fit"]
+[[permission]]
+identifier = "allow-pet-edge-hold"
+commands.allow = ["pet_edge_hold"]
+[[permission]]
+identifier = "allow-pet-rest"
+commands.allow = ["pet_rest"]

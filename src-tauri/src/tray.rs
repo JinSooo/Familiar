@@ -124,7 +124,7 @@ pub fn rebuild(
             None::<&str>,
         )?)?;
     }
-    let pause_label = if perception == "paused" { "继续感知" } else { "暂停感知" };
+    let pause_label = if perception == "paused" { "继续记录电脑活动" } else { "暂停记录电脑活动" };
     let pause = MenuItem::with_id(app, "perception:pause", pause_label, true, None::<&str>)?;
     let menu = Menu::with_items(
         app,

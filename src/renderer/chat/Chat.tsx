@@ -11,7 +11,7 @@ import { PetAvatar } from '../pet/PetAvatar'
 import { Composer } from '../shared-ui/Composer'
 import { Attachments } from './Attachments'
 import { useSession } from '../shared-ui/session'
-import { useTurnStatus } from '../shared-ui/status'
+import { needsModelSetup, useTurnStatus } from '../shared-ui/status'
 /** `panel`: the small floating panel by the pet. `window`: the big resizable window with history beside it. */
 export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
   const big = variant === 'window'
@@ -42,7 +42,8 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
     return () => window.removeEventListener('keydown', escape)
   }, [view, big])
   const [name, setName] = useState('小黑')
-  const [mode, setMode] = useState('自动')
+  /** Shown beside the name only when it is not the default 自动, so the unusual case stands out. */
+  const [mode, setMode] = useState('')
   const [toolView, setToolView] = useState<ToolView>('brief')
   const bottom = useRef<HTMLDivElement>(null)
   const list = useRef<HTMLElement>(null)
@@ -54,7 +55,7 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
         setName(s.pet.name)
         setToolView(s.toolView)
         setMode(
-          { ask: '询问', auto: '自动', full: '完全访问' }[s.permissionMode],
+          { ask: '每步都问', auto: '', full: '完全访问' }[s.permissionMode],
         )
       })
     }
@@ -87,12 +88,22 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
         <header className="chat-header" data-tauri-drag-region="deep">
           <PetAvatar />
           <strong>{name}</strong>
-          <small className="muted">{mode}</small>
+          {mode && (
+            <button
+              type="button"
+              className="link mode-link"
+              title="权限模式，点一下去设置里改"
+              onClick={() => api.openSettings('permissions')}
+            >
+              {mode}
+            </button>
+          )}
           <div className="header-actions">
             {!big && (
               <button
                 className={`icon ${view === 'history' ? 'active' : ''}`}
                 aria-label="历史对话"
+                title="历史对话"
                 aria-pressed={view === 'history'}
                 onClick={() => setView(view === 'history' ? 'chat' : 'history')}
               >
@@ -103,6 +114,7 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
               <button
                 className="icon"
                 aria-label="新对话"
+                title="新对话"
                 onClick={() => {
                   api.newSession()
                   setView('chat')
@@ -124,6 +136,7 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
             <button
               className="icon"
               aria-label="设置"
+              title="设置"
               onClick={() => api.openSettings()}
             >
               <Icon name="settings" />
@@ -132,6 +145,7 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
               <button
                 className="icon"
                 aria-label="收起成胶囊"
+                title="收起成胶囊"
                 onClick={() => api.toggleChat()}
               >
                 <Icon name="collapse" />
@@ -160,7 +174,7 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
             >
               {!session.messages.length && (
                 <div className="empty muted">
-                  <p>和{name}说句话…</p>
+                  {!session.previous && <p>和{name}说点什么吧</p>}
                   {session.previous && (
                     <button
                       className="resume"
@@ -170,7 +184,7 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
                         api
                           .openConversation(session.previous.id)
                           .catch((e) =>
-                            setOpenError(errorText(e, '打不开上次的对话')),
+                            setOpenError(errorText(e, '上次的对话打不开了')),
                           )
                       }}
                     >
@@ -229,6 +243,14 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
                       <p className="error" role="alert">
                         {m.error}
                       </p>
+                      {needsModelSetup(m.error) && (
+                        <button
+                          type="button"
+                          onClick={() => api.openSettings('model')}
+                        >
+                          去设置
+                        </button>
+                      )}
                       {!session.running && askedBefore(i) >= 0 && (
                         <button
                           type="button"
@@ -260,7 +282,7 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
                               ? () => act(api.resend(i), '回复失败')
                               : undefined
                         }
-                        onBranch={() => act(api.branch(i), '分支失败')}
+                        onBranch={() => act(api.branch(i), '没能另开对话')}
                       />
                     )}
                 </div>
@@ -281,16 +303,16 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
                       <button
                         title={
                           a.dir
-                            ? `之后 ${a.dir} 里的请求都不再询问，可在设置「权限 › 目录规则」里删除`
-                            : `之后 ${a.server} 的工具都不再询问，可在设置「扩展」里改回`
+                            ? `以后 ${a.dir} 里的操作都不再问，可以在设置的「权限 › 目录规则」里删掉`
+                            : `以后 ${a.server} 的工具都不再问，可以在设置的「扩展」里改回来`
                         }
                         onClick={() => api.approve(a.id, 'always')}
                       >
-                        全部允许
+                        始终允许
                       </button>
                     )}
                     <button onClick={() => api.approve(a.id, 'deny')}>
-                      拒绝
+                      不允许
                     </button>
                   </div>
                 </article>
@@ -303,7 +325,11 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
               {session.running && <p className="muted status">{status}</p>}
               <div ref={bottom} />
             </section>
-            <Composer running={session.running} name={name} />
+            <Composer
+              running={session.running}
+              name={name}
+              continuing={session.messages.length > 0}
+            />
           </>
         )}
       </div>
@@ -407,7 +433,7 @@ export function MessageActions({
         )}
       {onEdit && button('编辑后重新发送', glyphs.edit, onEdit)}
       {onRegenerate && button('重新生成', glyphs.regenerate, onRegenerate)}
-      {onBranch && button('从这里分支成新对话', glyphs.branch, onBranch)}
+      {onBranch && button('从这里另开一个对话', glyphs.branch, onBranch)}
     </div>
   )
 }
@@ -444,7 +470,7 @@ function EditMessage({
         }}
       />
       <div className="message-edit-actions">
-        <span className="muted">之后的内容会被替换</span>
+        <span className="muted">发送后，这条之后的内容会换成新的回复</span>
         <button type="button" onClick={onCancel}>
           取消
         </button>
@@ -535,12 +561,12 @@ function ApprovalDetail({
     <div className="approval-detail">
       <span className="muted">{actions[toolName] ?? '使用工具'}</span>
       {detail && <code>{detail}</code>}
-      {extra.length > 0 && <span className="muted">{extra.join(' · ')}</span>}
+      {extra.length > 0 && <span className="muted">{extra.join('，')}</span>}
     </div>
   )
 }
 
-/** One line per tool step; more than three fold into a summary like 「搜索 4 次 · 读网页 9 次」. */
+/** One line per tool step; more than three fold into a summary like 「搜索 4 次、读网页 9 次」. */
 /** One line per step; a step with its command or result opens to show them in full. */
 /** Points right while closed and turns down when its <details> opens (see .disclosure). */
 function Chevron() {
@@ -604,7 +630,7 @@ function ToolSteps({
   }
   const summary = [...counts]
     .map(([verb, n]) => (n > 1 ? `${verb} ${n} 次` : verb))
-    .join(' · ')
+    .join('、')
   return (
     <>
       <details className="tool tool-group muted">

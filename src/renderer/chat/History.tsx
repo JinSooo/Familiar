@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ConversationSummary } from '../../shared'
 import { api } from '../api'
+import { Icon } from '../shared-ui/Icon'
 
 const day = 24 * 60 * 60 * 1000
 function group(at: number, now: number): string {
@@ -41,7 +42,6 @@ export function History({
 }) {
   const [query, setQuery] = useState('')
   const [items, setItems] = useState<ConversationSummary[]>()
-  const [confirming, setConfirming] = useState('')
   const [error, setError] = useState('')
   const [version, setVersion] = useState(0)
   useEffect(() => {
@@ -52,7 +52,7 @@ export function History({
         .then((list) => {
           if (!stale) setItems(list)
         })
-        .catch(() => setError('读不到对话记录'))
+        .catch(() => setError('读不到对话记录，稍后再试'))
     }, 150)
     return () => {
       stale = true
@@ -87,65 +87,48 @@ export function History({
           return (
             <li key={item.id}>
               {showHeading && <h4>{heading}</h4>}
-              {confirming === item.id ? (
-                <div className="history-item confirming">
-                  <span>
-                    {compact
-                      ? '移到废纸篓？'
-                      : `把「${item.title}」移到废纸篓？`}
-                  </span>
-                  <button
-                    className="danger"
-                    onClick={() => {
-                      setConfirming('')
-                      api
-                        .deleteConversation(item.id)
-                        .then(() => setVersion((v) => v + 1))
-                        .catch((e) => setError(errorText(e, '删除失败')))
-                    }}
-                  >
-                    删除
-                  </button>
-                  <button onClick={() => setConfirming('')}>取消</button>
-                </div>
-              ) : (
-                <div
-                  className={`history-item ${item.id === currentId ? 'is-current' : ''}`}
+              <div
+                className={`history-item ${item.id === currentId ? 'is-current' : ''}`}
+              >
+                <button
+                  className="history-open"
+                  onClick={() => {
+                    if (item.id === currentId) return onOpened()
+                    api
+                      .openConversation(item.id)
+                      .then(onOpened)
+                      .catch((e) => setError(errorText(e, '打不开这个对话')))
+                  }}
                 >
-                  <button
-                    className="history-open"
-                    onClick={() => {
-                      if (item.id === currentId) return onOpened()
-                      api
-                        .openConversation(item.id)
-                        .then(onOpened)
-                        .catch((e) => setError(errorText(e, '打不开这个对话')))
-                    }}
-                  >
-                    <span className="history-title">
-                      {item.title}
-                      {!compact && item.id === currentId && (
-                        <small className="current">当前</small>
-                      )}
-                    </span>
-                    {!compact && (
-                      <span className="muted history-preview">
-                        {item.preview || '（没有回复）'}
-                      </span>
+                  <span className="history-title">
+                    {item.title}
+                    {!compact && item.id === currentId && (
+                      <small className="current">当前</small>
                     )}
-                  </button>
+                  </span>
                   {!compact && (
-                    <time className="muted">{when(item.updatedAt, now)}</time>
+                    <span className="muted history-preview">
+                      {item.preview || '（没有回复）'}
+                    </span>
                   )}
-                  <button
-                    className="icon history-delete"
-                    aria-label={`删除 ${item.title}`}
-                    onClick={() => setConfirming(item.id)}
-                  >
-                    ×
-                  </button>
-                </div>
-              )}
+                </button>
+                {!compact && (
+                  <time className="muted">{when(item.updatedAt, now)}</time>
+                )}
+                <button
+                  className="icon history-delete"
+                  aria-label={`把「${item.title}」移到废纸篓`}
+                  title="移到废纸篓"
+                  onClick={() =>
+                    api
+                      .deleteConversation(item.id)
+                      .then(() => setVersion((v) => v + 1))
+                      .catch((e) => setError(errorText(e, '没删掉，再试一次')))
+                  }
+                >
+                  <Icon name="close" size={14} />
+                </button>
+              </div>
             </li>
           )
         })}

@@ -923,7 +923,7 @@ async function request(
       return
     case IPC.settingsOpen: {
       const page = optionalArg(
-        z.enum(['timeline', 'pending', 'proactive']),
+        z.enum(['timeline', 'pending', 'proactive', 'model', 'permissions']),
       ).parse(input)
       if (page) emit(IPC.settingsPage, page, 'settings')
       ui({ type: 'show-settings' })

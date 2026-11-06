@@ -6,10 +6,12 @@
   --accent: #5b57d1;
   --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
   --text: #23211e;
-  --muted: #77736c;
+  /* 4.5:1 or better on every light surface (--settings is the palest it sits on). */
+  --muted: #6c6861;
+  /* Floating surfaces over the desktop: solid (no frosted blur), see-through only by the user's opacity setting. */
   --glass: color-mix(
     in srgb,
-    rgb(252 250 246) calc(var(--panel-opacity) * 94%),
+    rgb(252 250 246) calc(var(--panel-opacity) * 100%),
     transparent
   );
   --surface: color-mix(
@@ -26,7 +28,8 @@
   --panel-opacity: 1;
   /* Status colors, one of each. */
   --red: #cf4a3f;
-  --orange: #b9770e;
+  /* Caution: a dark mustard (缃色 family), not orange. */
+  --orange: #8a6d12;
   --green: #2f8f55;
   /* Corners: controls, cards, and floating things (capsule, bubble, panel). */
   --radius-control: 8px;
@@ -41,7 +44,7 @@
     --muted: #a19d96;
     --glass: color-mix(
       in srgb,
-      rgb(33 32 30) calc(var(--panel-opacity) * 95%),
+      rgb(33 32 30) calc(var(--panel-opacity) * 100%),
       transparent
     );
     --surface: color-mix(
@@ -55,7 +58,7 @@
     --sidebar: #1b1a18;
     --hover: rgba(255, 250, 240, 0.06);
     --red: #f07167;
-    --orange: #f2b04c;
+    --orange: #d6b04e;
     --green: #5bc584;
   }
 }
@@ -129,12 +132,13 @@ summary:focus-visible {
   overflow-wrap: anywhere;
 }
 .icon {
+  display: inline-grid;
+  place-items: center;
   width: 28px;
   height: 28px;
   padding: 0;
   background: transparent;
   box-shadow: none;
-  font-size: 20px;
   color: var(--muted);
   flex-shrink: 0;
 }
@@ -196,7 +200,6 @@ summary:focus-visible {
   height: 48px;
   font-size: 15px;
   background: var(--glass);
-  backdrop-filter: blur(24px) saturate(1.6);
   box-shadow:
     0 8px 24px #0002,
     0 0 0 0.5px var(--line);
@@ -210,11 +213,11 @@ summary:focus-visible {
   background: transparent;
 }
 .send {
+  display: grid;
+  place-items: center;
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  font-size: 23px;
-  line-height: 1;
   padding: 0;
   flex-shrink: 0;
   box-shadow: none;
@@ -250,7 +253,7 @@ summary:focus-visible {
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: #a6d46a;
+  background: var(--accent);
   animation: blink 1.2s infinite ease-in-out both;
 }
 .dots i:nth-child(2) {
@@ -274,7 +277,6 @@ summary:focus-visible {
 .stop {
   background: var(--text);
   color: var(--group);
-  font-size: 13px;
 }
 .bubble {
   position: absolute;
@@ -284,7 +286,6 @@ summary:focus-visible {
   padding: 10px 14px;
   border-radius: var(--radius-float);
   background: var(--glass);
-  backdrop-filter: blur(24px) saturate(1.6);
   font-size: 15px;
   line-height: 1.45;
   text-align: left;
@@ -302,7 +303,7 @@ summary:focus-visible {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #a6d46a;
+  background: var(--accent);
   box-shadow: 0 0 0 2px var(--glass);
 }
 /* 感知指示 at the pet's feet: filled while watching, a hollow ring while paused. */
@@ -317,7 +318,7 @@ summary:focus-visible {
   box-shadow: 0 0 0 1.5px var(--glass);
 }
 .pet .perception.capturing {
-  background: #a6d46a;
+  background: var(--accent);
 }
 .pet .perception.paused {
   background: var(--glass);
@@ -334,7 +335,7 @@ summary:focus-visible {
   height: 12px;
   padding: 0;
   border-radius: 50%;
-  background: #a6d46a;
+  background: var(--accent);
   box-shadow:
     0 0 0 2px var(--glass),
     0 2px 6px #0003;
@@ -355,7 +356,7 @@ summary:focus-visible {
   white-space: pre-wrap;
 }
 .proactive-why {
-  font-size: 11.5px;
+  font-size: 11px;
   color: var(--muted);
 }
 .proactive-actions {
@@ -378,7 +379,6 @@ summary:focus-visible {
   border-radius: 6px;
   background: var(--settings, #0000000d);
   font: inherit;
-  font-size: 14px;
   color: inherit;
   outline: none;
   box-shadow: inset 0 0 0 0.5px var(--line);
@@ -421,8 +421,13 @@ summary:focus-visible {
   padding: 0 8px 0 14px;
   flex-shrink: 0;
 }
-.chat-header small {
+.chat-header .mode-link {
+  padding: 0;
   font-size: 11px;
+  color: var(--muted);
+}
+.chat-header .mode-link:hover {
+  color: var(--text);
 }
 .header-actions {
   margin-left: auto;
@@ -503,7 +508,7 @@ summary:focus-visible {
   background: var(--group);
   color: var(--text);
   font:
-    11.5px/1.5 ui-monospace,
+    12px/1.5 ui-monospace,
     SFMono-Regular,
     Menlo,
     monospace;
@@ -726,19 +731,18 @@ summary:focus-visible {
   position: absolute;
   top: 6px;
   right: 6px;
-  padding: 0 7px;
+  display: grid;
+  place-items: center;
+  width: 20px;
   height: 20px;
-  font-size: 12px;
-  line-height: 20px;
+  padding: 0;
+  border-radius: 50%;
+  color: var(--muted);
   opacity: 0;
 }
 .pet-item:hover .pet-delete,
-.pet-delete:focus-visible,
-.pet-delete.confirming {
+.pet-delete:focus-visible {
   opacity: 1;
-}
-.pet-delete.confirming {
-  color: var(--red);
 }
 .pet-card.selected {
   outline: 2px solid var(--accent);
@@ -759,8 +763,8 @@ summary:focus-visible {
 .segmented button {
   height: 22px;
   padding: 0 14px;
-  /* Nests inside the 7px track. */
-  border-radius: 5px;
+  /* Concentric with the track: its radius minus its 2px padding. */
+  border-radius: calc(var(--radius-control) - 2px);
   font-size: 12px;
   box-shadow: none;
   background: transparent;
@@ -929,7 +933,6 @@ summary:focus-visible {
   padding: 2px 2px 2px 4px;
   border-radius: var(--radius-card);
   background: var(--glass);
-  backdrop-filter: blur(24px) saturate(1.6);
   box-shadow:
     0 2px 8px #0002,
     0 0 0 0.5px var(--line);
@@ -940,7 +943,7 @@ summary:focus-visible {
   background: transparent;
   box-shadow: none;
   padding: 4px 8px;
-  border-radius: var(--radius-card);
+  border-radius: calc(var(--radius-card) - 2px);
 }
 .context-main {
   min-width: 0;
@@ -1042,7 +1045,6 @@ summary:focus-visible {
 .history-delete {
   width: 22px;
   height: 22px;
-  font-size: 16px;
   visibility: hidden;
 }
 .history-item:hover .history-delete,
@@ -1065,8 +1067,7 @@ summary:focus-visible {
   font-size: 12px;
 }
 .danger {
-  background: var(--red);
-  color: white;
+  color: var(--red);
 }
 .history > .link {
   margin-top: auto;
@@ -1136,7 +1137,6 @@ summary:focus-visible {
 .rule-remove {
   width: 20px;
   height: 20px;
-  font-size: 15px;
 }
 /* Settings › 记忆 */
 .memory-heading {
@@ -1602,7 +1602,7 @@ form.setting-row input {
 .empty-row {
   margin: 0;
   padding: 12px;
-  font-size: 12.5px;
+  font-size: 12px;
 }
 .settings input[type='time'] {
   width: auto;
@@ -1724,8 +1724,6 @@ form.setting-row input {
 .subpage-head .icon {
   width: 24px;
   height: 24px;
-  font-size: 20px;
-  line-height: 1;
 }
 /* Long memories: three lines until opened. */
 .memory-text .clamped {
@@ -1741,6 +1739,9 @@ form.setting-row input {
 /* An inline action in a row's status line (暂停 / 继续). */
 .ch-label .link {
   font-size: inherit;
+}
+.ch-label .inline-action {
+  margin-left: 8px;
 }
 /* A page's own toolbar, above its first card. */
 .page-actions {
@@ -1970,7 +1971,9 @@ form.setting-row input {
 }
 .tray-usage li {
   display: grid;
-  grid-template-columns: 16px 76px 1fr 52px;
+  /* One fixed width for the time, sized for 23 小时 59 分钟, so every row's bar starts and ends
+     in the same place (each row is its own grid). */
+  grid-template-columns: 16px 72px 1fr 88px;
   align-items: center;
   gap: 8px;
   font-size: 12px;
@@ -2013,7 +2016,7 @@ form.setting-row input {
   gap: 10px;
   padding: 6px 4px;
   border-radius: var(--radius-control);
-  font-size: 12.5px;
+  font-size: 12px;
 }
 .tray-list time {
   padding-top: 1px;
@@ -2095,7 +2098,7 @@ form.setting-row input {
   border-radius: 6px;
   background: var(--accent-soft);
   color: var(--accent);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   text-align: center;
 }
@@ -2279,7 +2282,6 @@ form.setting-row input {
   min-height: 0;
   overflow-y: auto;
   padding: 4px 6px 10px;
-  font-size: 14px;
   border-bottom: 0.5px solid var(--line);
 }
 .quick-thread {

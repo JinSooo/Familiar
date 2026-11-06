@@ -469,7 +469,8 @@ export const IPC = {
 } as const
 export type DragAction = 'start' | 'move' | 'end'
 /** Settings pages other windows can open directly. */
-export type SettingsPage = 'timeline' | 'pending' | 'proactive'
+export type SettingsPage =
+  'timeline' | 'pending' | 'proactive' | 'model' | 'permissions'
 export interface FamiliarAPI {
   getSettings(): Promise<PublicSettings>
   saveSettings(settings: SettingsUpdate): Promise<PublicSettings>
@@ -671,7 +672,7 @@ export interface ProactiveMessage {
 }
 /**
  * The buttons under a proactive bubble. A reminder the user set has nothing to tell the pet off
- * for, so no 别烦我, and its 知道了 only closes it; 好 on the pet's own line opens the chat with it.
+ * for, so no 今天别打扰, and its 知道了 only closes it; 好 on the pet's own line opens the chat with it.
  */
 export function proactiveChoices(trigger: ProactiveTrigger) {
   return trigger === 'reminder'
@@ -687,15 +688,16 @@ export function proactiveChoices(trigger: ProactiveTrigger) {
         buttons: [
           ['ok', '好'],
           ['later', '稍后'],
-          ['quiet', '别烦我'],
+          ['quiet', '今天别打扰'],
         ] as const,
       }
 }
-/** Minutes as 45m / 1h / 1h 24m: short and the same shape, so a right-aligned column lines up. */
+/** Minutes as 45 分钟 / 1 小时 / 1 小时 24 分钟, the way Screen Time writes them. The menu bar panel
+ * gives the column one fixed width, so rows of different lengths still line up. */
 export const shortDuration = (minutes: number) =>
   minutes < 60
-    ? `${minutes}m`
-    : `${Math.floor(minutes / 60)}h${minutes % 60 ? ` ${minutes % 60}m` : ''}`
+    ? `${minutes} 分钟`
+    : `${Math.floor(minutes / 60)} 小时${minutes % 60 ? ` ${minutes % 60} 分钟` : ''}`
 export interface ProactiveStatus {
   /** Messages and reminders, newest first, from the last 7 days. */
   history: ProactiveMessage[]

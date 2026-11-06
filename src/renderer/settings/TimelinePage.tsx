@@ -53,7 +53,7 @@ export function TimelinePage() {
       const r = change.reflect
       if (!r) return
       setBusy(false)
-      setNotice('error' in r ? `整理失败：${r.error}` : '')
+      setNotice('error' in r ? `没整理成：${r.error}` : '')
     })
     window.addEventListener('focus', load)
     return () => {
@@ -83,7 +83,7 @@ export function TimelinePage() {
       )
       .catch(console.error)
   }, [items, icons])
-  if (!items) return <p role="status">{notice || '读取…'}</p>
+  if (!items) return <p role="status">{notice || '正在读取…'}</p>
 
   const periods = [...new Set(items.map((i) => i.key!))].sort().reverse()
   const of = (key: string) => {
@@ -203,7 +203,7 @@ export function TimelinePage() {
           </section>
         ))
       ) : (
-        <p className="empty-note muted">还没有整理出的活动。</p>
+        <p className="empty-note muted">还没有整理出的活动</p>
       )}
     </>
   )

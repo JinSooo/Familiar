@@ -130,7 +130,7 @@ export function Composer({
                 aria-label={`移除 ${f.file.name}`}
                 onClick={() => removeFile(i)}
               >
-                ×
+                <Icon name="close" size={12} />
               </button>
             </span>
           ))}
@@ -175,7 +175,7 @@ export function Composer({
             setInput(text)
             setFiles(sending)
             lastSent.current = ''
-            setError(err instanceof Error ? err.message : '对话启动失败')
+            setError(err instanceof Error ? err.message : '没发出去，再试一次')
           } finally {
             busy.current = false
           }
@@ -185,7 +185,8 @@ export function Composer({
           <button
             type="button"
             className="icon"
-            aria-label={quick ? '在大窗口打开' : '展开聊天'}
+            aria-label={quick ? '在大窗口打开' : '打开对话'}
+            title={quick ? '在大窗口打开' : '打开对话'}
             // The quick bar is already wide: expanding it means the big window, not the side panel.
             onClick={() => (quick ? api.openMainWindow() : api.toggleChat())}
           >
@@ -220,7 +221,7 @@ export function Composer({
             type="button"
             className="capsule-status"
             role="status"
-            title="展开聊天查看过程"
+            title="打开对话看看它在做什么"
             onClick={() => (quick ? api.openMainWindow() : api.toggleChat())}
           >
             <span className="dots" aria-hidden="true">
@@ -235,7 +236,7 @@ export function Composer({
             ref={area}
             rows={1}
             aria-label="消息"
-            placeholder={continuing ? `继续问${name}…` : `问${name}…`}
+            placeholder={continuing ? '接着聊…' : `和${name}说点什么…`}
             value={input}
             onChange={(e) => {
               setInput(e.target.value)
@@ -261,7 +262,7 @@ export function Composer({
           <input
             ref={field}
             aria-label="消息"
-            placeholder={continuing ? `继续问${name}…` : `问${name}…`}
+            placeholder={continuing ? '接着聊…' : `和${name}说点什么…`}
             value={input}
             onChange={(e) => {
               setInput(e.target.value)
@@ -287,7 +288,7 @@ export function Composer({
             aria-label="停止"
             onClick={() => api.stop()}
           >
-            ■
+            <Icon name="stop" size={14} />
           </button>
         ) : (
           <button
@@ -295,7 +296,7 @@ export function Composer({
             aria-label="发送"
             disabled={!input.trim() && !files.length}
           >
-            ↑
+            <Icon name="send" />
           </button>
         )}
       </form>

@@ -23,6 +23,7 @@ import { KnowledgePage } from './KnowledgePage'
 import { LocalModel } from './LocalModel'
 import { ShortcutsSection } from './Shortcuts'
 import { Switch } from './Switch'
+import { Icon } from '../shared-ui/Icon'
 import { presetOf, providerPresets } from '../../shared/presets'
 
 type Page =
@@ -76,23 +77,23 @@ const nav: (NavItem | NavGroup)[] = [
   { page: 'shortcuts', name: '快捷键', icon: icons.keyboard },
   { page: 'model', name: '模型', icon: icons.model },
   { page: 'permissions', name: '权限', icon: icons.shield },
-  { page: 'proactive', name: '主动', icon: icons.bell },
+  { page: 'proactive', name: '主动说话', icon: icons.bell },
   {
     name: '记忆',
     icon: icons.memory,
     children: [
-      { page: 'memory', name: '画像与习惯' },
+      { page: 'memory', name: '关于你' },
       { page: 'topics', name: '主题' },
       { page: 'pending', name: '待确认' },
     ],
   },
   { page: 'knowledge', name: '知识库', icon: icons.book },
   {
-    name: '感知',
+    name: '电脑活动',
     icon: icons.perception,
     children: [
       { page: 'timeline', name: '时间线' },
-      { page: 'capture', name: '采集设置' },
+      { page: 'capture', name: '记录设置' },
       { page: 'raw', name: '原始记录' },
     ],
   },
@@ -189,6 +190,25 @@ const size = (bytes: number) =>
       : `${(bytes / 1024 ** 3).toFixed(2)} GB`
 
 const accessLabel = { allow: '允许', ask: '询问', deny: '禁止' } as const
+/** A saved custom relay: an address of its own (an empty form is not one). */
+const isRelay = (
+  model: Pick<PublicSettings['model'], 'protocol' | 'baseURL'>,
+) =>
+  model.protocol !== 'chatgpt' &&
+  Boolean(model.baseURL.trim()) &&
+  !presetOf(model)
+const modeHint = {
+  ask: '改文件、运行命令、联网之前都先问你',
+  auto: '工作目录里的事直接做，动其他文件夹前先问你',
+  full: '什么都不问，命令也不加沙箱；只在你完全信任时用',
+} as const
+/** 15 → 15 分钟, 120 → 2 小时, 90 → 1 小时 30 分钟, 1440 → 1 天. */
+const minutesText = (m: number) =>
+  m === 1440
+    ? '1 天'
+    : m < 60
+      ? `${m} 分钟`
+      : `${Math.floor(m / 60)} 小时${m % 60 ? ` ${m % 60} 分钟` : ''}`
 
 export function SettingsView() {
   const [tab, setTab] = useState<Page>('general')
@@ -202,8 +222,6 @@ export function SettingsView() {
   const [notice, setNotice] = useState('')
   const [promptCopied, setPromptCopied] = useState(false)
   const [importNote, setImportNote] = useState('')
-  const [confirming, setConfirming] = useState('')
-  const [clearing, setClearing] = useState(false)
   const [models, setModels] = useState<string[]>()
   const [chatgpt, setChatgpt] = useState<ChatGptStatus>()
   const [loginItem, setLoginItem] = useState<'on' | 'off' | 'approval'>('off')
@@ -212,6 +230,8 @@ export function SettingsView() {
   const [savedRelay, setSavedRelay] =
     useState<Pick<PublicSettings['model'], 'protocol' | 'baseURL'>>()
   const [signingIn, setSigningIn] = useState(false)
+  /** 其他 was picked on a form with nothing filled in yet, so it stays picked while empty. */
+  const [customPicked, setCustomPicked] = useState(false)
   const [probe, setProbe] = useState<{
     kind: 'busy' | 'ok' | 'error'
     text: string
@@ -222,10 +242,9 @@ export function SettingsView() {
       .getSettings()
       .then((loaded) => {
         setSettings(loaded)
-        if (loaded.model.protocol !== 'chatgpt' && !presetOf(loaded.model))
-          setSavedRelay(loaded.model)
+        if (isRelay(loaded.model)) setSavedRelay(loaded.model)
       })
-      .catch(() => setNotice('无法读取设置'))
+      .catch(() => setNotice('读不到设置，请重新打开 Familiar'))
   }, [])
   // The ChatGPT account is read when the form first needs it and after sign-in or sign-out.
   useEffect(() => {
@@ -266,8 +285,8 @@ export function SettingsView() {
     return () => window.removeEventListener('focus', refresh)
   }, [])
   useEffect(() => {
-    if (notice !== '对话已移到废纸篓') return
-    const timer = setTimeout(() => setNotice(''), 2000)
+    if (!notice.endsWith('废纸篓')) return
+    const timer = setTimeout(() => setNotice(''), 4000)
     return () => clearTimeout(timer)
   }, [notice])
   /** A text field's save waiting for typing to pause; leaving the window saves it at once. */
@@ -286,7 +305,7 @@ export function SettingsView() {
     window.addEventListener('blur', flush)
     return () => window.removeEventListener('blur', flush)
   }, [])
-  if (!settings) return <p role="status">{notice || '读取设置…'}</p>
+  if (!settings) return <p role="status">{notice || '正在读取设置…'}</p>
   /** Saves what is on screen; keys only when given, so a half-typed one never reaches the keychain. */
   async function persist(
     next: PublicSettings,
@@ -333,8 +352,7 @@ export function SettingsView() {
             },
           },
       )
-      if (saved.model.protocol !== 'chatgpt' && !presetOf(saved.model))
-        setSavedRelay(saved.model)
+      if (isRelay(saved.model)) setSavedRelay(saved.model)
       if (keys.apiKey) setKey('')
       if (keys.imageKey) setImageKey('')
       if (keys.embeddingKey) setEmbeddingKey('')
@@ -353,8 +371,13 @@ export function SettingsView() {
     typing.current = { timer: setTimeout(flush, wait), run }
   }
   const saveKeys = () => {
-    if (key || imageKey || embeddingKey)
-      void persist(settings, { apiKey: key, imageKey, embeddingKey })
+    if (!key && !imageKey && !embeddingKey) return
+    const typedChatKey = Boolean(key)
+    void persist(settings, { apiKey: key, imageKey, embeddingKey }).then(() => {
+      // With a new key the list of models is the next thing needed.
+      if (typedChatKey && (preset || settings.model.baseURL.trim()))
+        fetchModels()
+    })
   }
   const model = <K extends keyof PublicSettings['model']>(
     field: K,
@@ -379,7 +402,17 @@ export function SettingsView() {
   /** The service the form is on: a preset when protocol and address match one, else a relay. */
   const viaChatGpt = settings.model.protocol === 'chatgpt'
   const preset = viaChatGpt ? undefined : presetOf(settings.model)
+  /** A first run: no service picked, so the page asks for that before anything else. */
+  const unchosen =
+    !viaChatGpt &&
+    !preset &&
+    !customPicked &&
+    !savedRelay &&
+    !settings.model.baseURL.trim() &&
+    !settings.model.model.trim() &&
+    !settings.model.apiKeySet
   const pickProvider = (id: string) => {
+    setCustomPicked(id === 'custom')
     if (id === 'chatgpt') {
       change({
         ...settings,
@@ -439,8 +472,8 @@ export function SettingsView() {
         setProbe({
           kind: 'ok',
           text: ids.length
-            ? `已获取 ${ids.length} 个模型，在「模型名称」里输入可以筛选。`
-            : '中转站返回的模型列表是空的。',
+            ? `找到 ${ids.length} 个模型，在「模型」里选一个，也可以输入筛选。`
+            : '这个服务没有返回可用的模型，可以直接填模型名称。',
         })
       })
       .catch((e: unknown) => setProbe({ kind: 'error', text: failure(e) }))
@@ -449,14 +482,14 @@ export function SettingsView() {
     if (probe?.kind === 'busy') return
     setProbe({
       kind: 'busy',
-      text: `正在用 ${settings.model.model || '…'} 发一条测试消息…`,
+      text: `正在用 ${settings.model.model.trim()} 发一条测试消息…`,
     })
     api
       .testModel(draft())
       .then(({ ms, reply }) =>
         setProbe({
           kind: 'ok',
-          text: `已连通：${(ms / 1000).toFixed(1)} 秒收到回复${reply ? `「${reply}」` : ''}。`,
+          text: `连上了，${(ms / 1000).toFixed(1)} 秒收到回复${reply ? `「${reply}」` : ''}。`,
         }),
       )
       .catch((e: unknown) => setProbe({ kind: 'error', text: failure(e) }))
@@ -599,9 +632,14 @@ export function SettingsView() {
                 />
               </div>
               <div className="setting-row">
-                <span title="关掉后启动时只有菜单栏图标，用快捷键或菜单叫出宠物">
-                  启动时显示宠物
-                </span>
+                <div className="ch-label">
+                  <span>启动时显示宠物</span>
+                  {!settings.showPetOnLaunch && (
+                    <span className="muted">
+                      启动后只在菜单栏显示图标，用快捷键或菜单叫出宠物
+                    </span>
+                  )}
+                </div>
                 <Switch
                   on={settings.showPetOnLaunch}
                   label="启动时显示宠物"
@@ -611,54 +649,37 @@ export function SettingsView() {
                 />
               </div>
               <div className="setting-row">
-                <span title="等你允许或输入框里有草稿时不收；面板里按 Esc 也能收起">
-                  点击别处时
+                <span title="等你允许或输入框里有草稿时不收起；按 Esc 也能收起">
+                  点别处时收起聊天面板
                 </span>
-                <div className="segmented">
-                  {([true, false] as const).map((hide) => (
-                    <button
-                      type="button"
-                      key={String(hide)}
-                      className={
-                        settings.chatAutoHide === hide ? 'selected' : ''
-                      }
-                      onClick={() =>
-                        change({ ...settings, chatAutoHide: hide })
-                      }
-                    >
-                      {hide ? '自动收起' : '保持显示'}
-                    </button>
-                  ))}
-                </div>
+                <Switch
+                  on={settings.chatAutoHide}
+                  label="点别处时收起聊天面板"
+                  onChange={(on) => change({ ...settings, chatAutoHide: on })}
+                />
               </div>
               <div className="setting-row">
-                <span title="从 Finder 拖文件进来要先离开它，所以默认保持；有草稿或正在回复时不收，按 Esc 也能收起">
-                  快捷问答条点击别处时
-                </span>
-                <div className="segmented">
-                  {([true, false] as const).map((hide) => (
-                    <button
-                      type="button"
-                      key={String(hide)}
-                      className={
-                        settings.quickAutoHide === hide ? 'selected' : ''
-                      }
-                      onClick={() =>
-                        change({ ...settings, quickAutoHide: hide })
-                      }
-                    >
-                      {hide ? '自动收起' : '保持显示'}
-                    </button>
-                  ))}
+                <div className="ch-label">
+                  <span>点别处时收起快捷问答条</span>
+                  {!settings.quickAutoHide && (
+                    <span className="muted">
+                      关着方便从 Finder 拖文件进来；按 Esc 收起
+                    </span>
+                  )}
                 </div>
+                <Switch
+                  on={settings.quickAutoHide}
+                  label="点别处时收起快捷问答条"
+                  onChange={(on) => change({ ...settings, quickAutoHide: on })}
+                />
               </div>
               <div className="setting-row">
-                <span>快捷问答条打开时</span>
+                <span>打开快捷问答条时</span>
                 <div className="segmented">
                   {(
                     [
-                      ['continue', '继续上次对话'],
-                      ['new', '新对话'],
+                      ['continue', '接着上次聊'],
+                      ['new', '开新对话'],
                     ] as const
                   ).map(([mode, text]) => (
                     <button
@@ -674,9 +695,9 @@ export function SettingsView() {
               </div>
               {settings.quickOpen === 'continue' && (
                 <div className="setting-row">
-                  <span>多久没说话就开新对话</span>
+                  <span>超过多久没聊就开新对话</span>
                   <select
-                    aria-label="多久没说话就开新对话"
+                    aria-label="超过多久没聊就开新对话"
                     value={settings.quickIdleMinutes}
                     onChange={(e) =>
                       change({
@@ -700,22 +721,22 @@ export function SettingsView() {
                       .sort((a, b) => a - b)
                       .map((m) => (
                         <option key={m} value={m}>
-                          {m < 60 ? `${m} 分钟` : `${m / 60} 小时`}
+                          {minutesText(m)}
                         </option>
                       ))}
                   </select>
                 </div>
               )}
               <div className="setting-row">
-                <span title="任何一档下，点开一步都能看到完整的指令和结果">
-                  对话过程
+                <span title="选哪一种，点开一步都能看到完整的指令和结果">
+                  回复里的操作步骤
                 </span>
                 <div className="segmented">
                   {(
                     [
-                      ['brief', '简洁'],
-                      ['full', '详细'],
-                      ['hidden', '隐藏'],
+                      ['brief', '合并'],
+                      ['full', '逐条'],
+                      ['hidden', '不显示'],
                     ] as const
                   ).map(([view, text]) => (
                     <button
@@ -730,41 +751,55 @@ export function SettingsView() {
                 </div>
               </div>
             </div>
-            <h3 className="memory-heading">透明度</h3>
+            <h3 className="memory-heading">不透明度</h3>
             <div className="group">
               <div className="setting-row">
                 <span>聊天面板和菜单栏</span>
-                <input
-                  type="range"
-                  min={50}
-                  max={100}
-                  step={5}
-                  aria-label="聊天面板和菜单栏"
-                  value={Math.round(settings.panelOpacity * 100)}
-                  onChange={(e) =>
-                    change({
-                      ...settings,
-                      panelOpacity: Number(e.target.value) / 100,
-                    })
-                  }
-                />
+                <span className="tuning">
+                  <input
+                    type="range"
+                    min={50}
+                    max={100}
+                    step={5}
+                    aria-label="聊天面板和菜单栏"
+                    value={Math.round(settings.panelOpacity * 100)}
+                    onChange={(e) =>
+                      change({
+                        ...settings,
+                        panelOpacity: Number(e.target.value) / 100,
+                      })
+                    }
+                  />
+                  <output>
+                    {settings.panelOpacity === 1
+                      ? '不透明'
+                      : `${Math.round(settings.panelOpacity * 100)}%`}
+                  </output>
+                </span>
               </div>
               <div className="setting-row">
                 <span>设置和大窗口</span>
-                <input
-                  type="range"
-                  min={50}
-                  max={100}
-                  step={5}
-                  aria-label="设置和大窗口"
-                  value={Math.round(settings.windowOpacity * 100)}
-                  onChange={(e) =>
-                    change({
-                      ...settings,
-                      windowOpacity: Number(e.target.value) / 100,
-                    })
-                  }
-                />
+                <span className="tuning">
+                  <input
+                    type="range"
+                    min={50}
+                    max={100}
+                    step={5}
+                    aria-label="设置和大窗口"
+                    value={Math.round(settings.windowOpacity * 100)}
+                    onChange={(e) =>
+                      change({
+                        ...settings,
+                        windowOpacity: Number(e.target.value) / 100,
+                      })
+                    }
+                  />
+                  <output>
+                    {settings.windowOpacity === 1
+                      ? '不透明'
+                      : `${Math.round(settings.windowOpacity * 100)}%`}
+                  </output>
+                </span>
               </div>
             </div>
             <h3 className="memory-heading">数据</h3>
@@ -774,7 +809,7 @@ export function SettingsView() {
                   <span>数据目录</span>
                   <span className="muted">
                     {dataInfo
-                      ? `${dataInfo.path.replace(/^\/Users\/[^/]+/, '~')} · ${size(dataInfo.bytes)}`
+                      ? `${dataInfo.path.replace(/^\/Users\/[^/]+/, '~')}，占用 ${size(dataInfo.bytes)}`
                       : '读取中…'}
                   </span>
                 </div>
@@ -800,22 +835,33 @@ export function SettingsView() {
             <label>
               服务商
               <select
-                value={viaChatGpt ? 'chatgpt' : (preset?.id ?? 'custom')}
+                value={
+                  unchosen
+                    ? ''
+                    : viaChatGpt
+                      ? 'chatgpt'
+                      : (preset?.id ?? 'custom')
+                }
                 onChange={(e) => pickProvider(e.target.value)}
               >
+                {unchosen && (
+                  <option value="" disabled>
+                    选择…
+                  </option>
+                )}
                 {providerPresets.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
                   </option>
                 ))}
-                <option value="chatgpt">ChatGPT 登录</option>
-                <option value="custom">自定义中转</option>
+                <option value="chatgpt">ChatGPT 账号登录</option>
+                <option value="custom">其他（自填接口地址）</option>
               </select>
             </label>
-            {!preset && !viaChatGpt && (
+            {!unchosen && !preset && !viaChatGpt && (
               <>
                 <label>
-                  模型协议
+                  接口格式
                   <select
                     value={settings.model.protocol}
                     onChange={(e) =>
@@ -825,13 +871,13 @@ export function SettingsView() {
                       )
                     }
                   >
-                    <option value="openai-compatible">OpenAI Compatible</option>
+                    <option value="openai-compatible">OpenAI 兼容</option>
                     <option value="openai-responses">OpenAI Responses</option>
-                    <option value="anthropic">Anthropic Messages</option>
+                    <option value="anthropic">Anthropic</option>
                   </select>
                 </label>
                 <label>
-                  Base URL
+                  接口地址
                   <input
                     value={settings.model.baseURL}
                     placeholder="https://api.example.com/v1"
@@ -854,8 +900,10 @@ export function SettingsView() {
                     {signingIn
                       ? '在浏览器里完成登录…'
                       : chatgpt?.signedIn
-                        ? `${chatgpt.email || '已登录'}${chatgpt.planUsage === false ? ' · 没有授权使用套餐额度，请重新登录并同意' : ''}`
-                        : '未登录'}
+                        ? chatgpt.planUsage === false
+                          ? `${chatgpt.email || '已登录'}，但没有授权使用套餐额度，请重新登录并同意`
+                          : chatgpt.email || '已登录'
+                        : '还没登录'}
                   </span>
                 </div>
                 <span className="row-actions">
@@ -867,7 +915,7 @@ export function SettingsView() {
                         void openUrl('https://chatgpt.com/settings/usage')
                       }
                     >
-                      管理用量
+                      查看用量
                     </button>
                   )}
                   {signingIn ? (
@@ -876,41 +924,18 @@ export function SettingsView() {
                     </button>
                   ) : (
                     <button type="button" onClick={chatGptSignIn}>
-                      {chatgpt?.signedIn ? '重新登录' : '使用 ChatGPT 登录'}
+                      {chatgpt?.signedIn ? '重新登录' : '登录'}
                     </button>
                   )}
                   {chatgpt?.signedIn && !signingIn && (
                     <button type="button" onClick={chatGptSignOut}>
-                      退出
+                      退出登录
                     </button>
                   )}
                 </span>
               </div>
             )}
-            <label>
-              模型名称
-              <input
-                list="model-options"
-                value={settings.model.model}
-                placeholder={models ? '输入筛选或选择' : '例如 gpt-6.1-sol'}
-                onChange={(e) => model('model', e.target.value)}
-              />
-            </label>
-            <label>
-              后台小模型
-              <input
-                list="model-options"
-                value={settings.model.smallModel}
-                placeholder="留空则用对话模型，可以填更便宜的"
-                onChange={(e) => model('smallModel', e.target.value)}
-              />
-            </label>
-            <datalist id="model-options">
-              {models?.map((id) => (
-                <option key={id} value={id} />
-              ))}
-            </datalist>
-            {!viaChatGpt && (
+            {!unchosen && !viaChatGpt && (
               <label>
                 <span>
                   API Key
@@ -928,7 +953,7 @@ export function SettingsView() {
                   type="password"
                   autoComplete="new-password"
                   placeholder={
-                    settings.model.apiKeySet ? '已保存在钥匙串' : '尚未设置'
+                    settings.model.apiKeySet ? '已保存' : '粘贴你的 API Key'
                   }
                   value={key}
                   onChange={(e) => setKey(e.target.value)}
@@ -936,7 +961,42 @@ export function SettingsView() {
                 />
               </label>
             )}
-            {!preset &&
+            {!unchosen && (
+              <>
+                <label>
+                  模型
+                  <input
+                    list="model-options"
+                    value={settings.model.model}
+                    placeholder={
+                      models?.length
+                        ? '从列表里选，也可以输入'
+                        : viaChatGpt || settings.model.apiKeySet || key
+                          ? '例如 gpt-6.1-sol'
+                          : '填好 Key 后可以从列表里选'
+                    }
+                    onChange={(e) => model('model', e.target.value)}
+                  />
+                </label>
+                <label>
+                  后台模型
+                  <input
+                    list="model-options"
+                    value={settings.model.smallModel}
+                    placeholder="可选，留空就用上面的模型"
+                    title="整理记忆、判断要不要主动说话时用；可以填个便宜些的"
+                    onChange={(e) => model('smallModel', e.target.value)}
+                  />
+                </label>
+                <datalist id="model-options">
+                  {models?.map((id) => (
+                    <option key={id} value={id} />
+                  ))}
+                </datalist>
+              </>
+            )}
+            {!unchosen &&
+              !preset &&
               !viaChatGpt &&
               settings.model.protocol === 'anthropic' && (
                 <label>
@@ -955,37 +1015,39 @@ export function SettingsView() {
                   </select>
                 </label>
               )}
-            <div className="setting-row">
-              <span>连接</span>
-              <span className="row-actions">
-                {!viaChatGpt && (
+            {!unchosen && (
+              <div className="setting-row">
+                <span>连接</span>
+                <span className="row-actions">
+                  {!viaChatGpt && (
+                    <button
+                      type="button"
+                      aria-disabled={probe?.kind === 'busy'}
+                      onClick={fetchModels}
+                    >
+                      获取模型列表
+                    </button>
+                  )}
                   <button
                     type="button"
                     aria-disabled={probe?.kind === 'busy'}
-                    onClick={fetchModels}
+                    disabled={!settings.model.model.trim()}
+                    onClick={testConnection}
                   >
-                    获取模型列表
+                    测试连接
                   </button>
-                )}
-                <button
-                  type="button"
-                  aria-disabled={probe?.kind === 'busy'}
-                  disabled={!settings.model.model.trim()}
-                  onClick={testConnection}
-                >
-                  测试连接
-                </button>
-              </span>
-            </div>
+                </span>
+              </div>
+            )}
           </section>
           <section hidden={tab !== 'model'}>
-            <h3 className="memory-heading">生图</h3>
+            <h3 className="memory-heading">生图（可选）</h3>
             <div className="group">
               <label>
                 生图模型
                 <input
                   value={settings.imageModel.model}
-                  placeholder="留空则不生图，例如 gpt-image-2"
+                  placeholder="例如 gpt-image-2"
                   onChange={(e) =>
                     change(
                       {
@@ -1001,7 +1063,7 @@ export function SettingsView() {
                 />
               </label>
               <label>
-                Base URL
+                接口地址
                 <input
                   value={settings.imageModel.baseURL}
                   placeholder="https://api.openai.com/v1"
@@ -1025,9 +1087,7 @@ export function SettingsView() {
                   type="password"
                   autoComplete="new-password"
                   placeholder={
-                    settings.imageModel.apiKeySet
-                      ? '已保存在钥匙串'
-                      : '尚未设置'
+                    settings.imageModel.apiKeySet ? '已保存' : '粘贴 API Key'
                   }
                   value={imageKey}
                   onChange={(e) => setImageKey(e.target.value)}
@@ -1037,7 +1097,7 @@ export function SettingsView() {
             </div>
           </section>
           <section hidden={tab !== 'model'}>
-            <h3 className="memory-heading">向量</h3>
+            <h3 className="memory-heading">按意思检索（可选）</h3>
             <div className="group">
               <label>
                 来源
@@ -1067,7 +1127,7 @@ export function SettingsView() {
                 向量模型
                 <input
                   value={settings.embeddingModel.model}
-                  placeholder="留空则只按关键词检索，例如 text-embedding-3-small"
+                  placeholder="例如 text-embedding-3-small"
                   onChange={(e) =>
                     change(
                       {
@@ -1083,7 +1143,7 @@ export function SettingsView() {
                 />
               </label>
               <label>
-                Base URL
+                接口地址
                 <input
                   value={settings.embeddingModel.baseURL}
                   placeholder="https://api.openai.com/v1"
@@ -1108,8 +1168,8 @@ export function SettingsView() {
                   autoComplete="new-password"
                   placeholder={
                     settings.embeddingModel.apiKeySet
-                      ? '已保存在钥匙串'
-                      : '尚未设置'
+                      ? '已保存'
+                      : '粘贴 API Key'
                   }
                   value={embeddingKey}
                   onChange={(e) => setEmbeddingKey(e.target.value)}
@@ -1133,9 +1193,15 @@ export function SettingsView() {
             </p>
           )}
           <section hidden={tab !== 'permissions'} className="group">
-            <label>
-              权限模式
+            <div className="setting-row">
+              <div className="ch-label">
+                <span>权限模式</span>
+                <span className="muted">
+                  {modeHint[settings.permissionMode]}
+                </span>
+              </div>
               <select
+                aria-label="权限模式"
                 value={settings.permissionMode}
                 onChange={(e) =>
                   change({
@@ -1145,11 +1211,11 @@ export function SettingsView() {
                   })
                 }
               >
-                <option value="ask">询问</option>
+                <option value="ask">每步都问</option>
                 <option value="auto">自动</option>
                 <option value="full">完全访问</option>
               </select>
-            </label>
+            </div>
             <label>
               工作目录
               <input
@@ -1164,42 +1230,38 @@ export function SettingsView() {
               />
             </label>
             <div className="setting-row">
-              <span title="改动 ~/.familiar 里的工作目录、记忆、对话后用 git 记一次，改错删错能回滚">
-                自动快照
-              </span>
-              <div className="segmented">
-                {([true, false] as const).map((on) => (
-                  <button
-                    type="button"
-                    key={String(on)}
-                    className={
-                      settings.workspaceSnapshots === on ? 'selected' : ''
-                    }
-                    onClick={() =>
-                      change({ ...settings, workspaceSnapshots: on })
-                    }
-                  >
-                    {on ? '开' : '关'}
-                  </button>
-                ))}
+              <div className="ch-label">
+                <span>自动快照</span>
+                <span className="muted">
+                  {settings.workspaceSnapshots
+                    ? '改了文件、记忆或对话后自动存一个版本，改错删错能找回'
+                    : '关着时改错删错的内容找不回来'}
+                </span>
               </div>
+              <Switch
+                on={settings.workspaceSnapshots}
+                label="自动快照"
+                onChange={(on) =>
+                  change({ ...settings, workspaceSnapshots: on })
+                }
+              />
             </div>
             <div className="setting-row">
-              <span title="开：询问和自动模式下命令只能写工作目录，读不到 ~/.familiar 和密钥。关：命令像在终端里一样运行，命令里写到登录凭据、密钥所在位置时会先问你。完全访问模式本来就不加沙箱。">
-                命令沙箱
-              </span>
-              <div className="segmented">
-                {([true, false] as const).map((on) => (
-                  <button
-                    type="button"
-                    key={String(on)}
-                    className={settings.shellSandbox === on ? 'selected' : ''}
-                    onClick={() => change({ ...settings, shellSandbox: on })}
-                  >
-                    {on ? '开' : '关'}
-                  </button>
-                ))}
+              <div className="ch-label">
+                <span>命令沙箱</span>
+                <span className="muted">
+                  {settings.permissionMode === 'full'
+                    ? '完全访问模式下命令不加沙箱'
+                    : settings.shellSandbox
+                      ? '命令只能改工作目录，碰不到 ~/.familiar 和密钥'
+                      : '命令像在终端里一样运行，要碰登录凭据和密钥时先问你'}
+                </span>
               </div>
+              <Switch
+                on={settings.shellSandbox}
+                label="命令沙箱"
+                onChange={(on) => change({ ...settings, shellSandbox: on })}
+              />
             </div>
             <details className="rules">
               <summary>
@@ -1223,23 +1285,25 @@ export function SettingsView() {
                         type="button"
                         className="icon rule-remove"
                         aria-label={`删除规则 ${rule.path}`}
-                        title="删除这条规则（立即生效）"
+                        title="删除这条规则"
                         onClick={() => {
                           api
                             .removeDirRule(rule.path)
                             .then((dirRules) =>
                               setSettings((s) => s && { ...s, dirRules }),
                             )
-                            .catch(() => setNotice('删除规则失败'))
+                            .catch(() => setNotice('没删掉这条规则，再试一次'))
                         }}
                       >
-                        ×
+                        <Icon name="close" size={14} />
                       </button>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p className="muted">审批时允许过的目录会记在这里</p>
+                <p className="muted">
+                  在对话里点过「始终允许」的文件夹会列在这里
+                </p>
               )}
             </details>
           </section>
@@ -1269,29 +1333,22 @@ export function SettingsView() {
                   {p.removable && (
                     <button
                       type="button"
-                      className={`pet-delete ${confirming === p.id ? 'confirming' : ''}`}
+                      className="pet-delete"
+                      aria-label={`把 ${p.displayName} 移到废纸篓`}
                       title="移到废纸篓"
-                      onClick={() => {
-                        if (confirming !== p.id) {
-                          setConfirming(p.id)
-                          setTimeout(
-                            () => setConfirming((c) => (c === p.id ? '' : c)),
-                            3000,
-                          )
-                          return
-                        }
-                        setConfirming('')
+                      onClick={() =>
                         void api
                           .deletePet(p.id)
                           .then(async (list) => {
                             setPets(list)
                             const loaded = await api.getSettings()
                             setSettings((s) => s && { ...s, pet: loaded.pet })
+                            setNotice(`${p.displayName} 已移到废纸篓`)
                           })
-                          .catch(() => setNotice('删除失败'))
-                      }}
+                          .catch(() => setNotice('没删掉，再试一次'))
+                      }
                     >
-                      {confirming === p.id ? '删除？' : '×'}
+                      <Icon name="close" size={12} />
                     </button>
                   )}
                 </div>
@@ -1307,12 +1364,12 @@ export function SettingsView() {
                     .then((list) => {
                       const added = list.length - pets.length
                       setImportNote(
-                        added > 0 ? `导入了 ${added} 个` : '没有新的可导入',
+                        added > 0 ? `导入了 ${added} 只` : '没有新的可以导入',
                       )
                       setTimeout(() => setImportNote(''), 3000)
                       setPets(list)
                     })
-                    .catch(() => setNotice('导入失败'))
+                    .catch(() => setNotice('没导入成功，再试一次'))
                 }}
               >
                 {importNote || '从 ChatGPT 导入…'}
@@ -1329,7 +1386,7 @@ export function SettingsView() {
                       setPromptCopied(true)
                       setTimeout(() => setPromptCopied(false), 3000)
                     })
-                    .catch(() => setNotice('复制失败'))
+                    .catch(() => setNotice('没复制上，再试一次'))
                 }}
               >
                 {promptCopied
@@ -1393,9 +1450,10 @@ export function SettingsView() {
                 }
               />
               <div className="setting-row">
-                <span title="空闲时每隔几分钟走一小段再回来；深夜不走">
-                  自己走动
-                </span>
+                <div className="ch-label">
+                  <span>自己走动</span>
+                  <span className="muted">空闲时走一小段再回来，深夜不走</span>
+                </div>
                 <Switch
                   on={settings.pet.wander}
                   label="自己走动"
@@ -1419,35 +1477,25 @@ export function SettingsView() {
                 </button>
               </div>
               <div className="setting-row">
-                <span title="移到废纸篓，可以恢复">清空全部对话</span>
-                {clearing ? (
-                  <span className="row-actions">
-                    <button
-                      type="button"
-                      className="danger"
-                      onClick={() => {
-                        setClearing(false)
-                        api
-                          .clearConversations()
-                          .then(() => setNotice('对话已移到废纸篓'))
-                          .catch((e: unknown) =>
-                            setNotice(
-                              typeof e === 'string' ? e : '清空失败，请重试',
-                            ),
-                          )
-                      }}
-                    >
-                      移到废纸篓
-                    </button>
-                    <button type="button" onClick={() => setClearing(false)}>
-                      取消
-                    </button>
-                  </span>
-                ) : (
-                  <button type="button" onClick={() => setClearing(true)}>
-                    清空…
-                  </button>
-                )}
+                <div className="ch-label">
+                  <span>清空全部对话</span>
+                  <span className="muted">移到废纸篓，需要时可以放回原处</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    api
+                      .clearConversations()
+                      .then(() => setNotice('全部对话已移到废纸篓'))
+                      .catch((e: unknown) =>
+                        setNotice(
+                          typeof e === 'string' ? e : '没清空，再试一次',
+                        ),
+                      )
+                  }
+                >
+                  清空
+                </button>
               </div>
             </div>
           </section>

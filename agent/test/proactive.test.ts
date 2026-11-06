@@ -356,13 +356,14 @@ describe('bubble', () => {
     expect(own.opensChat).toBe(true)
   })
 
-  // Reported 2026-11-02: 1 小时 24 分 and 21 分钟 did not line up in the menu bar panel.
-  test('usage times are short h / m', () => {
+  // Reported 2026-11-02: 1 小时 24 分 and 21 分钟 did not line up in the menu bar panel. The
+  // column now has one fixed width (style.css .tray-usage), so the words can stay Chinese.
+  test('usage times read like Screen Time', () => {
     expect([5, 60, 84, 122].map(shortDuration)).toEqual([
-      '5m',
-      '1h',
-      '1h 24m',
-      '2h 2m',
+      '5 分钟',
+      '1 小时',
+      '1 小时 24 分钟',
+      '2 小时 2 分钟',
     ])
   })
 })

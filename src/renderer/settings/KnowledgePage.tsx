@@ -12,9 +12,9 @@ function counts(folder: KnowledgeFolder, vectors: boolean): string {
   if (folder.missing) return '找不到这个文件夹'
   const parts = [`${folder.files} 个文件`]
   if (vectors && folder.chunks && folder.embedded < folder.chunks)
-    parts.push(`向量 ${folder.embedded}/${folder.chunks}`)
+    parts.push(`按意思检索准备了 ${folder.embedded}/${folder.chunks} 段`)
   if (folder.truncated) parts.push('文件太多，只收录了一部分')
-  return parts.join(' · ')
+  return parts.join('，')
 }
 
 /** Settings › 知识库: the folders it reads, how far indexing got, and files it could not read. */
@@ -29,7 +29,7 @@ export function KnowledgePage() {
       .catch((e: unknown) => setNotice(failure(e)))
     return api.onKnowledgeChanged(setStatus)
   }, [])
-  if (!status) return <p role="status">{notice || '读取知识库…'}</p>
+  if (!status) return <p role="status">{notice || '正在读取…'}</p>
   const act = (work: Promise<KnowledgeStatus>) =>
     work
       .then((next) => {
@@ -68,7 +68,7 @@ export function KnowledgePage() {
                   {counts(folder, status.vectors)}
                   {folder.failed.length > 0 && (
                     <>
-                      {' · '}
+                      {'，'}
                       <button
                         type="button"
                         className="link"
@@ -129,7 +129,7 @@ export function KnowledgePage() {
                 ? '按意思检索用的是本机模型，文件内容不出这台 Mac。'
                 : status.vectors
                   ? '文件内容会发给向量模型的服务商，用来按意思检索。'
-                  : '只按关键词检索；在「模型 › 向量」设置后也能按意思找。')}
+                  : '现在只按关键词找；在「模型 › 按意思检索」设置后也能按意思找。')}
       </p>
     </div>
   )

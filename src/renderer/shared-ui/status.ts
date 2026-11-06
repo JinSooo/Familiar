@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { Session } from '../../shared'
+import type { PublicSettings, Session } from '../../shared'
 
 /**
  * One line for what the pet is doing in the current turn. While nothing has come back yet it
@@ -30,3 +30,18 @@ export function useTurnStatus(session: Session, name: string): string {
   if (waited >= 5) return `${name}在想… ${waited} 秒`
   return `${name}在想…`
 }
+
+/** The chat model has what a reply needs: a model, and a key or the ChatGPT sign-in. */
+export function modelReady(model: PublicSettings['model']): boolean {
+  if (!model.model.trim()) return false
+  if (model.protocol === 'chatgpt') return true
+  if (model.protocol === 'openai-compatible' && !model.baseURL.trim())
+    return false
+  return model.apiKeySet
+}
+
+/** An error the user fixes on the 模型 settings page (agent/src/agent/provider.ts, errors.ts). */
+export const needsModelSetup = (error: string) =>
+  /设置里的「模型」|在设置里用 ChatGPT 登录|在设置里重新登录|检查 API Key|在设置里换一个模型/.test(
+    error,
+  )

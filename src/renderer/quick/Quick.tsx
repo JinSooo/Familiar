@@ -7,7 +7,7 @@ import { errorText } from '../chat/History'
 import { PlainText } from '../chat/Markdown'
 import { Composer } from '../shared-ui/Composer'
 import { useSession } from '../shared-ui/session'
-import { useTurnStatus } from '../shared-ui/status'
+import { needsModelSetup, useTurnStatus } from '../shared-ui/status'
 
 /** The last few messages: enough to follow a quick back-and-forth; the rest lives in the big window. */
 const recent = 6
@@ -160,6 +160,14 @@ export function Quick() {
                       <p className="error" role="alert">
                         {m.error}
                       </p>
+                      {needsModelSetup(m.error) && (
+                        <button
+                          type="button"
+                          onClick={() => api.openSettings('model')}
+                        >
+                          去设置
+                        </button>
+                      )}
                       {!session.running && askedBefore(i) >= 0 && (
                         <button
                           type="button"

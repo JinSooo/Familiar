@@ -7,6 +7,7 @@ import type {
 } from '../../shared'
 import { api } from '../api'
 import { Switch } from './Switch'
+import { Icon } from '../shared-ui/Icon'
 
 type Perception = Settings['perception']
 const failure = (e: unknown) =>
@@ -54,7 +55,8 @@ export function PerceptionPage({ section }: { section: PerceptionSection }) {
       window.removeEventListener('focus', refresh)
     }
   }, [refresh])
-  if (!perception || !status) return <p role="status">{notice || '读取…'}</p>
+  if (!perception || !status)
+    return <p role="status">{notice || '正在读取…'}</p>
 
   const save = (next: Perception) => {
     setPerception(next)
@@ -81,8 +83,8 @@ export function PerceptionPage({ section }: { section: PerceptionSection }) {
         ? '需要辅助功能权限才能读取窗口和文字'
         : (status.error ??
           (status.running
-            ? `正在记录${status.lastEventAt ? ` · 最近一次 ${time(status.lastEventAt)}` : ''}`
-            : '启动中…'))
+            ? `正在记录${status.lastEventAt ? `，最近一次 ${time(status.lastEventAt)}` : ''}`
+            : '正在启动…'))
 
   if (section === 'raw')
     return (
@@ -91,7 +93,9 @@ export function PerceptionPage({ section }: { section: PerceptionSection }) {
           <div className="setting-row">
             <div className="ch-label">
               <span>清除原始记录</span>
-              <span className="muted">加密存在本机，48 小时后自动删除</span>
+              <span className="muted">
+                加密存在这台 Mac 上，48 小时后自动删除
+              </span>
             </div>
             <select
               aria-label="清除记录"
@@ -113,7 +117,8 @@ export function PerceptionPage({ section }: { section: PerceptionSection }) {
           {clearing && (
             <div className="setting-row">
               <span>
-                清除{clearing[1]}的原始记录？跨进这段时间的历史条目整条删除。
+                清除{clearing[1]}
+                的原始记录？时间线里和这段时间重叠的条目也会删掉，删了找不回来。
               </span>
               <span className="row-actions">
                 <button
@@ -153,7 +158,7 @@ export function PerceptionPage({ section }: { section: PerceptionSection }) {
             <span>记录电脑活动</span>
             {!perception.enabled && (
               <span className="muted">
-                不截图；整理时过滤后的文字会发给模型
+                不截图；整理时，过滤掉敏感内容的文字会发给模型
               </span>
             )}
             {state && (
@@ -161,10 +166,9 @@ export function PerceptionPage({ section }: { section: PerceptionSection }) {
                 {state}
                 {perception.enabled && status.trusted !== false && (
                   <>
-                    {' · '}
                     <button
                       type="button"
-                      className="link"
+                      className="link inline-action"
                       onClick={() =>
                         api
                           .perceptionPause(!perception.paused)
@@ -181,7 +185,7 @@ export function PerceptionPage({ section }: { section: PerceptionSection }) {
           <span className="row-actions">
             {perception.enabled && status.trusted === false && (
               <button type="button" onClick={() => api.perceptionGrant()}>
-                去授权…
+                去授权
               </button>
             )}
             <Switch
@@ -196,10 +200,10 @@ export function PerceptionPage({ section }: { section: PerceptionSection }) {
             <span>应用和网站</span>
             <span className="muted">
               {perception.excludedApps.length
-                ? `排除 ${perception.excludedApps.length} 个应用`
-                : '默认记录所有应用'}
+                ? `不记录 ${perception.excludedApps.length} 个应用`
+                : '记录所有应用'}
               {perception.excludedSites.length
-                ? `，排除 ${perception.excludedSites.length} 个网站`
+                ? `，不记录 ${perception.excludedSites.length} 个网站`
                 : ''}
             </span>
           </div>
@@ -229,7 +233,7 @@ function SubpageHeader(props: { title: string; back: () => void }) {
         title="返回"
         onClick={props.back}
       >
-        ‹
+        <Icon name="back" />
       </button>
       <h3>{props.title}</h3>
     </div>
@@ -318,7 +322,7 @@ function Choose(props: {
             </li>
           ))}
           {!listed.length && (
-            <li className="memory-item muted">没有。所有应用都在记录。</li>
+            <li className="memory-item muted">所有应用都在记录</li>
           )}
         </ul>
         {addable.length > 0 && (
@@ -344,7 +348,7 @@ function Choose(props: {
         )}
       </div>
 
-      <h3 className="memory-heading">排除网站</h3>
+      <h3 className="memory-heading">不记录的网站</h3>
       <div className="group">
         {perception.excludedSites.map((s) => (
           <div className="setting-row" key={s}>
@@ -353,6 +357,7 @@ function Choose(props: {
               type="button"
               className="icon"
               aria-label={`不再排除 ${s}`}
+              title="移除"
               onClick={() =>
                 save({
                   ...perception,
@@ -362,7 +367,7 @@ function Choose(props: {
                 })
               }
             >
-              ×
+              <Icon name="close" size={14} />
             </button>
           </div>
         ))}
@@ -380,7 +385,7 @@ function Choose(props: {
           }}
         >
           <input
-            placeholder="例如 bank.com，子域名一并排除"
+            placeholder="例如 bank.com，子域名也一起排除"
             value={site}
             onChange={(e) => setSite(e.target.value)}
           />
@@ -429,7 +434,7 @@ function Raw() {
     <>
       <h3 className="memory-heading">最近一小时</h3>
       {!events ? (
-        <p role="status">{error || '读取…'}</p>
+        <p role="status">{error || '正在读取…'}</p>
       ) : (
         <ul className="memory-list group">
           {collapse(events).map(({ event: e, count, until }, i) => (
@@ -450,18 +455,18 @@ function Raw() {
                 )}
                 <span className="muted">
                   {count > 1
-                    ? `${time(until)}–${time(e.at)} · ${count} 次`
+                    ? `${time(until)}–${time(e.at)}，${count} 次`
                     : time(e.at)}
-                  {e.private ? ' · 隐私窗口，只记应用' : ''}
-                  {e.secure ? ' · 密码框，没读内容' : ''}
-                  {e.dropped?.length
-                    ? ` · 过滤掉了 ${e.dropped.join('、')}`
-                    : ''}
+                  {e.private ? '，隐私窗口只记应用' : ''}
+                  {e.secure ? '，密码框没读内容' : ''}
+                  {e.dropped?.length ? `，过滤掉了${e.dropped.join('、')}` : ''}
                 </span>
               </div>
             </li>
           ))}
-          {!events.length && <li className="memory-item muted">没有记录。</li>}
+          {!events.length && (
+            <li className="memory-item muted">这一小时没有记录</li>
+          )}
         </ul>
       )}
     </>

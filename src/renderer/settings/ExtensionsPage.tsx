@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Extensions, McpCandidate, SkillInfo } from '../../shared'
 import { api } from '../api'
+import { Icon } from '../shared-ui/Icon'
 import { Switch } from './Switch'
 
 const failure = (e: unknown) =>
@@ -46,7 +47,7 @@ function DetailHeader(props: { title: string; back: () => void }) {
         title="返回"
         onClick={props.back}
       >
-        ‹
+        <Icon name="back" />
       </button>
       <h3>{props.title}</h3>
     </div>
@@ -100,7 +101,7 @@ export function ExtensionsPage({ section }: { section: ExtensionSection }) {
     })
     setDisabled(next)
   }
-  if (!data) return <p role="status">{notice || '读取扩展…'}</p>
+  if (!data) return <p role="status">{notice || '正在读取…'}</p>
   const status = notice && (
     <p role="status" className="caption">
       {notice}
@@ -168,7 +169,7 @@ export function ExtensionsPage({ section }: { section: ExtensionSection }) {
             )}
           </div>
           <h3 className="memory-heading">
-            工具{detail.tools.length ? ` · ${detail.tools.length}` : ''}
+            工具{detail.tools.length ? `（${detail.tools.length} 个）` : ''}
           </h3>
           <ul className="group memory-list">
             {detail.tools.length ? (
@@ -229,11 +230,11 @@ export function ExtensionsPage({ section }: { section: ExtensionSection }) {
         {mcpOffer && (
           <Picker
             title="从其他工具导入"
-            empty="没有在 Cursor、Codex、Claude Desktop、Claude Code 里找到可导入的服务器。"
+            empty="在 Cursor、Codex、Claude Desktop、Claude Code 里没找到可以导入的服务器"
             items={mcpOffer.map((c) => ({
               key: `${c.source}/${c.name}`,
               label: c.name,
-              detail: `${c.source} · ${c.target}`,
+              detail: `${c.source}：${c.target}`,
               disabled: c.exists,
             }))}
             onCancel={() => setMcpOffer(undefined)}
@@ -276,7 +277,7 @@ export function ExtensionsPage({ section }: { section: ExtensionSection }) {
               </li>
             ))
           ) : (
-            <li className="memory-item muted">还没有服务器。</li>
+            <li className="memory-item muted">还没有服务器</li>
           )}
         </ul>
         {status}
@@ -329,7 +330,7 @@ export function ExtensionsPage({ section }: { section: ExtensionSection }) {
                 act(api.removeSkill(skill.path), () => setOpen(undefined))
               }
             >
-              删除
+              移到废纸篓
             </button>
           </div>
         )}
@@ -355,11 +356,11 @@ export function ExtensionsPage({ section }: { section: ExtensionSection }) {
       {skillOffer && (
         <Picker
           title="从 Claude Code、Codex 导入"
-          empty="~/.claude/skills 和 ~/.codex/skills 里没有找到技能。"
+          empty="~/.claude/skills 和 ~/.codex/skills 里没找到技能"
           items={skillOffer.map((s) => ({
             key: s.path,
             label: s.name,
-            detail: `${s.from} · ${s.description}`,
+            detail: s.description ? `${s.from}：${s.description}` : s.from,
             disabled: s.exists,
           }))}
           onCancel={() => setSkillOffer(undefined)}
@@ -396,7 +397,7 @@ export function ExtensionsPage({ section }: { section: ExtensionSection }) {
             </li>
           ))
         ) : (
-          <li className="memory-item muted">还没有技能。</li>
+          <li className="memory-item muted">还没有技能</li>
         )}
       </ul>
       {status}
@@ -457,7 +458,7 @@ function Picker({
           disabled={!picked.length}
           onClick={() => onImport(picked)}
         >
-          导入 {picked.length || ''}
+          {picked.length ? `导入 ${picked.length} 个` : '导入'}
         </button>
         <button type="button" onClick={onCancel}>
           取消

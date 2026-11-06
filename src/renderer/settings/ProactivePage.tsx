@@ -2,13 +2,14 @@ import { useCallback, useEffect, useState } from 'react'
 import type { ProactiveStatus, Settings } from '../../shared'
 import { api } from '../api'
 import { Switch } from './Switch'
+import { Icon } from '../shared-ui/Icon'
 
 type Proactive = Settings['proactive']
 const triggers: [keyof Proactive['triggers'], string, string][] = [
   ['firstToday', '每天第一次打开电脑', '打个招呼'],
   ['back', '离开半小时后回来', ''],
   ['longWork', '连续工作 90 分钟', '提醒歇一下'],
-  ['activity', '看到你在做的事，能帮上忙时', '结合感知、记忆和聊过的事'],
+  ['activity', '看到你在做的事，能帮上忙时', '结合电脑活动、记忆和聊过的事'],
   ['lateNight', '深夜还在用电脑', '催你睡觉'],
   ['followUp', '跟进你之前说过的事', '比如面试之后问问怎么样'],
 ]
@@ -21,7 +22,7 @@ const levels: [Proactive['level'], string][] = [
 const responses = {
   ok: '回应了',
   later: '稍后',
-  quiet: '别烦我',
+  quiet: '今天别打扰',
   ignored: '没理',
   missed: '没看到',
 } as const
@@ -83,8 +84,10 @@ export function ProactivePage({
             {status && value.enabled && (
               <span className="muted">
                 {status.quietUntil
-                  ? `别烦我到 ${when(status.quietUntil)}`
-                  : `今天说了 ${status.usedToday} 次`}
+                  ? '今天不再主动找你，明天恢复'
+                  : status.usedToday
+                    ? `今天说了 ${status.usedToday} 次`
+                    : '今天还没说过'}
               </span>
             )}
           </div>
@@ -95,7 +98,7 @@ export function ProactivePage({
                 className="link"
                 onClick={() => void api.resumeProactive().then(refresh)}
               >
-                恢复
+                现在恢复
               </button>
             )}
             <Switch
@@ -107,7 +110,7 @@ export function ProactivePage({
         </div>
         <div className="setting-row">
           <div className="ch-label">
-            <span title="自动：看你多常找它聊、对它的话回不回应来调整；别烦我和没理会让之后几天少说一些">
+            <span title="自动：看你多常找它聊、对它的话回不回应来调整；点过「今天别打扰」会让之后几天少说一些">
               说话频率
             </span>
             {status && value.enabled && (
@@ -130,9 +133,12 @@ export function ProactivePage({
           </div>
         </div>
         <div className="setting-row">
-          <span title="这段时间不主动说话，到点的提醒等到结束再说">
-            免打扰时段
-          </span>
+          <div className="ch-label">
+            <span>免打扰时段</span>
+            <span className="muted">
+              这段时间不主动说话，到点的提醒等结束再说
+            </span>
+          </div>
           <span className="row-actions">
             {value.quiet.enabled && (
               <>
@@ -215,7 +221,7 @@ export function ProactivePage({
                 })
             }}
           >
-            {checking ? '在看…' : '现在检查'}
+            {checking ? '正在检查…' : '现在检查'}
           </button>
         </span>
       </div>
@@ -228,7 +234,7 @@ export function ProactivePage({
                 {r.at !== undefined && (
                   <span className="muted">
                     {when(r.at)}
-                    {r.kind === 'follow-up' ? ' · 跟进' : ''}
+                    {r.kind === 'follow-up' ? '，到时问问你' : ''}
                   </span>
                 )}
               </div>
@@ -236,10 +242,10 @@ export function ProactivePage({
                 type="button"
                 className="icon rule-remove"
                 aria-label={`取消提醒 ${r.text}`}
-                title="取消"
+                title="取消这个提醒"
                 onClick={() => void api.cancelReminder(r.id).then(refresh)}
               >
-                ×
+                <Icon name="close" size={14} />
               </button>
             </div>
           ))
@@ -259,7 +265,7 @@ export function ProactivePage({
                 <div className="ch-label">
                   <span>{r.text}</span>
                   <span className="muted">
-                    {when(r.at)} · {r.reason}
+                    {when(r.at)}，{r.reason}
                   </span>
                 </div>
                 <span className="muted">
@@ -270,10 +276,10 @@ export function ProactivePage({
               <div className="setting-row held" key={`${r.at}-${r.kind}`}>
                 <div className="ch-label">
                   <span className="muted">
-                    {r.text ?? `${moments[r.trigger] ?? r.trigger}，没开口`}
+                    {r.text ?? moments[r.trigger] ?? r.trigger}
                   </span>
                   <span className="muted">
-                    {when(r.at)} · {r.reason}
+                    {when(r.at)}，{r.reason}
                   </span>
                 </div>
                 <span className={r.kind === 'failed' ? 'warn' : 'muted'}>

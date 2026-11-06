@@ -28,7 +28,7 @@ function PerceptionIndicator() {
   return (
     <span
       className={`perception ${mode}`}
-      aria-label={mode === 'paused' ? '感知已暂停' : '正在感知'}
+      aria-label={mode === 'paused' ? '电脑活动记录已暂停' : '正在记录电脑活动'}
     />
   )
 }

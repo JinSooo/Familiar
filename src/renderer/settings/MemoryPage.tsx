@@ -38,11 +38,11 @@ export function MemoryPage({ section }: { section: MemorySection }) {
       const r = change.reflect
       if (!r) return
       setBusy(false)
-      if ('error' in r) setNotice(`整理失败：${r.error}`)
-      else if (!r.conversations) setNotice('没有需要整理的新对话')
+      if ('error' in r) setNotice(`没整理成：${r.error}`)
+      else if (!r.conversations) setNotice('没有新对话要整理')
       else
         setNotice(
-          `整理了 ${r.conversations} 个对话：${r.pending} 条新判断待确认${r.promoted ? `，${r.promoted} 条因反复出现已记下` : ''}${r.failed ? `，${r.failed} 个失败` : ''}`,
+          `整理了 ${r.conversations} 个对话，${r.pending ? `${r.pending} 条新判断等你确认` : '没有新判断'}${r.promoted ? `，${r.promoted} 条反复出现，已记下` : ''}${r.failed ? `，${r.failed} 个没整理成` : ''}`,
         )
     })
     window.addEventListener('focus', load)
@@ -51,7 +51,7 @@ export function MemoryPage({ section }: { section: MemorySection }) {
       window.removeEventListener('focus', load)
     }
   }, [load])
-  if (!items) return <p role="status">{notice || '读取记忆…'}</p>
+  if (!items) return <p role="status">{notice || '正在读取…'}</p>
   const act = (work: Promise<unknown>) => {
     setEditing(undefined)
     setLeftovers([])
@@ -147,18 +147,18 @@ export function MemoryPage({ section }: { section: MemorySection }) {
           {actions === 'pending' ? (
             <span className="muted">
               {item.target === 'topic' && item.targetTopic
-                ? `确认后记到主题「${item.targetTopic}」`
-                : `确认后记到${targetLabel[item.target ?? 'profile']}`}
-              {item.evidence ? ` · 来自「${item.evidence}」` : ''}
+                ? `记到主题「${item.targetTopic}」`
+                : `记到${targetLabel[item.target ?? 'profile']}`}
+              {item.evidence ? `，依据「${item.evidence}」` : ''}
               {item.seen && item.seen > 1
-                ? ` · ${item.seen} 个对话里都出现过`
+                ? `，在 ${item.seen} 个对话里出现过`
                 : ''}
             </span>
           ) : (
             item.at && (
               <span className="muted">
                 {item.at}
-                {item.source === 'reflection' ? ' · 从对话里整理' : ''}
+                {item.source === 'reflection' ? '，从对话里整理' : ''}
               </span>
             )
           )}
@@ -167,7 +167,6 @@ export function MemoryPage({ section }: { section: MemorySection }) {
           {actions === 'pending' && (
             <button
               type="button"
-              className="primary"
               title="这条判断没错，记下来"
               onClick={() => act(api.confirmMemory(item.id))}
             >
@@ -238,7 +237,8 @@ export function MemoryPage({ section }: { section: MemorySection }) {
       {leftovers.length > 0 && (
         <div className="group memory-leftovers" role="alert">
           <p>
-            时间线里还有 {leftovers.length} 条提到它，不删的话它仍可能想起来：
+            时间线里还有 {leftovers.length}{' '}
+            条提到这件事，不删的话它还可能想起来：
           </p>
           <ul>
             {leftovers.map((i) => (
@@ -270,10 +270,10 @@ export function MemoryPage({ section }: { section: MemorySection }) {
       )}
       {section === 'pending' &&
         group(
-          '从对话和电脑活动里猜的，点「记下」才会记住',
+          '从对话和电脑活动里猜的，点「记下」它才会记住',
           pending,
           'pending',
-          '没有待确认的判断。',
+          '没有等你确认的判断',
         )}
       {section === 'kept' && (
         <>
@@ -281,16 +281,16 @@ export function MemoryPage({ section }: { section: MemorySection }) {
             '画像',
             kept('profile'),
             'kept',
-            '还没有。可以对它说「记住……」。',
+            '还没有。可以对它说「记住……」',
           )}
-          {group('习惯', kept('habits'), 'kept', '还没有。')}
-          {group('经验', kept('lessons'), 'kept', '还没有。')}
+          {group('习惯', kept('habits'), 'kept', '还没有')}
+          {group('经验', kept('lessons'), 'kept', '还没有')}
         </>
       )}
       {section === 'topics' &&
         (topics.length
           ? topics.map((t) => group(t, kept('topic', t), 'kept'))
-          : group('主题', [], 'kept', '还没有。'))}
+          : group('主题', [], 'kept', '还没有'))}
     </div>
   )
 }

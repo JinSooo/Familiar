@@ -26,8 +26,8 @@ export async function listModels(draft: ModelDraft): Promise<string[]> {
     /\/+$/,
     '',
   )
-  if (!base) throw new Error('请先填写 Base URL')
-  if (!config.apiKey.trim()) throw new Error('请先填写 API Key')
+  if (!base) throw new Error('先填接口地址')
+  if (!config.apiKey.trim()) throw new Error('先填 API Key')
   const key = config.apiKey.trim()
   // Anthropic auth is set by the relay fetch itself; the OpenAI style always uses Bearer.
   const headers: Record<string, string> =
@@ -46,7 +46,8 @@ export async function listModels(draft: ModelDraft): Promise<string[]> {
         responseBody: body,
       })
     const data = (JSON.parse(body) as { data?: { id?: unknown }[] }).data
-    if (!Array.isArray(data)) throw new Error('中转站没有返回模型列表')
+    if (!Array.isArray(data))
+      throw new Error('这个服务没有返回模型列表，可以直接填模型名称')
     return [
       ...new Set(
         data

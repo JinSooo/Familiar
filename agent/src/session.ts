@@ -307,6 +307,6 @@ function toolDescription(name: string, input: unknown): string {
                           '')
   const short = target.length > 40 ? `${target.slice(0, 39)}…` : target
   const mcp = /^mcp__(.+?)__(.+)$/.exec(name)
-  if (mcp) return `调用 ${mcp[1]} · ${mcp[2]}`
+  if (mcp) return `调用 ${mcp[1]} 的 ${mcp[2]}`
   return `${labels[name] ?? name}${short ? ` ${short}` : ''}`
 }

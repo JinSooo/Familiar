@@ -1,9 +1,17 @@
-export function Icon({
-  name,
-}: {
-  name:
-    'expand' | 'collapse' | 'new' | 'settings' | 'history' | 'window' | 'attach'
-}) {
+export type IconName =
+  | 'expand'
+  | 'collapse'
+  | 'new'
+  | 'settings'
+  | 'history'
+  | 'window'
+  | 'attach'
+  | 'send'
+  | 'stop'
+  | 'close'
+  | 'back'
+/** Line icons on a 24px grid; `size` is the drawn size in px (16 by default). */
+export function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
   const paths = {
     expand: 'M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7',
     // Paper clip.
@@ -17,20 +25,24 @@ export function Icon({
     settings: 'M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6',
     // Clock with a counter-clockwise arrow: "earlier conversations".
     history: 'M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2',
+    send: 'M12 19V5M6 11l6-6 6 6',
+    stop: 'M8 8h8v8H8z',
+    close: 'M7 7l10 10M17 7L7 17',
+    back: 'M15 6l-6 6 6 6',
   }
   return (
     <svg
-      width="16"
-      height="16"
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.8"
+      strokeWidth={name === 'send' ? 2.2 : 1.8}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
     >
-      <path d={paths[name]} />
+      <path d={paths[name]} fill={name === 'stop' ? 'currentColor' : 'none'} />
     </svg>
   )
 }

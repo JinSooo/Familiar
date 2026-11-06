@@ -4,7 +4,7 @@ import { api } from '../api'
 
 type Bindings = PublicSettings['shortcuts']
 const labels: Record<keyof Bindings, string> = {
-  summon: '召唤输入框',
+  summon: '打开输入框',
   main: '打开大窗口',
   togglePet: '显示 / 隐藏宠物',
   newChat: '新对话',
@@ -83,7 +83,7 @@ function Recorder({
       className={`shortcut ${recording ? 'recording' : ''}`}
       onClick={() => setRecording(!recording)}
       onBlur={() => setRecording(false)}
-      title="点一下再按新的组合键；Esc 取消，Delete 清除"
+      title="点一下，再按新的组合键；Esc 取消，Delete 清除"
     >
       {recording ? '按下新的组合键…' : value ? prettyShortcut(value) : '未设置'}
     </button>
@@ -123,7 +123,7 @@ export function ShortcutsSection({
                 {labels[action]}
                 {fail && (
                   <small className="shortcut-error">
-                    被其他应用占用或无效，没生效
+                    和其他应用冲突，没有生效
                   </small>
                 )}
               </span>

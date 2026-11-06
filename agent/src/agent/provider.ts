@@ -25,7 +25,7 @@ export function createModel(
   const model = config.model.trim()
   const apiKey = config.apiKey.trim()
   const baseURL = config.baseURL.trim() || undefined
-  if (!model) throw new Error('请先在设置里填写模型名称')
+  if (!model) throw new Error('还没选模型，去设置里的「模型」选一个')
   if (config.protocol === 'chatgpt')
     // The key is a placeholder: the real credential is the OAuth token added per request.
     return createOpenAI({
@@ -35,7 +35,7 @@ export function createModel(
         withChatGptToken(createRelayFetch(config, fetchImpl)),
       ),
     }).responses(model)
-  if (!apiKey) throw new Error('请先在设置里填写 API Key')
+  if (!apiKey) throw new Error('还没填 API Key，去设置里的「模型」填一下')
   const fetch = createRelayFetch(config, fetchImpl)
   switch (config.protocol) {
     case 'anthropic':
@@ -47,7 +47,7 @@ export function createModel(
     case 'openai-responses':
       return createOpenAI({ baseURL, apiKey, fetch }).responses(model)
     case 'openai-compatible':
-      if (!baseURL) throw new Error('请先在设置里填写 Base URL')
+      if (!baseURL) throw new Error('还没填接口地址，去设置里的「模型」填一下')
       return createOpenAICompatible({ name: 'custom', baseURL, apiKey, fetch })(
         model,
       )

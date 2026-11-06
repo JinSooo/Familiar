@@ -193,14 +193,14 @@ export function TrayPanel() {
   }, [])
 
   const watching = !enabled
-    ? { tone: 'off', text: '感知未开启' }
+    ? { tone: 'off', text: '没有记录电脑活动' }
     : perception?.paused
-      ? { tone: 'paused', text: '感知已暂停，点一下继续' }
+      ? { tone: 'paused', text: '电脑活动记录已暂停，点一下继续' }
       : perception?.trusted === false
-        ? { tone: 'warn', text: '需要辅助功能权限' }
+        ? { tone: 'warn', text: '记录电脑活动需要辅助功能权限' }
         : {
             tone: 'on',
-            text: `正在记录${perception?.lastEventAt ? `，最近一次 ${clock(perception.lastEventAt)}` : ''}，点一下暂停`,
+            text: `正在记录电脑活动${perception?.lastEventAt ? `（最近一次 ${clock(perception.lastEventAt)}）` : ''}，点一下暂停`,
           }
   const canPause = enabled && perception && perception.trusted !== false
   const top = usage?.apps[0]?.minutes ?? 0
@@ -230,8 +230,9 @@ export function TrayPanel() {
               </button>
             </strong>
             <span className="muted">
-              {stateLabel[state]}
-              {mood && ` · ${moodNames[mood.mood]}，${mood.reason}`}
+              {state === 'idle' && mood
+                ? `${moodNames[mood.mood]}，${mood.reason}`
+                : stateLabel[state]}
             </span>
           </div>
           <button
@@ -277,9 +278,11 @@ export function TrayPanel() {
           >
             <span className="muted">继续上次</span>
             <strong>{last.title}</strong>
-            {last.preview && (
-              <span className="tray-preview">{last.preview}</span>
-            )}
+            {/* A conversation the pet opened is titled by that same line. */}
+            {last.preview &&
+              !last.preview.startsWith(last.title.replace(/…$/, '')) && (
+                <span className="tray-preview">{last.preview}</span>
+              )}
           </button>
         )}
 
@@ -295,7 +298,7 @@ export function TrayPanel() {
             }
           >
             <span className="tray-reminder">{missed.text}</span>
-            <span className="muted">刚才想说 · {clock(missed.at)}</span>
+            <span className="muted">{clock(missed.at)} 想跟你说的</span>
           </button>
         )}
 
@@ -326,7 +329,7 @@ export function TrayPanel() {
         {usage && usage.activeMinutes > 0 && (
           <section>
             <h3 className="tray-heading">
-              今天活跃 <span>{shortDuration(usage.activeMinutes)}</span>
+              今天用了 <span>{shortDuration(usage.activeMinutes)}</span>
             </h3>
             <ul className="tray-usage">
               {usage.apps.slice(0, 3).map((a) => (
@@ -364,7 +367,9 @@ export function TrayPanel() {
               )
             })}
             {items && !items.length && (
-              <li className="tray-empty muted">还没有整理出的活动</li>
+              <li className="tray-empty muted">
+                {enabled ? '还没整理出今天的活动' : '和它聊过的事会记在这里'}
+              </li>
             )}
           </ol>
           {items && items.length > shownCount && (
@@ -373,7 +378,7 @@ export function TrayPanel() {
               className="link tray-more"
               onClick={() => api.openSettings('timeline')}
             >
-              还有 {items.length - shownCount} 条 · 在设置里查看
+              查看全部 {items.length} 条
             </button>
           )}
         </section>

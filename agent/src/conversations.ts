@@ -69,9 +69,12 @@ export function plainText(markdown: string): string {
     .replace(/(\*\*|__|\*|_|`|~~)(?=\S)([\s\S]*?\S)\1/g, '$2')
 }
 
+/** The first thing the user said; a conversation the pet opened (a proactive line) takes its first line instead. */
 export function conversationTitle(messages: Session['messages']): string {
-  const first = messages.find((m) => m.role === 'user' && m.content.trim())
-  return first ? oneLine(first.content, 30) : '新对话'
+  const first =
+    messages.find((m) => m.role === 'user' && m.content.trim()) ??
+    messages.find((m) => m.content.trim())
+  return first ? oneLine(plainText(first.content), 30) : '新对话'
 }
 
 function clock(at: number): string {
@@ -219,7 +222,10 @@ export function parse(id: string, text: string): StoredConversation {
   const last = messages.at(-1)?.createdAt ?? 0
   return {
     id,
-    title: field('title') || conversationTitle(messages),
+    // Files saved before titles fell back to the pet's first line still say 新对话.
+    title:
+      (field('title') !== '新对话' && field('title')) ||
+      conversationTitle(messages),
     createdAt: time('created', messages[0]?.createdAt ?? 0),
     updatedAt: time('updated', last),
     messages,

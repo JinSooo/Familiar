@@ -12,7 +12,7 @@ import { Composer } from '../shared-ui/Composer'
 const bubbleTimeout = (text: string) =>
   12000 + Math.min(8000, [...text].length * 60)
 import { useSession } from '../shared-ui/session'
-import { useTurnStatus } from '../shared-ui/status'
+import { modelReady, needsModelSetup, useTurnStatus } from '../shared-ui/status'
 export function Bubble({
   text,
   variant = 'reply',
@@ -27,11 +27,29 @@ export function Bubble({
       data-hit
       className={`bubble ${variant} ${fading ? 'fading' : ''}`}
       onClick={() => api.toggleChat()}
-      aria-label="展开完整对话"
+      aria-label="打开对话"
     >
       {text}
       <span className="tail" />
     </button>
+  )
+}
+/** Something only the 模型 settings page can fix: say so and go there in one click. */
+function SetupBubble({ text }: { text: string }) {
+  return (
+    <div data-hit className="bubble proactive" role="status">
+      <span>{text}</span>
+      <div className="proactive-actions">
+        <button
+          type="button"
+          className="primary"
+          onClick={() => api.openSettings('model')}
+        >
+          去设置
+        </button>
+      </div>
+      <span className="tail" />
+    </div>
   )
 }
 /**
@@ -75,7 +93,7 @@ function NamingCard({ initial, done }: { initial: string; done: () => void }) {
     api
       .namePet(value)
       .then(done)
-      .catch(() => setError('没存上，再试一次'))
+      .catch(() => setError('没记住，再试一次'))
   }
   return (
     <form
@@ -107,9 +125,27 @@ function NamingCard({ initial, done }: { initial: string; done: () => void }) {
  * Above the reopened capsule: where the conversation stands, so hiding the capsule never
  * loses the thread. Continues the current one, or offers the one set aside after a long pause.
  */
-function ContextStrip({ session }: { session: Session }) {
+function ContextStrip({
+  session,
+  ready,
+}: {
+  session: Session
+  ready: boolean
+}) {
   const [error, setError] = useState('')
   if (session.running || session.bubble) return null
+  if (!ready)
+    return (
+      <div className="context-strip" data-hit>
+        <span className="context-main muted">还没连上模型</span>
+        <button
+          className="context-action"
+          onClick={() => api.openSettings('model')}
+        >
+          去设置
+        </button>
+      </div>
+    )
   // A failed or stopped turn has no reply worth recalling; show the last real one.
   const reply = session.messages.findLast(
     (m) => m.role === 'assistant' && m.content,
@@ -119,7 +155,7 @@ function ContextStrip({ session }: { session: Session }) {
       <div className="context-strip" data-hit>
         <button
           className="context-main"
-          title="展开完整对话"
+          title="打开对话"
           onClick={() => api.toggleChat()}
         >
           <span className="muted">上次聊到</span>
@@ -193,6 +229,8 @@ export function Overlay() {
   }, [capsule])
   const [name, setName] = useState('小黑')
   const [named, setNamed] = useState(true)
+  // Assumed ready until settings load, so a configured pet never flashes the setup card.
+  const [ready, setReady] = useState(true)
   const [scale, setScale] = useState<number>(0.73)
   useEffect(() => {
     const off = [
@@ -200,13 +238,16 @@ export function Overlay() {
         setCapsule((c) => (next ? 'open' : c === 'closed' ? c : 'closing')),
       ),
       api.onSize(setScale),
+      // Sent after every settings save, so the setup card goes once the model is filled in.
+      api.onSkin(() => update()),
     ]
-    const update = () => {
+    function update() {
       void api
         .getSettings()
         .then((s) => {
           setName(s.pet.name)
           setNamed(s.pet.named)
+          setReady(modelReady(s.model))
           setScale(s.pet.scale)
         })
         .catch(console.error)
@@ -222,9 +263,12 @@ export function Overlay() {
   // Anything on show brings an edge-tucked pet out, and keeps it out (docs/design.md §9).
   const [petState, setPetState] = useState<PetState>('idle')
   useEffect(() => api.onState(setPetState), [])
+  const setupCard =
+    named && !ready && !session.proactive && !open && !session.running
   const hold =
     capsule !== 'closed' ||
     !named ||
+    setupCard ||
     session.running ||
     Boolean(session.proactive || session.bubble || missed[0]) ||
     !['idle', 'sleeping'].includes(petState)
@@ -271,12 +315,22 @@ export function Overlay() {
       {session.proactive && !open && !session.running && (
         <ProactiveBubble message={session.proactive} />
       )}
-      {!session.proactive && session.bubble && session.origin === 'capsule' && (
-        <Bubble text={bubblePlainText(session.bubble)} fading={fading} />
+      {setupCard && !session.bubble && (
+        <SetupBubble text="先帮我连上模型，我就能陪你聊天了" />
       )}
+      {!session.proactive &&
+        session.bubble &&
+        session.origin === 'capsule' &&
+        (!session.running &&
+        session.bubble === session.error &&
+        needsModelSetup(session.error) ? (
+          <SetupBubble text={session.error} />
+        ) : (
+          <Bubble text={bubblePlainText(session.bubble)} fading={fading} />
+        ))}
       {capsule !== 'closed' && (
         <div className={`capsule ${open ? '' : 'closing'}`}>
-          <ContextStrip session={session} />
+          <ContextStrip session={session} ready={ready} />
           <Composer
             running={session.running}
             mini

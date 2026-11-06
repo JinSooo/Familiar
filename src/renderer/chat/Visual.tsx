@@ -240,7 +240,7 @@ function FileCard({ source }: { source: Source }) {
           <path d="M6 3h8l4 4v14H6zM14 3v4h4" />
         </svg>
         {fileName(file.path)}
-        {file.location ? ` · ${file.location}` : ''}
+        {file.location ? `，${file.location}` : ''}
       </span>
     </button>
   )
@@ -258,7 +258,7 @@ export function SourceCards({
   if (!sources.length) return null
   return (
     <div className="sources">
-      <span className="muted sources-label">来源 · {sources.length}</span>
+      <span className="muted sources-label">来源（{sources.length}）</span>
       <div className="source-row">
         {sources.map((s) =>
           s.file ? (

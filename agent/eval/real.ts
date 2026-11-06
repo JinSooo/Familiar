@@ -9,6 +9,14 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import {
+  leanings,
+  leaningsTitle,
+  readChoices,
+  triggerNames,
+} from '../src/proactive/leanings'
+
+export { triggerNames }
 
 export const evalsDir = join(
   process.env.FAMILIAR_DATA_DIR ?? join(homedir(), '.familiar'),
@@ -51,15 +59,6 @@ export const outcomeNames: Record<Outcome, string> = {
   silent: '没开口',
   failed: '出错',
   unsaid: '没说出口',
-}
-export const triggerNames: Record<string, string> = {
-  reminder: '提醒',
-  'follow-up': '跟进',
-  longWork: '连续工作',
-  back: '回来',
-  firstToday: '每天第一次',
-  activity: '在做的事',
-  lateNight: '深夜',
 }
 
 export interface Label {
@@ -147,6 +146,14 @@ export function shortTime(iso: string) {
 
 /** Labeled moments as promptfoo cases: replay the same input, expect the same speak / not. */
 export function realCases() {
+  const past = readChoices(evalsDir)
+  // Logged before the pet read past choices: rebuild that block from the moments before this one,
+  // so a replay sees what the pet would see now at that time (never the moment's own label).
+  const withChoices = (d: DecisionRow) => {
+    if (d.context.includes(leaningsTitle)) return d.context
+    const block = leanings(past, d.trigger, new Date(d.at))
+    return block ? `${d.context}\n\n${block}` : d.context
+  }
   return moments()
     .filter((m) => m.speak !== undefined)
     .map((m) => ({
@@ -156,7 +163,7 @@ export function realCases() {
         name: m.decision.name,
         persona: m.decision.persona ?? '',
         facts: m.decision.facts,
-        context: m.decision.context,
+        context: withChoices(m.decision),
         recent: m.decision.recent,
         now: m.decision.at,
       },

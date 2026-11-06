@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { join } from 'node:path'
 import { promisify } from 'node:util'
 import type {
   ProactiveHeld,
@@ -8,7 +9,7 @@ import type {
   Reminder,
 } from '../../../src/shared'
 import { getSettings } from '../settings'
-import { idleSeconds, sensorPath } from '../system'
+import { dataDir, idleSeconds, sensorPath } from '../system'
 import { buffer } from '../perception'
 import { backgroundModel } from '../memory/jobs'
 import { memoryContext, openMemory } from '../memory'
@@ -16,6 +17,7 @@ import { today } from '../memory/store'
 import { personaText } from '../agent/persona'
 import { moodLine } from '../mood'
 import { decide } from './decide'
+import { leanings, readChoices } from './leanings'
 import { readReminders, stamp, updateReminders } from './reminders'
 import {
   breakpoint,
@@ -317,16 +319,30 @@ async function upcoming(now: number, todos = false): Promise<string> {
     )
   return parts.join('\n\n')
 }
-/** Memory, closeness and energy, upcoming reminders, and what was said lately: what the model decides from. */
-async function material(now: number, todos = false) {
+/**
+ * Memory, closeness and energy, upcoming reminders, what the user chose in like moments, and what
+ * was said lately: what the model decides from.
+ */
+async function material(trigger: ProactiveTrigger, now: number, todos = false) {
   const state = await readState()
   const memory = openMemory()
   const reminders = await upcoming(now, todos)
+  let chosen = ''
+  try {
+    chosen = leanings(
+      readChoices(join(dataDir, 'evals')),
+      trigger,
+      new Date(now),
+    )
+  } catch (error) {
+    console.error('Read past choices:', error)
+  }
   return {
     context: [
       `${companionContext(state, new Date(now))}${moodLine()}`,
       `关于主人的记忆：\n${(await memoryContext(memory.store, 1500, 0).catch(() => '')) || '（暂无）'}`,
       ...(reminders ? [reminders] : []),
+      ...(chosen ? [chosen] : []),
     ].join('\n\n'),
     recent: state.history
       .filter((m) => now - m.at < 86400000)
@@ -355,7 +371,7 @@ async function consult(
     name: settings.pet.name,
     persona: await personaText(),
     facts,
-    ...(await material(now, todos)),
+    ...(await material(trigger, now, todos)),
   }
   const row = {
     id,

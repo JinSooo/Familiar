@@ -43,6 +43,8 @@ let sending: number | undefined
 let child: ChildProcess | undefined
 let nextId = 1
 const pending = new Map<number, Pending>()
+// Cancel settles the caller before the native worker has released its inputs.
+const inFlight = new Map<number, ChildProcess>()
 let idleTimer: ReturnType<typeof setTimeout> | undefined
 const idleMs = 5 * 60_000
 
@@ -66,6 +68,17 @@ let hooks: Hooks = {
 }
 export function setComputerHooks(next: Hooks): void {
   hooks = next
+}
+
+function scheduleIdle(): void {
+  clearTimeout(idleTimer)
+  if (!child || pending.size || inFlight.size) return
+  const proc = child
+  idleTimer = setTimeout(() => {
+    if (child !== proc || pending.size || inFlight.size) return
+    child = undefined
+    proc.stdin?.end()
+  }, idleMs)
 }
 
 function launch(): ChildProcess {
@@ -95,15 +108,22 @@ function launch(): ChildProcess {
       if (turn.global) hooks.stop()
       return
     }
+    if (message.id !== undefined && inFlight.get(message.id) === proc) {
+      inFlight.delete(message.id)
+      scheduleIdle()
+    }
     const waiting =
       message.id === undefined ? undefined : pending.get(message.id)
-    if (!waiting) return
+    if (!waiting || waiting.proc !== proc) return
     waiting.cleanup()
     if (message.ok) waiting.resolve(message.result)
     else waiting.reject(new Error(message.error ?? '操作失败'))
   })
   proc.once('exit', () => {
     if (child === proc) child = undefined
+    for (const [id, owner] of inFlight) {
+      if (owner === proc) inFlight.delete(id)
+    }
     for (const waiting of pending.values()) {
       if (waiting.proc !== proc) continue
       waiting.cleanup()
@@ -130,7 +150,6 @@ export function control<T>(
 ): Promise<T> {
   if (signal?.aborted) return Promise.reject(new Error('已停止'))
   clearTimeout(idleTimer)
-  idleTimer = setTimeout(() => child?.kill(), idleMs)
   const proc = launch()
   const id = nextId++
   return new Promise<T>((resolve, reject) => {
@@ -140,6 +159,7 @@ export function control<T>(
       pending.delete(id)
       if (sending === id) sending = undefined
       queueMicrotask(dispatchNext)
+      scheduleIdle()
     }
     const cancel = (message: string) => {
       if (sending === id && proc.stdin?.writable)
@@ -155,10 +175,14 @@ export function control<T>(
       reject,
       cleanup,
       send: () => {
+        inFlight.set(id, proc)
         proc.stdin!.write(
           JSON.stringify({ id, op, ...args }) + '\n',
           (error) => {
-            if (!error || !pending.has(id)) return
+            if (!error) return
+            inFlight.delete(id)
+            scheduleIdle()
+            if (!pending.has(id)) return
             cleanup()
             reject(error)
           },
@@ -357,7 +381,8 @@ export function describeComputerCall(name: string, input: unknown): string {
     case 'drag':
       return '拖拽'
     case 'take_over':
-      return `接管鼠标和键盘：${field('reason')}。期间先别动鼠标键盘，按 Esc 随时停止`
+      // The model's reason often ends with its own 。; one is enough.
+      return `接管鼠标和键盘：${field('reason').replace(/[。.！!，,；;\s]+$/u, '')}。期间先别动鼠标键盘，按 Esc 随时停止`
     default:
       return name
   }

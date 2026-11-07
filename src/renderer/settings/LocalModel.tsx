@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { LocalModelStatus } from '../../shared'
 import { api } from '../api'
+import { observeSnapshot } from '../shared-ui/synchronization'
 
 const mb = (bytes: number) => `${Math.round(bytes / 1024 / 1024)} MB`
 
@@ -9,11 +10,12 @@ export function LocalModel() {
   const [status, setStatus] = useState<LocalModelStatus>()
   const [notice, setNotice] = useState('')
   useEffect(() => {
-    api
-      .localModelStatus()
-      .then(setStatus)
-      .catch((e: unknown) => setNotice(String(e)))
-    return api.onLocalModelChanged(setStatus)
+    return observeSnapshot(
+      api.localModelStatus,
+      api.onLocalModelChanged,
+      setStatus,
+      (e) => setNotice(String(e)),
+    )
   }, [])
   if (!status) return <div className="setting-row muted">{notice || '…'}</div>
   const total = status.total || status.size

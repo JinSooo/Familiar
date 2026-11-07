@@ -1,4 +1,5 @@
-import type { AgentEvent, Message } from '../../../src/shared'
+import type { JSONValue } from 'ai'
+import type { AgentEvent, Message, Settings } from '../../../src/shared'
 import { prepareModelContext } from './context'
 import { backgroundModel } from '../memory/jobs'
 import { createImageTools, imageInstructions } from './image'
@@ -31,6 +32,23 @@ import {
   endComputerTurn,
 } from '../computer'
 export { resolveApproval } from './approvals'
+
+/**
+ * Per-request options for the OpenAI Responses routes. The cache key keeps one conversation's
+ * requests on the same cached prefix: without it the plan route reported 0 cached tokens on three
+ * turns in a row with an identical ~6k prefix (2026-11-07). The plan route also needs store:false.
+ */
+export function openAiOptions(
+  protocol: Settings['model']['protocol'],
+  conversationId: string,
+): { providerOptions?: { openai: Record<string, JSONValue> } } {
+  if (protocol !== 'chatgpt' && protocol !== 'openai-responses') return {}
+  const openai: Record<string, JSONValue> = {
+    ...(protocol === 'chatgpt' ? { store: false } : {}),
+    ...(conversationId ? { promptCacheKey: `familiar-${conversationId}` } : {}),
+  }
+  return Object.keys(openai).length ? { providerOptions: { openai } } : {}
+}
 
 export async function runAgent(
   messages: Message[],
@@ -105,9 +123,7 @@ export async function runAgent(
       // The ChatGPT plan route keeps nothing (store:false). Told so, the SDK sends each step's
       // reasoning back encrypted instead of by id; by id the next step failed with 404 「Item
       // with id 'rs_…' not found」 (2026-11-07, a Computer Use turn on the plan).
-      ...(settings.model.protocol === 'chatgpt'
-        ? { providerOptions: { openai: { store: false } } }
-        : {}),
+      ...openAiOptions(settings.model.protocol, conversationId),
       workspacePath,
       decide: (call) => decideToolCall(call, getSettings()),
       snapshot,

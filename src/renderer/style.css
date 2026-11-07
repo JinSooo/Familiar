@@ -1469,11 +1469,10 @@ form.setting-row input {
 .ext-title small {
   font-size: 11px;
 }
+/* Wraps instead of an ellipsis: copy is never cut off (AGENTS.md); paths break anywhere. */
 .ext-sub {
   font-size: 11px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .ext-item .row-actions button {
   padding: 3px 10px;

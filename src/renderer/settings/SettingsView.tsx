@@ -6,6 +6,7 @@ import type {
   PublicSettings,
 } from '../../shared'
 import { api } from '../api'
+import { recoverSettings } from '../shared-ui/synchronization'
 import {
   petRatePresets,
   petRateRange,
@@ -241,7 +242,7 @@ export function SettingsView() {
     api
       .getSettings()
       .then((loaded) => {
-        setSettings(loaded)
+        setSettings((current) => current ?? loaded)
         if (isRelay(loaded.model)) setSavedRelay(loaded.model)
       })
       .catch(() => setNotice('读不到设置，请重新打开 Familiar'))
@@ -276,13 +277,15 @@ export function SettingsView() {
       void api.listPets().then(setPets).catch(console.error)
       void api
         .getSettings()
-        .then((loaded) =>
-          setSettings((s) => s && { ...s, dirRules: loaded.dirRules }),
-        )
+        .then((loaded) => setSettings((s) => recoverSettings(s, loaded)))
         .catch(console.error)
     }
+    const off = api.onSkin(refresh)
     window.addEventListener('focus', refresh)
-    return () => window.removeEventListener('focus', refresh)
+    return () => {
+      off()
+      window.removeEventListener('focus', refresh)
+    }
   }, [])
   useEffect(() => {
     if (!notice.endsWith('废纸篓')) return

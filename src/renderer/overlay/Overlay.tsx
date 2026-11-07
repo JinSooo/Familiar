@@ -9,6 +9,8 @@ import {
 import { api } from '../api'
 import { Pet } from '../pet/Pet'
 import { Composer } from '../shared-ui/Composer'
+import { inputKey } from '../shared-ui/input'
+import { observeSnapshot } from '../shared-ui/synchronization'
 const bubbleTimeout = (text: string) =>
   12000 + Math.min(8000, [...text].length * 60)
 import { useSession } from '../shared-ui/session'
@@ -109,6 +111,10 @@ function NamingCard({ initial, done }: { initial: string; done: () => void }) {
         <input
           value={name}
           maxLength={40}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && inputKey(e.nativeEvent) !== 'send')
+              e.preventDefault()
+          }}
           aria-label="名字"
           onPointerDown={() => api.focusPet()}
           onChange={(e) => setName(e.target.value)}
@@ -188,15 +194,12 @@ function ContextStrip({
 function useMissed(): ProactiveMessage[] {
   const [missed, setMissed] = useState<ProactiveMessage[]>([])
   useEffect(() => {
-    const load = () =>
-      void api
-        .proactiveStatus()
-        .then((s) => setMissed(s.missed))
-        .catch(console.error)
-    load()
-    const off = api.onProactiveChanged((s) => setMissed(s.missed))
-    // Own lines go stale after a while even when nothing else changes.
-    const timer = setInterval(load, 60000)
+    const off = observeSnapshot(
+      api.proactiveStatus,
+      api.onProactiveChanged,
+      (s) => setMissed(s.missed),
+    )
+    const timer = setInterval(off.refresh, 60000)
     return () => {
       off()
       clearInterval(timer)

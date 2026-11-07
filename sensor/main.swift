@@ -137,8 +137,21 @@ func looksPrivate(_ title: String) -> Bool {
   privateTitle.firstMatch(in: title, range: NSRange(title.startIndex..., in: title)) != nil
 }
 
+/// A focused child can still belong to a secure field.
+func secureTextContext(_ element: AXUIElement) -> Bool {
+  var node: AXUIElement? = element
+  for _ in 0..<64 {
+    guard let current = node else { return false }
+    if string(current, kAXRoleAttribute) == "AXSecureTextField"
+      || string(current, kAXSubroleAttribute) == "AXSecureTextField" { return true }
+    node = child(current, kAXParentAttribute)
+  }
+  return true
+}
+
 /// Text near the caret (or the selection), at most `limit` characters.
 func textContext(_ element: AXUIElement, limit: Int = 2000) -> String? {
+  guard !secureTextContext(element) else { return nil }
   if let selected = string(element, kAXSelectedTextAttribute), !selected.isEmpty {
     return String(selected.prefix(limit))
   }
@@ -149,7 +162,11 @@ func textContext(_ element: AXUIElement, limit: Int = 2000) -> String? {
     CFGetTypeID(range) == AXValueGetTypeID()
   {
     var cf = CFRange()
-    if AXValueGetValue(range as! AXValue, .cfRange, &cf) { caret = min(max(cf.location, 0), value.count) }
+    if AXValueGetValue(range as! AXValue, .cfRange, &cf) {
+      let offset = min(max(cf.location, 0), value.utf16.count)
+      let index = String.Index(utf16Offset: offset, in: value)
+      caret = value.distance(from: value.startIndex, to: index)
+    }
   }
   let start = max(0, min(caret - limit / 2, value.count - limit))
   let from = value.index(value.startIndex, offsetBy: start)
@@ -262,8 +279,7 @@ final class Sensor {
     }
     if let focused = child(element, kAXFocusedUIElementAttribute) {
       let role = string(focused, kAXRoleAttribute) ?? ""
-      let subrole = string(focused, kAXSubroleAttribute) ?? ""
-      if role == "AXSecureTextField" || subrole == "AXSecureTextField" {
+      if secureTextContext(focused) {
         event["secure"] = true
       } else {
         if !role.isEmpty { event["role"] = role }

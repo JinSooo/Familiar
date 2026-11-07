@@ -2,10 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { api } from '../api'
 import { Attachments } from '../chat/Attachments'
+import { ImageViewer } from '../chat/Visual'
 import { MessageActions, Reply, type ToolView } from '../chat/Chat'
 import { errorText } from '../chat/History'
 import { PlainText } from '../chat/Markdown'
 import { Composer } from '../shared-ui/Composer'
+import { inputKey } from '../shared-ui/input'
 import { useSession } from '../shared-ui/session'
 import { needsModelSetup, useTurnStatus } from '../shared-ui/status'
 
@@ -20,6 +22,13 @@ const recent = 6
  */
 export function Quick() {
   const session = useSession()
+  useEffect(() => {
+    const escape = (event: KeyboardEvent) => {
+      if (inputKey(event) === 'close') api.hideQuick()
+    }
+    window.addEventListener('keydown', escape)
+    return () => window.removeEventListener('keydown', escape)
+  }, [])
   const [name, setName] = useState('小黑')
   const [toolView, setToolView] = useState<ToolView>('brief')
   const [actionError, setActionError] = useState('')
@@ -45,8 +54,12 @@ export function Quick() {
         })
         .catch(console.error)
     update()
+    const off = api.onSkin(update)
     window.addEventListener('focus', update)
-    return () => window.removeEventListener('focus', update)
+    return () => {
+      off()
+      window.removeEventListener('focus', update)
+    }
   }, [])
   const from = Math.max(0, session.messages.length - recent)
   const shown = session.messages.slice(from)
@@ -121,6 +134,7 @@ export function Quick() {
     session.messages.findLastIndex((m, k) => k < i && m.role === 'user')
   return (
     <div className="quick-bar" ref={bar} data-tauri-drag-region>
+      <ImageViewer />
       {(shown.length > 0 || session.running) && (
         <section
           className="quick-reply"

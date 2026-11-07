@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ProactiveStatus, Settings } from '../../shared'
 import { api } from '../api'
+import { observeSnapshot } from '../shared-ui/synchronization'
 import { Switch } from './Switch'
 import { Icon } from '../shared-ui/Icon'
 
@@ -58,12 +59,15 @@ export function ProactivePage({
 }) {
   const [status, setStatus] = useState<ProactiveStatus>()
   const [checking, setChecking] = useState(false)
-  const refresh = useCallback(() => {
-    void api.proactiveStatus().then(setStatus).catch(console.error)
-  }, [])
+  const refreshStatus = useRef(() => {})
+  const refresh = useCallback(() => refreshStatus.current(), [])
   useEffect(() => {
-    refresh()
-    const off = api.onProactiveChanged(setStatus)
+    const off = observeSnapshot(
+      api.proactiveStatus,
+      api.onProactiveChanged,
+      setStatus,
+    )
+    refreshStatus.current = off.refresh
     window.addEventListener('focus', refresh)
     return () => {
       off()

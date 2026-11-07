@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { Session } from '../../shared'
 import { api } from '../api'
+import { observeSnapshot } from './synchronization'
 const initial: Session = {
   id: '',
   updatedAt: 0,
@@ -15,8 +16,7 @@ const initial: Session = {
 export function useSession() {
   const [session, setSession] = useState(initial)
   useEffect(() => {
-    const off = api.onSession(setSession)
-    void api.getSession().then(setSession).catch(console.error)
+    const off = observeSnapshot(api.getSession, api.onSession, setSession)
     api.ready()
     return off
   }, [])

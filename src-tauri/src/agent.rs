@@ -174,7 +174,7 @@ pub fn stop(app: &tauri::AppHandle) {
     if let Some(child) = state.child.lock().unwrap().take() {
         let _ = child.kill();
     }
-    reject(app, "Application exiting");
+    reject(app, "Familiar 正在退出");
 }
 pub fn start(app: &tauri::AppHandle) {
     let watchdog = app.clone();
@@ -260,7 +260,7 @@ pub fn start(app: &tauri::AppHandle) {
             if let Some(child) = app.state::<Agent>().child.lock().unwrap().take() {
                 let _ = child.kill();
             }
-            reject(&app, "Agent exited; request cancelled");
+            reject(&app, "Familiar 的后台刚才重启了，这句没发出去，再发一次就行");
             if app.state::<Agent>().stopping.load(Ordering::Relaxed) {
                 break;
             }

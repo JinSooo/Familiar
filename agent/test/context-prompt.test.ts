@@ -5,6 +5,7 @@ import { MockLanguageModelV4 } from 'ai/test'
 import { type Message, settingsSchema } from '../../src/shared'
 import { prepareModelContext } from '../src/agent/context'
 import { runAgentCore } from '../src/agent/core'
+import { openAiOptions } from '../src/agent'
 import { toModelMessage } from '../src/attachments'
 
 // Run the production entry point, replacing only settings, tool discovery and disk boundaries.
@@ -59,6 +60,7 @@ test('the main entry keeps a stable system prefix across time and mood changes o
     },
     getSettings: () => settings,
     createModel: () => model,
+    openAiOptions,
     ensureWorkspace: async () => '/tmp',
     snapshot: noop,
     openMemory: () => ({ store: {} }),
@@ -125,6 +127,8 @@ test('the main entry keeps a stable system prefix across time and mood changes o
   expect(JSON.stringify(second!.prompt[1])).toContain('14:04')
   expect(JSON.stringify(first!.prompt[1])).toContain('开心')
   expect(JSON.stringify(second!.prompt[1])).toContain('好奇')
-  expect(second!.providerOptions).toEqual({ openai: { store: false } })
+  expect(second!.providerOptions).toEqual({
+    openai: { store: false, promptCacheKey: 'familiar-context-prompt' },
+  })
   expect(messages).toEqual([{ role: 'user', content: '你好' }])
 })

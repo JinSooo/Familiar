@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Mood, PetGesture, PetSkin, PetState } from '../../shared'
 import { api, subscribe } from '../api'
+import { observeSnapshot } from '../shared-ui/synchronization'
 import { IPC, perceptionMode } from '../../shared'
 import { alphaHit, overlayHit } from './hit'
 import {
@@ -17,12 +18,9 @@ import {
 function PerceptionIndicator() {
   const [mode, setMode] = useState<ReturnType<typeof perceptionMode>>()
   useEffect(() => {
-    const off = api.onPerceptionChanged((s) => setMode(perceptionMode(s)))
-    void api
-      .perceptionStatus()
-      .then((s) => setMode(perceptionMode(s)))
-      .catch(console.error)
-    return off
+    return observeSnapshot(api.perceptionStatus, api.onPerceptionChanged, (s) =>
+      setMode(perceptionMode(s)),
+    )
   }, [])
   if (!mode || mode === 'chat-only') return null
   return (
@@ -60,47 +58,49 @@ export function Pet({
   const sequence = useRef(0)
   const [gestureKey, setGestureKey] = useState(0)
   useEffect(() => {
+    const settings = api.getSettings()
     const off = [
       api.onState(setState),
-      api.onSkin(setSkin),
-      api.onSize(setSize),
-      api.onSpeed(setSpeed),
-      api.onWander(setWander),
-      api.onMood(({ mood: next }) => {
-        // Turning happy shows once, with a hop.
-        if (next === 'happy' && lastMood.current !== 'happy') {
-          setGesture('jump')
-          setGestureKey(++sequence.current)
-        }
-        lastMood.current = next
-        setMood(next)
-      }),
+      observeSnapshot(api.getPetSkin, api.onSkin, setSkin),
+      observeSnapshot(
+        () => settings.then((s) => s.pet.scale),
+        api.onSize,
+        setSize,
+      ),
+      observeSnapshot(
+        () => settings.then((s) => s.pet.rate),
+        api.onSpeed,
+        setSpeed,
+      ),
+      observeSnapshot(
+        () => settings.then((s) => s.pet.wander),
+        api.onWander,
+        setWander,
+      ),
+      observeSnapshot(
+        api.getMood,
+        (receive) =>
+          api.onMood((value) => {
+            if (value.mood === 'happy' && lastMood.current !== 'happy') {
+              setGesture('jump')
+              setGestureKey(++sequence.current)
+            }
+            receive(value)
+          }),
+        ({ mood: next }) => {
+          lastMood.current = next
+          setMood(next)
+        },
+      ),
       api.onGesture((g) => {
         setGesture(g)
         setGestureKey(++sequence.current)
       }),
     ]
-    void api.getPetSkin().then(setSkin).catch(console.error)
-    if (!embedded)
-      void api
-        .getMood()
-        .then((m) => {
-          lastMood.current = m.mood
-          setMood(m.mood)
-        })
-        .catch(console.error)
-    void api
-      .getSettings()
-      .then((s) => {
-        setSize(s.pet.scale)
-        setSpeed(s.pet.rate)
-        setWander(s.pet.wander)
-      })
-      .catch(console.error)
     const media = matchMedia('(prefers-reduced-motion: reduce)')
     const change = () => setReduced(media.matches)
     media.addEventListener('change', change)
-    api.ready()
+    if (!embedded) api.ready()
     return () => {
       off.forEach((f) => f())
       media.removeEventListener('change', change)

@@ -14,6 +14,7 @@ import {
   type UsageToday,
 } from '../../shared'
 import { api } from '../api'
+import { observeSnapshot } from '../shared-ui/synchronization'
 import { PetAvatar } from '../pet/PetAvatar'
 import { Icon } from '../shared-ui/Icon'
 import { prettyShortcut } from '../settings/Shortcuts'
@@ -95,20 +96,6 @@ export function TrayPanel() {
         else setUsage(undefined)
       })
       .catch(console.error)
-    void api.perceptionStatus().then(setPerception).catch(console.error)
-    void api.getMood().then(setMood).catch(console.error)
-    void api
-      .proactiveStatus()
-      .then((s) => {
-        setMissed(s.missed[0])
-        setNext(
-          s.reminders.find(
-            (r): r is Reminder & { at: number } =>
-              !r.done && r.kind === 'reminder' && r.at !== undefined,
-          ),
-        )
-      })
-      .catch(console.error)
     void api
       .listConversations()
       .then((list) => setLast(list.find((c) => c.messages > 0)))
@@ -133,11 +120,31 @@ export function TrayPanel() {
   useEffect(() => {
     load()
     const offState = api.onState(setState)
-    const offMood = api.onMood(setMood)
-    const offPerception = api.onPerceptionChanged(setPerception)
+    const offMood = observeSnapshot(api.getMood, api.onMood, setMood)
+    const offPerception = observeSnapshot(
+      api.perceptionStatus,
+      api.onPerceptionChanged,
+      setPerception,
+    )
+    const offProactive = observeSnapshot(
+      api.proactiveStatus,
+      api.onProactiveChanged,
+      (s) => {
+        setMissed(s.missed[0])
+        setNext(
+          s.reminders.find(
+            (r): r is Reminder & { at: number } =>
+              !r.done && r.kind === 'reminder' && r.at !== undefined,
+          ),
+        )
+      },
+    )
     const offMemory = api.onMemoryChanged(load)
     const open = () => {
       load()
+      offMood.refresh()
+      offPerception.refresh()
+      offProactive.refresh()
       setOpened((n) => n + 1)
       // Opening is not a keyboard visit; no focus ring on the first button.
       ;(document.activeElement as HTMLElement | null)?.blur()
@@ -147,6 +154,7 @@ export function TrayPanel() {
       offState()
       offMood()
       offPerception()
+      offProactive()
       offMemory()
       window.removeEventListener('focus', open)
     }

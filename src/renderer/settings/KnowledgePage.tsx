@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { KnowledgeFolder, KnowledgeStatus } from '../../shared'
 import { api } from '../api'
+import { observeSnapshot } from '../shared-ui/synchronization'
 
 const failure = (e: unknown) =>
   typeof e === 'string' ? e : e instanceof Error ? e.message : '操作失败'
@@ -23,11 +24,12 @@ export function KnowledgePage() {
   const [notice, setNotice] = useState('')
   const [open, setOpen] = useState<string>()
   useEffect(() => {
-    api
-      .knowledgeStatus()
-      .then(setStatus)
-      .catch((e: unknown) => setNotice(failure(e)))
-    return api.onKnowledgeChanged(setStatus)
+    return observeSnapshot(
+      api.knowledgeStatus,
+      api.onKnowledgeChanged,
+      setStatus,
+      (e) => setNotice(failure(e)),
+    )
   }, [])
   if (!status) return <p role="status">{notice || '正在读取…'}</p>
   const act = (work: Promise<KnowledgeStatus>) =>

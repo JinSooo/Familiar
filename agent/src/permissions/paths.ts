@@ -46,6 +46,11 @@ export async function forbiddenRoots(): Promise<string[]> {
   return [...credentialRoots(), ...roots]
 }
 
+/** Only the managed workspace may be writable inside Familiar's private data. */
+export function familiarWorkspaceDir(): string {
+  return normalizePath(join(dataDir, 'workspace'))
+}
+
 /**
  * Protected places a command names, best effort: paths written from ~, $HOME or the home folder
  * that fall in a forbidden root (or are a browser's password file), leaving out the workspace and
@@ -73,7 +78,10 @@ export async function protectedPathsIn(
     if (
       !credentialRoots().some((root) => within(path, root)) &&
       !browserSecret(path) &&
-      allowed.some((dir) => within(path, dir))
+      allowed.some((dir) => within(path, dir)) &&
+      (!roots.some((root) => within(path, root)) ||
+        within(path, familiarWorkspaceDir()) ||
+        readableFamiliarDirs().some((dir) => within(path, dir)))
     )
       continue
     if (roots.some((root) => within(path, root)) || browserSecret(path))

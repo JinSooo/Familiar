@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Chat } from './chat/Chat'
 import { Overlay } from './overlay/Overlay'
@@ -8,14 +9,18 @@ import { api } from './api'
 import './style.css'
 const kind = new URLSearchParams(location.search).get('window')
 document.body.className = `${kind}-window`
-api.onAppearance((opacity) =>
-  document.documentElement.style.setProperty(
-    '--panel-opacity',
-    String(opacity),
-  ),
-)
-createRoot(document.getElementById('root')!).render(
-  kind === 'pet' ? (
+function App() {
+  useEffect(() => {
+    const off = api.onAppearance((opacity) =>
+      document.documentElement.style.setProperty(
+        '--panel-opacity',
+        String(opacity),
+      ),
+    )
+    api.ready()
+    return off
+  }, [])
+  return kind === 'pet' ? (
     <Overlay />
   ) : kind === 'quick' ? (
     <Quick />
@@ -27,6 +32,6 @@ createRoot(document.getElementById('root')!).render(
     <Chat variant="window" />
   ) : (
     <Chat />
-  ),
-)
-api.ready()
+  )
+}
+createRoot(document.getElementById('root')!).render(<App />)

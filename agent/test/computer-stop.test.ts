@@ -12,6 +12,9 @@ import { settingsSchema } from '../../src/shared'
 
 // Load the real module with only its sensor path replaced; no global module mocks.
 async function fixture() {
+  let idle: (() => void) | undefined
+  let launches = 0
+  const idleToken = {} as ReturnType<typeof setTimeout>
   const dir = await mkdtemp(join(tmpdir(), 'familiar-control-stop-'))
   const helper = join(dir, 'helper')
   const log = join(dir, 'requests')
@@ -36,18 +39,35 @@ async function fixture() {
     'sensorPath',
     'AsyncLocalStorage',
     'delay',
+    'setTimeout',
+    'clearTimeout',
     `${js}\nreturn {control,stopComputer,createComputerTools,setComputerHooks,endComputerTurn,withLatestScreenshot,withLatestWindowTree: typeof withLatestWindowTree === 'function' ? withLatestWindowTree : undefined};`,
   )(
-    spawn,
+    (...args: Parameters<typeof spawn>) => {
+      launches++
+      return spawn(...args)
+    },
     createInterface,
     tool,
     z,
     () => helper,
     AsyncLocalStorage,
     delay,
+    (callback: () => void, ms: number) => {
+      if (ms !== 5 * 60_000) return setTimeout(callback, ms)
+      idle = callback
+      return idleToken
+    },
+    (timer: ReturnType<typeof setTimeout>) => {
+      if (timer === idleToken) idle = undefined
+      else clearTimeout(timer)
+    },
   ) as typeof import('../src/computer')
   return {
     api,
+    idleArmed: () => idle !== undefined,
+    expireIdle: () => idle?.(),
+    launches: () => launches,
     requests: async () =>
       (await readFile(log, 'utf8').catch(() => ''))
         .trim()
@@ -170,6 +190,53 @@ test('window pruning keeps the latest Chat Completions screenshot injected once'
     expect(JSON.stringify(injected)).toContain('旧树')
   } finally {
     await f.api.endComputerTurn()
+    await f.close()
+  }
+})
+
+test('helper idle timeout starts after the last native reply, never during an action', async () => {
+  const f = await fixture()
+  try {
+    const action = f.api.control('read').catch(() => undefined)
+    expect(f.idleArmed()).toBe(false)
+    await action
+    expect(f.idleArmed()).toBe(true)
+    const next = f.api.control('apps').catch(() => undefined)
+    expect(f.idleArmed()).toBe(false)
+    await next
+    expect(f.idleArmed()).toBe(true)
+  } finally {
+    await f.close()
+  }
+})
+
+test('a cancelled request is not idle until its native cleanup replies', async () => {
+  const f = await fixture()
+  try {
+    const c = new AbortController()
+    const action = f.api
+      .control('read', {}, 1000, c.signal)
+      .catch((e: Error) => e.message)
+    await Bun.sleep(30)
+    c.abort()
+    expect(await action).toBe('已停止')
+    expect(f.idleArmed()).toBe(false)
+    await Bun.sleep(180)
+    expect(f.idleArmed()).toBe(true)
+  } finally {
+    await f.close()
+  }
+})
+
+test('a new request after idle shutdown gets a fresh helper immediately', async () => {
+  const f = await fixture()
+  try {
+    await f.api.control('apps')
+    f.expireIdle()
+    const next = f.api.control('apps').catch((e: Error) => e.message)
+    expect(f.launches()).toBe(2)
+    expect(await next).toEqual([])
+  } finally {
     await f.close()
   }
 })

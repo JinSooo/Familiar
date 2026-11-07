@@ -4,6 +4,7 @@ import type { Settings } from '../../../src/shared'
 import {
   browserSecret,
   credentialRoots,
+  familiarWorkspaceDir,
   forbiddenRoots,
   normalizePath,
   protectedPathsIn,
@@ -121,20 +122,28 @@ export async function decideToolCall(
     if (typeof value !== 'string' || !value) return result('deny', '路径无效')
     const path = normalizePath(value, workspace)
     resolvedPath = path
-    // ~/.familiar is off limits except the workspace (read-write) and the folders the model may
-    // read: memory, conversations, knowledge, skills. Config such as mcp.json stays out of reach.
+    // A broad workspace cannot grant access to Familiar's private or read-only data.
+    const readableDirs = readableFamiliarDirs()
     const familiarRead =
       (reads.has(call.toolName) || shell) &&
-      readableFamiliarDirs().some((dir) => within(path, dir))
-    const inWorkspace = within(path, workspace)
+      readableDirs.some((dir) => within(path, dir))
+    const familiarWrite =
+      within(path, workspace) && within(path, familiarWorkspaceDir())
     if (
       credentialRoots().some(
         (root) =>
           within(path, root) ||
           (call.toolName === 'delete_path' && within(root, path)),
       ) ||
+      (!reads.has(call.toolName) &&
+        !shell &&
+        readableDirs.some(
+          (dir) =>
+            within(path, dir) ||
+            (call.toolName === 'delete_path' && within(dir, path)),
+        )) ||
       (!familiarRead &&
-        !inWorkspace &&
+        !familiarWrite &&
         (await forbiddenRoots()).some(
           (root) =>
             within(path, root) ||

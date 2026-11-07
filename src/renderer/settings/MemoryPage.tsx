@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import type { MemoryItem } from '../../shared'
 import { api } from '../api'
+import { inputKey } from '../shared-ui/input'
 
 const targetLabel = {
   profile: '画像',
@@ -101,7 +102,9 @@ export function MemoryPage({ section }: { section: MemorySection }) {
                 setEditing({ id: item.id, text: e.target.value })
               }
               onKeyDown={(e) => {
-                if (e.key === 'Escape') {
+                if (e.key === 'Enter' && inputKey(e.nativeEvent) !== 'send')
+                  e.preventDefault()
+                if (inputKey(e.nativeEvent) === 'close') {
                   e.stopPropagation()
                   setEditing(undefined)
                 }

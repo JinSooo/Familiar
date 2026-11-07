@@ -44,10 +44,37 @@ private final class ControlCancellation {
 }
 private let cancellation = ControlCancellation()
 
+private func allowApp(_ app: NSRunningApplication) throws {
+  guard !app.isTerminated, let bundle = app.bundleIdentifier else {
+    throw fail("无法确认目标应用")
+  }
+  if blockedApps.contains(bundle) || app.processIdentifier == getpid() {
+    throw fail("「\(app.localizedName ?? "这个应用")」不能操作（钥匙串、密码和 Familiar 自己永远不碰）")
+  }
+}
+
+/// Recheck the live owner and ancestry, not just the cached element number.
+private func allowElement(_ element: AXUIElement) throws {
+  var node: AXUIElement? = element
+  for _ in 0..<64 {
+    guard let current = node else { return }
+    var pid: pid_t = 0
+    guard AXUIElementGetPid(current, &pid) == .success,
+      let app = NSRunningApplication(processIdentifier: pid),
+      let role = axString(current, kAXRoleAttribute), !role.isEmpty
+    else { throw fail("元素已失效，先用 read_window 重新读取") }
+    try allowApp(app)
+    if isSecure(current) { throw fail("那是密码框，不能读取或操作") }
+    node = axElement(current, kAXParentAttribute)
+  }
+  throw fail("无法确认元素所属的窗口，先用 read_window 重新读取")
+}
+
 /// Window order is front to back; ignore only the helper's non-interactive cursor.
 private func allowPoint(_ point: CGPoint) throws {
   guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
     as? [[String: Any]] else { throw fail("无法确认这个坐标所属的应用") }
+  var root = AXUIElementCreateSystemWide()
   for window in windows {
     guard let pid = window[kCGWindowOwnerPID as String] as? Int32, pid != getpid(),
       (window[kCGWindowAlpha as String] as? Double ?? 1) > 0,
@@ -57,11 +84,16 @@ private func allowPoint(_ point: CGPoint) throws {
     guard let app = NSRunningApplication(processIdentifier: pid) else {
       throw fail("无法确认这个坐标所属的应用")
     }
-    if blockedApps.contains(app.bundleIdentifier ?? "") {
-      throw fail("「\(app.localizedName ?? "这个应用")」不能操作（钥匙串、密码和 Familiar 自己永远不碰）")
-    }
-    return
+    try allowApp(app)
+    root = AXUIElementCreateApplication(pid)
+    break
   }
+  // Hit-test the actual owner, excluding our click-through overlay.
+  var element: AXUIElement?
+  guard AXUIElementCopyElementAtPosition(root, Float(point.x), Float(point.y), &element) == .success,
+    let element
+  else { throw fail("无法确认这个坐标的界面元素") }
+  try allowElement(element)
 }
 
 private func reply(_ fields: [String: Any]) {
@@ -134,9 +166,7 @@ private func findApp(_ query: String?) throws -> Target {
     app = NSWorkspace.shared.frontmostApplication
   }
   guard let app else { throw fail("没有在运行的「\(query ?? "")」，先用 open_app 打开它") }
-  if blockedApps.contains(app.bundleIdentifier ?? "") {
-    throw fail("「\(app.localizedName ?? "这个应用")」不能操作（钥匙串、密码和 Familiar 自己永远不碰）")
-  }
+  try allowApp(app)
   let element = AXUIElementCreateApplication(app.processIdentifier)
   AXUIElementSetMessagingTimeout(element, 3)
   // Chromium and Electron apps only build their tree when asked.
@@ -164,6 +194,7 @@ private func window(of target: Target, index: Int?) throws -> AXUIElement {
 /// Brings the app forward through Accessibility (works from a background helper, unlike activate()).
 private func bringForward(_ target: Target, window: AXUIElement? = nil) throws {
   try cancellation.check()
+  try allowApp(target.app)
   if target.app.isHidden { target.app.unhide() }
   AXUIElementSetAttributeValue(target.element, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
   if let window {
@@ -197,7 +228,8 @@ private func label(_ element: AXUIElement) -> String {
       return s
     }
   }
-  if let title = axElement(element, kAXTitleUIElementAttribute), let s = axString(title, kAXValueAttribute),
+  if let title = axElement(element, kAXTitleUIElementAttribute),
+    (try? allowElement(title)) != nil, let s = axString(title, kAXValueAttribute),
     !s.isEmpty
   {
     return s
@@ -226,18 +258,20 @@ private func readWindow(_ target: Target, _ window: AXUIElement, limit: Int) -> 
     let role = axString(element, kAXRoleAttribute) ?? ""
     if skippedRoles.contains(role) { return }
     if let hidden = axAttribute(element, "AXHidden") as? Bool, hidden { return }
+    if isSecure(element) { return }
+    var owner: pid_t = 0
+    guard AXUIElementGetPid(element, &owner) == .success, owner == target.app.processIdentifier else { return }
     let name = label(element)
-    let secure = isSecure(element)
     let actions = axActions(element).filter { $0 != "AXScrollToVisible" && $0 != "AXShowAlternateUI" }
     let input = inputRoles.contains(role)
-    var value = secure ? nil : axString(element, kAXValueAttribute)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    var value = axString(element, kAXValueAttribute)?.trimmingCharacters(in: .whitespacesAndNewlines)
     if value == name { value = nil }
     // A bare number with nothing to press is layout (ruler markers, splitters), not content.
     if name.isEmpty && actions.isEmpty && !input && role != "AXStaticText", let v = value, Double(v) != nil {
       value = nil
     }
     let useful =
-      !name.isEmpty || !(value ?? "").isEmpty || input || secure
+      !name.isEmpty || !(value ?? "").isEmpty || input
       || (!actions.isEmpty && role != "AXGroup" && role != "AXScrollArea" && role != "AXSplitGroup")
     var childDepth = depth
     if useful && role != "AXWindow" {
@@ -250,7 +284,6 @@ private func readWindow(_ target: Target, _ window: AXUIElement, limit: Int) -> 
       }
       if !name.isEmpty { node["label"] = clip(name, 120) }
       if let value, !value.isEmpty { node["value"] = clip(value, role == "AXStaticText" ? 300 : 200) }
-      if secure { node["secure"] = true }
       if let enabled = axAttribute(element, kAXEnabledAttribute) as? Bool, !enabled { node["disabled"] = true }
       if let selected = axAttribute(element, kAXSelectedAttribute) as? Bool, selected { node["selected"] = true }
       if let focused, CFEqual(focused, element) { node["focused"] = true }
@@ -295,7 +328,14 @@ private func appList() -> [[String: Any]] {
 // control, which the user approves: then the app comes forward and the real pointer and keyboard
 // are used, and Esc stops it.
 
-private final class Mode { var global = false }
+private final class Mode {
+  private let lock = NSLock()
+  private var value = false
+  var global: Bool {
+    get { lock.lock(); defer { lock.unlock() }; return value }
+    set { lock.lock(); value = newValue; lock.unlock() }
+  }
+}
 private let mode = Mode()
 /// Marks the events we post, so the Esc watch in global control ignores our own keys.
 let ourEvents: Int64 = 0x4641_4D49
@@ -306,6 +346,13 @@ private func registered(_ id: Int) throws -> (Target, AXUIElement) {
     throw fail("元素 \(id) 已过期或不存在，先用 read_window 重新读一次")
   }
   guard let app = NSRunningApplication(processIdentifier: pid) else { throw fail("那个应用已经退出了") }
+  try allowApp(app)
+  var owner: pid_t = 0
+  guard AXUIElementGetPid(element, &owner) == .success, owner == pid else {
+    throw fail("元素所属的应用已改变，先用 read_window 重新读取")
+  }
+  try allowElement(element)
+  if let window = axElement(element, kAXWindowAttribute) { try allowElement(window) }
   let appElement = AXUIElementCreateApplication(pid)
   AXUIElementSetMessagingTimeout(appElement, 3)
   return (Target(app: app, element: appElement), element)
@@ -346,8 +393,13 @@ private func hid(_ event: CGEvent?) {
   event?.post(tap: .cghidEventTap)
 }
 /// Keyboard events: the real keyboard in global control, else that app's process only.
-private func key(_ event: CGEvent?, _ pid: pid_t) {
+private func key(_ event: CGEvent?, _ pid: pid_t) throws {
   guard let event else { return }
+  // Always release a posted key, even if focus changed or cancellation arrived.
+  if event.type == .keyDown {
+    try cancellation.check()
+    try allowKeyboard(pid)
+  }
   event.setIntegerValueField(.eventSourceUserData, value: ourEvents)
   if mode.global { event.post(tap: .cghidEventTap) } else { event.postToPid(pid) }
 }
@@ -384,6 +436,7 @@ private func pressableNear(_ element: AXUIElement) throws -> (AXUIElement, Strin
   for _ in 0..<4 {
     guard let current = node else { break }
     try cancellation.check()
+    try allowElement(current)
     let role = axString(current, kAXRoleAttribute) ?? ""
     if role == "AXWindow" || role == "AXApplication" { break }
     if let how = press(current), covers(current) { return (current, how) }
@@ -398,6 +451,8 @@ private func pressableNear(_ element: AXUIElement) throws -> (AXUIElement, Strin
   var queue: [(AXUIElement, Int)] = axChildren(element).map { ($0, 1) }
   while !queue.isEmpty {
     let (e, depth) = queue.removeFirst()
+    try cancellation.check()
+    if (try? allowElement(e)) == nil { continue }
     if let how = press(e), covers(e) { return (e, how) }
     if depth < 3 { queue.append(contentsOf: axChildren(e).map { ($0, depth + 1) }) }
   }
@@ -419,6 +474,7 @@ private func click(_ request: [String: Any]) throws -> String {
     let actions = axActions(element)
     try arrive(center(element))
     try cancellation.check()
+    try allowElement(element)
     if button == "left" && count == 1 {
       for action in ["AXPress", "AXConfirm", "AXPick", "AXOpen"] where actions.contains(action) {
         try cancellation.check()
@@ -429,6 +485,7 @@ private func click(_ request: [String: Any]) throws -> String {
       }
     }
     try cancellation.check()
+    try allowElement(element)
     if button == "left" && count == 1 {
       if inputRoles.contains(axString(element, kAXRoleAttribute) ?? ""),
         AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue) == .success
@@ -474,6 +531,7 @@ private func click(_ request: [String: Any]) throws -> String {
   if shot.pid != 0, let app = NSRunningApplication(processIdentifier: shot.pid) {
     try bringForward(try findApp(app.bundleIdentifier))
   }
+  try allowPoint(point)
   try arrive(point)
   try realClick(point, button: button, count: count)
   cursor.pulse()
@@ -537,8 +595,17 @@ private let modifierFlags: [String: CGEventFlags] = [
   "alt": .maskAlternate, "ctrl": .maskControl, "control": .maskControl, "fn": .maskSecondaryFn,
 ]
 
-private func focusedIsSecure(_ target: Target) -> Bool {
-  axElement(target.element, kAXFocusedUIElementAttribute).map(isSecure) ?? false
+private func allowKeyboard(_ pid: pid_t) throws {
+  guard let app = NSRunningApplication(processIdentifier: pid) else { throw fail("那个应用已经退出了") }
+  try allowApp(app)
+  if mode.global && NSWorkspace.shared.frontmostApplication?.processIdentifier != pid {
+    throw fail("前台应用已改变，已停止按键，先重新读取窗口")
+  }
+  let root = AXUIElementCreateApplication(pid)
+  guard let focused = axElement(root, kAXFocusedUIElementAttribute) else {
+    throw fail("无法确认键盘焦点，先用 read_window 重新读取")
+  }
+  try allowElement(focused)
 }
 
 private func pressKeys(_ request: [String: Any]) throws -> String {
@@ -559,14 +626,13 @@ private func pressKeys(_ request: [String: Any]) throws -> String {
   }
   guard let code else { throw fail("「\(keys)」里没有主键") }
   if mode.global { try bringForward(target) }
-  // A shortcut can't leak a password, but typed characters could: plain keys skip secure fields.
-  if flags.isEmpty && code < 50 && focusedIsSecure(target) { throw fail("焦点在密码框里，不往里输入") }
+  try allowKeyboard(target.app.processIdentifier)
   try arrive(cursor.isPlaced ? nil : windowCenter(target))
   try cancellation.check()
   for down in [true, false] {
     let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)
     event?.flags = flags
-    key(event, target.app.processIdentifier)
+    try key(event, target.app.processIdentifier)
     usleep(20_000)
   }
   return "已在「\(target.name)」按下 \(keys)"
@@ -579,21 +645,23 @@ private func keystrokes(_ text: String, _ pid: pid_t) throws {
     var start = 0
     while start < units.count {
       try cancellation.check()
-      let chunk = Array(units[start..<min(start + 16, units.count)])
+      var end = min(start + 16, units.count)
+      if end < units.count && (0xD800...0xDBFF).contains(units[end - 1]) { end -= 1 }
+      let chunk = Array(units[start..<end])
       for down in [true, false] {
         let event = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: down)
         event?.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: chunk)
-        key(event, pid)
+        try key(event, pid)
       }
       usleep(12_000)
-      start += 16
+      start = end
     }
     if n < lines.count - 1 {
       try cancellation.check()
       for down in [true, false] {
         let event = CGEvent(keyboardEventSource: nil, virtualKey: 36, keyDown: down)
         event?.flags = .maskShift
-        key(event, pid)
+        try key(event, pid)
       }
       usleep(12_000)
     }
@@ -609,6 +677,7 @@ private func typeText(_ request: [String: Any]) throws -> String {
     if isSecure(element) { throw fail("那是密码框，不往里输入") }
     try arrive(center(element))
     try cancellation.check()
+    try allowElement(element)
     if mode.global {
       try bringForward(target)
       try cancellation.check()
@@ -638,7 +707,7 @@ private func typeText(_ request: [String: Any]) throws -> String {
     try arrive(cursor.isPlaced ? nil : windowCenter(target))
   }
   try cancellation.check()
-  if focusedIsSecure(target) { throw fail("焦点在密码框里，不往里输入") }
+  try allowKeyboard(target.app.processIdentifier)
   try keystrokes(text, target.app.processIdentifier)
   return "已在「\(target.name)」输入 \(text.count) 个字"
 }
@@ -651,6 +720,7 @@ private func setValue(_ request: [String: Any]) throws -> String {
   if isSecure(element) { throw fail("那是密码框，不往里填") }
   try arrive(center(element))
   try cancellation.check()
+  try allowElement(element)
   let result = AXUIElementSetAttributeValue(element, kAXValueAttribute as CFString, value as CFString)
   guard result == .success else { throw fail("这个元素的值改不了（\(result.rawValue)），可以点它再用 type_text 输入") }
   return "已把「\(registry.elements[id]?.2 ?? "")」设为「\(clip(value, 60))」"
@@ -691,18 +761,24 @@ private func scroll(_ request: [String: Any]) throws -> String {
     element = try window(of: target, index: request["window"] as? Int)
     name = target.name
   }
+  try allowElement(element)
   let point = center(element)
   try arrive(point)
   let words = ["up": "上", "left": "左", "right": "右"][direction] ?? "下"
   if !mode.global {
     // In the background: move the scroll bar through Accessibility, about a tenth per 5 lines.
     let horizontal = direction == "left" || direction == "right"
-    guard let bar = scrollBar(element, horizontal: horizontal),
-      let current = axAttribute(bar, kAXValueAttribute) as? Double
-    else { throw fail("「\(name)」在后台滚不了（找不到滚动条）。\(needsGlobal)") }
+    guard let bar = scrollBar(element, horizontal: horizontal) else {
+      throw fail("「\(name)」在后台滚不了（找不到滚动条）。\(needsGlobal)")
+    }
+    try allowElement(bar)
+    guard let current = axAttribute(bar, kAXValueAttribute) as? Double else {
+      throw fail("「\(name)」在后台滚不了（读不到滚动条的位置）。\(needsGlobal)")
+    }
     let sign: Double = direction == "up" || direction == "left" ? -1 : 1
     let next = min(1, max(0, current + sign * Double(amount) * 0.02))
     try cancellation.check()
+    try allowElement(bar)
     let result = AXUIElementSetAttributeValue(bar, kAXValueAttribute as CFString, next as CFNumber)
     guard result == .success else { throw fail("「\(name)」在后台滚不了（\(result.rawValue)）。\(needsGlobal)") }
     return "已在「\(name)」往\(words)滚动（位置 \(Int(current * 100))% → \(Int(next * 100))%）"
@@ -729,17 +805,23 @@ private func openApp(_ request: [String: Any]) throws -> String {
   guard let name = request["app"] as? String, !name.isEmpty else { throw fail("要给应用名或 bundle id") }
   let url: URL? =
     NSWorkspace.shared.urlForApplication(withBundleIdentifier: name)
+    ?? NSWorkspace.shared.runningApplications.first {
+      $0.localizedName?.caseInsensitiveCompare(name) == .orderedSame
+    }?.bundleURL
     ?? ["/Applications", "/System/Applications", "/System/Applications/Utilities", "/Applications/Utilities",
       NSHomeDirectory() + "/Applications"]
     .map { URL(fileURLWithPath: "\($0)/\(name).app") }
     .first { FileManager.default.fileExists(atPath: $0.path) }
-  if let bundle = url.flatMap({ Bundle(url: $0)?.bundleIdentifier }), blockedApps.contains(bundle) {
+  guard let url, let bundle = Bundle(url: url)?.bundleIdentifier else {
+    throw fail("无法确认应用「\(name)」的身份，请用完整应用名或 bundle id")
+  }
+  if blockedApps.contains(bundle) {
     throw fail("这个应用不能操作（钥匙串、密码和 Familiar 自己永远不碰）")
   }
   let open = Process()
   open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
   // -g: launch or reopen without bringing it forward, so the user keeps what they are doing.
-  open.arguments = (mode.global ? [] : ["-g"]) + (url.map { [$0.path] } ?? ["-a", name])
+  open.arguments = (mode.global ? [] : ["-g"]) + [url.path]
   open.standardError = FileHandle.nullDevice
   try cancellation.check()
   try open.run()
@@ -747,7 +829,7 @@ private func openApp(_ request: [String: Any]) throws -> String {
   guard open.terminationStatus == 0 else { throw fail("找不到应用「\(name)」") }
   for _ in 0..<50 {
     try cancellation.check()
-    if let target = try? findApp(url.flatMap { Bundle(url: $0)?.bundleIdentifier } ?? name),
+    if let target = try? findApp(bundle),
       !windows(of: target).isEmpty
     {
       if mode.global { try bringForward(target) }
@@ -897,6 +979,7 @@ func runControl() -> Never {
           case "read":
             let target = try findApp(request["app"] as? String)
             let w = try window(of: target, index: request["window"] as? Int)
+            try allowElement(w)
             // Only when the model asked to read (not the re-read after each action).
             if request["shown"] as? Bool == true { try arrive(center(w)) }
             result = readWindow(target, w, limit: request["limit"] as? Int ?? 400)
@@ -918,7 +1001,12 @@ func runControl() -> Never {
         }
       }
     }
-    exit(0)
+    cancellation.cancel()
+    // Drain the serial worker so held keys/buttons are released before exit.
+    worker.async {
+      cursor.hide()
+      exit(0)
+    }
   }
   // Esc from the user (not one we posted) stops global control. An event tap, not an NSEvent
   // monitor: those only fire inside NSApp.run(), and this loop is a plain run loop. A default

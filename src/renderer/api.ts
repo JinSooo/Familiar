@@ -1,6 +1,9 @@
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { IPC, type FamiliarAPI } from '../shared'
+import { createListenerBarrier } from './shared-ui/synchronization'
+
+const listeners = createListenerBarrier()
 
 export function subscribe<T>(
   channel: string,
@@ -8,15 +11,17 @@ export function subscribe<T>(
 ): () => void {
   let cancelled = false
   let unlisten: (() => void) | undefined
-  void getCurrentWebviewWindow()
-    .listen<T>(channel, (event) => {
-      if (!cancelled) callback(event.payload)
-    })
-    .then((off) => {
-      if (cancelled) off()
-      else unlisten = off
-    })
-    .catch(console.error)
+  void listeners.track(
+    getCurrentWebviewWindow()
+      .listen<T>(channel, (event) => {
+        if (!cancelled) callback(event.payload)
+      })
+      .then((off) => {
+        if (cancelled) off()
+        else unlisten = off
+      })
+      .catch(console.error),
+  )
   return () => {
     if (cancelled) return
     cancelled = true
@@ -24,7 +29,9 @@ export function subscribe<T>(
   }
 }
 function request<T>(channel: string, ...args: unknown[]): Promise<T> {
-  return invoke<T>('familiar_invoke', { channel, args })
+  return listeners
+    .wait()
+    .then(() => invoke<T>('familiar_invoke', { channel, args }))
 }
 function send(channel: string, ...args: unknown[]): void {
   void request(channel, ...args).catch(console.error)
@@ -83,7 +90,7 @@ export const api: FamiliarAPI = {
   toggleChat: () => send(IPC.toggleChat),
   dismissChat: () => send(IPC.chatDismiss),
   openMainWindow: () => send(IPC.mainOpen),
-  ready: () => send(IPC.ready),
+  ready: () => listeners.ready(() => send(IPC.ready)),
   onEvent: (cb) => subscribe(IPC.agentEvent, cb),
   onState: (cb) => subscribe(IPC.petState, cb),
   onView: (cb) => subscribe(IPC.view, cb),

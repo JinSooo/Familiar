@@ -2,6 +2,8 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import type { Source } from '../../shared'
 import { api } from '../api'
+import { inputKey } from '../shared-ui/input'
+import { chartSpec, restrictChartLoader, asyncResource } from './visual-safety'
 
 /**
  * Rich pieces of a reply: Mermaid diagrams, Vega-Lite charts, web images with a viewer, and
@@ -19,6 +21,10 @@ function Fallback({ code, error }: { code: string; error: string }) {
 }
 
 export function MermaidDiagram({ code }: { code: string }) {
+  return <MermaidContent key={code} code={code} />
+}
+
+function MermaidContent({ code }: { code: string }) {
   const id = `m${useId().replace(/[^a-zA-Z0-9]/g, '')}`
   const [svg, setSvg] = useState('')
   const [error, setError] = useState('')
@@ -27,6 +33,7 @@ export function MermaidDiagram({ code }: { code: string }) {
     void (async () => {
       try {
         const { default: mermaid } = await import('mermaid')
+        if (cancelled) return
         // strict: no click handlers or HTML labels from the model's text.
         mermaid.initialize({
           startOnLoad: false,
@@ -56,14 +63,18 @@ export function MermaidDiagram({ code }: { code: string }) {
 }
 
 export function VegaChart({ code }: { code: string }) {
+  return <VegaContent key={code} code={code} />
+}
+
+function VegaContent({ code }: { code: string }) {
   const box = useRef<HTMLDivElement>(null)
   const [error, setError] = useState('')
   useEffect(() => {
-    let finalize: (() => void) | undefined
+    const resource = asyncResource()
     let cancelled = false
     void (async () => {
       try {
-        const spec = JSON.parse(code) as Record<string, unknown>
+        const spec = chartSpec(code)
         const [{ default: embed }, { expressionInterpreter }, vega] =
           await Promise.all([
             import('vega-embed'),
@@ -72,8 +83,7 @@ export function VegaChart({ code }: { code: string }) {
           ])
         if (cancelled || !box.current) return
         // Charts only draw the data written into them: no fetching URLs from a model's spec.
-        const loader = vega.loader()
-        loader.load = () => Promise.reject(new Error('图表不能读取外部数据'))
+        const loader = restrictChartLoader(vega.loader())
         const result = await embed(
           box.current,
           {
@@ -92,7 +102,7 @@ export function VegaChart({ code }: { code: string }) {
             config: { background: 'transparent' },
           },
         )
-        finalize = () => result.finalize()
+        resource.accept(() => result.finalize())
       } catch (e) {
         if (!cancelled)
           setError(
@@ -102,7 +112,7 @@ export function VegaChart({ code }: { code: string }) {
     })()
     return () => {
       cancelled = true
-      finalize?.()
+      resource.dispose()
     }
   }, [code])
   if (error) return <Fallback code={code} error={error} />
@@ -156,7 +166,7 @@ export function ImageViewer() {
     if (!image) return
     // Capture phase: Esc closes the viewer before the window's own Esc handling runs.
     const key = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
+      if (inputKey(e) !== 'close') return
       e.stopImmediatePropagation()
       setImage(undefined)
     }

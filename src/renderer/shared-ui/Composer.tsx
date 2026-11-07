@@ -1,23 +1,20 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Icon } from './Icon'
 import { api } from '../api'
 import { fileKind } from '../chat/Attachments'
 
-/** Same limits as the agent: ten files, 20 MB each. */
-const maxFiles = 10
-const maxBytes = 20 * 1024 * 1024
-interface Pending {
-  file: File
-  /** Object URL for image thumbnails. */
-  preview?: string
-}
-const toBase64 = async (file: File) => {
-  const bytes = new Uint8Array(await file.arrayBuffer())
-  let binary = ''
-  for (let i = 0; i < bytes.length; i += 0x8000)
-    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
-  return btoa(binary)
-}
+import {
+  maxFiles,
+  maxBytes,
+  limitFiles,
+  sendError,
+  inputKey,
+  createDraftStore,
+  sendDraft,
+  type Pending,
+} from './input'
+const draft = createDraftStore()
+
 export function Composer({
   running,
   mini = false,
@@ -39,9 +36,21 @@ export function Composer({
   /** The quick-ask bar: several lines, files, and Esc closes it. */
   quick?: boolean
 }) {
-  const [input, setInput] = useState('')
-  const [error, setError] = useState('')
-  const [files, setFiles] = useState<Pending[]>([])
+  const {
+    input,
+    files,
+    error = '',
+  } = useSyncExternalStore(draft.subscribe, draft.get)
+  const setInput = (next: string | ((current: string) => string)) =>
+    draft.set({
+      ...draft.get(),
+      input: typeof next === 'function' ? next(draft.get().input) : next,
+    })
+  const setFiles = (next: Pending[] | ((current: Pending[]) => Pending[])) => {
+    const files = typeof next === 'function' ? next(draft.get().files) : next
+    draft.set({ ...draft.get(), files })
+  }
+  const setError = (error: string) => draft.set({ ...draft.get(), error })
   const [dragging, setDragging] = useState(false)
   const picker = useRef<HTMLInputElement>(null)
   const addFiles = (list: Iterable<File>) => {
@@ -61,7 +70,14 @@ export function Composer({
     setFiles((old) => {
       const all = [...old, ...next]
       if (all.length > maxFiles) setError(`一次最多 ${maxFiles} 个文件`)
-      return all.slice(0, maxFiles)
+      return [
+        ...old,
+        ...limitFiles(
+          next,
+          URL.revokeObjectURL,
+          Math.max(0, maxFiles - old.length),
+        ),
+      ]
     })
   }
   const removeFile = (i: number) =>
@@ -87,8 +103,9 @@ export function Composer({
   // The capsule cannot take a second message mid-turn, so it shows progress instead of an idle field.
   const working = mini && running
   useEffect(() => {
-    return () => api.typing(false)
-  }, [])
+    api.typing(Boolean(input || files.length))
+  }, [input, files.length])
+  useEffect(() => () => api.typing(false), [])
   useEffect(() => {
     if (!working) (quick ? area.current : field.current)?.focus()
   }, [working, quick])
@@ -146,36 +163,27 @@ export function Composer({
         // The quick bar has no title bar: its empty edges are where it is dragged.
         data-tauri-drag-region={quick ? '' : undefined}
         onKeyDown={(e) => {
-          if (e.key === 'Escape' && mini) api.capsule(false)
-          if (e.key === 'Escape' && quick) api.hideQuick()
+          if (inputKey(e.nativeEvent) === 'close' && mini) api.capsule(false)
         }}
         onSubmit={async (e) => {
           e.preventDefault()
-          if ((!input.trim() && !files.length) || running || busy.current)
+          if (
+            (!input.trim() && !files.length) ||
+            running ||
+            busy.current ||
+            draft.sending
+          )
             return
           const text = input.trim()
-          const sending = files
           setError('')
           busy.current = true
           lastSent.current = text
           api.typing(false)
           try {
-            const uploads = await Promise.all(
-              sending.map(async (f) => ({
-                name: f.file.name,
-                data: await toBase64(f.file),
-              })),
-            )
-            setInput('')
-            setFiles([])
-            await api.run(text, uploads)
-            for (const f of sending)
-              if (f.preview) URL.revokeObjectURL(f.preview)
+            await sendDraft(draft, api.run)
           } catch (err) {
-            setInput(text)
-            setFiles(sending)
             lastSent.current = ''
-            setError(err instanceof Error ? err.message : '没发出去，再试一次')
+            setError(sendError(err))
           } finally {
             busy.current = false
           }
@@ -240,14 +248,12 @@ export function Composer({
             value={input}
             onChange={(e) => {
               setInput(e.target.value)
-              api.typing(Boolean(e.target.value))
               e.target.style.height = 'auto'
               e.target.style.height = `${Math.min(e.target.scrollHeight, 132)}px`
             }}
             onKeyDown={(e) => {
               // Enter sends, Shift+Enter breaks the line; Enter that confirms an IME choice does neither.
-              if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing)
-                return
+              if (inputKey(e.nativeEvent) !== 'send') return
               e.preventDefault()
               e.currentTarget.form?.requestSubmit()
             }}
@@ -266,10 +272,9 @@ export function Composer({
             value={input}
             onChange={(e) => {
               setInput(e.target.value)
-              api.typing(Boolean(e.target.value))
             }}
             onKeyDown={(e) => {
-              if (e.nativeEvent.isComposing && e.key === 'Enter')
+              if (e.key === 'Enter' && inputKey(e.nativeEvent) !== 'send')
                 e.preventDefault()
             }}
             onPaste={(e) => {

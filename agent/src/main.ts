@@ -437,6 +437,8 @@ async function refreshMood() {
   }
 }
 function refreshState(force = false) {
+  // Windows that draw the pet from its state: the pet, the menu bar panel, both chat views.
+  const petStateWindows = ['pet', 'panel', 'chat', 'main'] as const
   // A proactive bubble waiting for an answer keeps the pet in its waiting pose, like an approval.
   const next = resolveState({
     ...activity,
@@ -444,8 +446,8 @@ function refreshState(force = false) {
   }) as PetState
   if (force || next !== state) {
     state = next
-    emit(IPC.petState, state, 'pet')
-    emit(IPC.petState, state, 'panel')
+    // The chat panel and the big window show the reading pet while thinking.
+    for (const target of petStateWindows) emit(IPC.petState, state, target)
   }
 }
 function setCapsule(open: boolean) {
@@ -923,7 +925,8 @@ async function request(
       requireSender(window, ['chat', 'pet', 'main', 'quick'])
       return run(window, input, args[1])
     case IPC.agentResend:
-      requireSender(window, ['chat', 'main'])
+      // The quick bar's 重试 and 重新生成 resend too.
+      requireSender(window, ['chat', 'main', 'quick'])
       return resend(window, input, args[1])
     case IPC.conversationsBranch:
       requireSender(window, ['chat', 'main'])

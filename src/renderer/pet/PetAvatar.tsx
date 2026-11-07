@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { PetSkin } from '../../shared'
 import { api } from '../api'
+import { observeSnapshot } from '../shared-ui/synchronization'
 
 /**
  * Static first idle frame for small headers. A canvas animation in a webview that starts hidden
@@ -9,8 +10,7 @@ import { api } from '../api'
 export function PetAvatar({ size = 24 }: { size?: number }) {
   const [skin, setSkin] = useState<PetSkin>()
   useEffect(() => {
-    void api.getPetSkin().then(setSkin).catch(console.error)
-    return api.onSkin(setSkin)
+    return observeSnapshot(api.getPetSkin, api.onSkin, setSkin)
   }, [])
   const scale = size / 208
   return (

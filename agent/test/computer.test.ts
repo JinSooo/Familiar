@@ -48,3 +48,11 @@ test('the typing step names what was typed', () => {
     '输入 「小黑来过」',
   )
 })
+
+// 2026-11-07 real run: the card read 「…不保存。。期间先别动鼠标键盘」.
+test('take_over approval text has one full stop after the reason', async () => {
+  const { describeComputerCall } = await import('../src/computer')
+  expect(describeComputerCall('take_over', { reason: '需要切到前台。' })).toBe(
+    '接管鼠标和键盘：需要切到前台。期间先别动鼠标键盘，按 Esc 随时停止',
+  )
+})

@@ -9,6 +9,12 @@ import { api } from '../api'
 import { Pet } from '../pet/Pet'
 import { PetAvatar } from '../pet/PetAvatar'
 import { Composer } from '../shared-ui/Composer'
+import {
+  inputKey,
+  activeEdit,
+  submitEdit,
+  type MessageEdit as EditTarget,
+} from '../shared-ui/input'
 import { Attachments } from './Attachments'
 import { useSession } from '../shared-ui/session'
 import { needsModelSetup, useTurnStatus } from '../shared-ui/status'
@@ -20,12 +26,14 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
   useEffect(() => api.onState(setState), [])
   const [view, setView] = useState<ChatView>('chat')
   const [openError, setOpenError] = useState('')
-  /** The user message being edited, by index. */
-  const [editing, setEditing] = useState<number>()
+  const [edit, setEditing] = useState<EditTarget>()
+  const editing = activeEdit(session, edit)
   const [actionError, setActionError] = useState('')
   const act = (work: Promise<unknown>, fallback: string) => {
     setActionError('')
-    work.catch((e) => setActionError(errorText(e, fallback)))
+    return work
+      .then(() => {})
+      .catch((e) => setActionError(errorText(e, fallback)))
   }
   /** The user message a reply answers: the nearest one before it. */
   const askedBefore = (i: number) =>
@@ -34,7 +42,7 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
   // Esc steps out: history → chat, then the whole panel and capsule close at once.
   useEffect(() => {
     const escape = (e: KeyboardEvent) => {
-      if (big || e.key !== 'Escape' || e.isComposing) return
+      if (big || inputKey(e) !== 'close') return
       if (view === 'history') setView('chat')
       else api.dismissChat()
     }
@@ -51,17 +59,24 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
   const pinned = useRef(true)
   useEffect(() => {
     const update = () => {
-      void api.getSettings().then((s) => {
-        setName(s.pet.name)
-        setToolView(s.toolView)
-        setMode(
-          { ask: '每步都问', auto: '', full: '完全访问' }[s.permissionMode],
-        )
-      })
+      void api
+        .getSettings()
+        .then((s) => {
+          setName(s.pet.name)
+          setToolView(s.toolView)
+          setMode(
+            { ask: '每步都问', auto: '', full: '完全访问' }[s.permissionMode],
+          )
+        })
+        .catch(console.error)
     }
     update()
+    const off = api.onSkin(update)
     window.addEventListener('focus', update)
-    return () => window.removeEventListener('focus', update)
+    return () => {
+      off()
+      window.removeEventListener('focus', update)
+    }
   }, [])
   const status = useTurnStatus(session, name)
   const last = session.messages.at(-1)
@@ -219,8 +234,16 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
                       text={m.content}
                       onCancel={() => setEditing(undefined)}
                       onSend={(text) => {
-                        setEditing(undefined)
-                        act(api.resend(i, text), '重新发送失败')
+                        return act(
+                          submitEdit(
+                            () => api.resend(i, text),
+                            () =>
+                              setEditing((current) =>
+                                current === edit ? undefined : current,
+                              ),
+                          ),
+                          '重新发送失败',
+                        )
                       }}
                     />
                   ) : (
@@ -270,7 +293,14 @@ export function Chat({ variant = 'panel' }: { variant?: 'panel' | 'window' }) {
                         align={m.role === 'user' ? 'end' : 'start'}
                         text={m.content}
                         onEdit={
-                          m.role === 'user' ? () => setEditing(i) : undefined
+                          m.role === 'user'
+                            ? () =>
+                                setEditing({
+                                  sessionId: session.id,
+                                  index: i,
+                                  original: m,
+                                })
+                            : undefined
                         }
                         onRegenerate={
                           m.role === 'assistant' && askedBefore(i) >= 0
@@ -445,11 +475,18 @@ function EditMessage({
   onCancel,
 }: {
   text: string
-  onSend: (text: string) => void
+  onSend: (text: string) => Promise<void>
   onCancel: () => void
 }) {
   const [value, setValue] = useState(text)
-  const send = () => value.trim() && onSend(value.trim())
+  const pending = useRef(false)
+  const send = () => {
+    if (!value.trim() || pending.current) return
+    pending.current = true
+    void onSend(value.trim()).finally(() => {
+      pending.current = false
+    })
+  }
   return (
     <div className="message-edit">
       <textarea
@@ -459,11 +496,11 @@ function EditMessage({
         aria-label="修改消息"
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Escape') {
+          if (inputKey(e.nativeEvent) === 'close') {
             e.stopPropagation()
             onCancel()
           }
-          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+          if (inputKey(e.nativeEvent) === 'send') {
             e.preventDefault()
             send()
           }
@@ -499,7 +536,7 @@ export function Reply({
 }: {
   message: Session['messages'][number]
   tools: Session['tools']
-  /** How tool steps show: one line each, opened, or not at all (settings 对话过程). */
+  /** Tool steps are grouped, individual, or hidden; details start closed. */
   view?: ToolView
 }) {
   const parts = replyParts(

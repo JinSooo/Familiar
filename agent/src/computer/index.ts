@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
+import { setTimeout as delay } from 'node:timers/promises'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { tool, type ModelMessage, type ToolSet } from 'ai'
@@ -32,8 +34,12 @@ export const computerToolNames = new Set([
 interface Pending {
   resolve: (value: unknown) => void
   reject: (error: Error) => void
-  timer: ReturnType<typeof setTimeout>
+  proc: ChildProcess
+  send: () => void
+  cleanup: () => void
 }
+const executionSignal = new AsyncLocalStorage<AbortSignal | undefined>()
+let sending: number | undefined
 let child: ChildProcess | undefined
 let nextId = 1
 const pending = new Map<number, Pending>()
@@ -92,43 +98,76 @@ function launch(): ChildProcess {
     const waiting =
       message.id === undefined ? undefined : pending.get(message.id)
     if (!waiting) return
-    pending.delete(message.id!)
-    clearTimeout(waiting.timer)
+    waiting.cleanup()
     if (message.ok) waiting.resolve(message.result)
     else waiting.reject(new Error(message.error ?? '操作失败'))
   })
   proc.once('exit', () => {
     if (child === proc) child = undefined
-    for (const [id, waiting] of pending) {
-      clearTimeout(waiting.timer)
+    for (const waiting of pending.values()) {
+      if (waiting.proc !== proc) continue
+      waiting.cleanup()
       waiting.reject(new Error('操作程序退出了'))
-      pending.delete(id)
     }
   })
   return proc
 }
 
-/** One request to the control helper; requests run one at a time in the helper. */
+function dispatchNext(): void {
+  if (sending !== undefined) return
+  const next = pending.entries().next().value
+  if (!next) return
+  sending = next[0]
+  next[1].send()
+}
+
+/** Only one request is in flight; cancellation also removes requests not yet sent. */
 export function control<T>(
   op: string,
   args: Record<string, unknown> = {},
   timeoutMs = 30_000,
+  signal = executionSignal.getStore(),
 ): Promise<T> {
+  if (signal?.aborted) return Promise.reject(new Error('已停止'))
   clearTimeout(idleTimer)
   idleTimer = setTimeout(() => child?.kill(), idleMs)
   const proc = launch()
   const id = nextId++
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => {
+    const cleanup = () => {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', abort)
       pending.delete(id)
-      reject(new Error('操作超时'))
-    }, timeoutMs)
+      if (sending === id) sending = undefined
+      queueMicrotask(dispatchNext)
+    }
+    const cancel = (message: string) => {
+      if (sending === id && proc.stdin?.writable)
+        proc.stdin.write(JSON.stringify({ op: 'cancel', through: id }) + '\n')
+      cleanup()
+      reject(new Error(message))
+    }
+    const abort = () => cancel('已停止')
+    const timer = setTimeout(() => cancel('操作超时'), timeoutMs)
     pending.set(id, {
+      proc,
       resolve: (value) => resolve(value as T),
       reject,
-      timer,
+      cleanup,
+      send: () => {
+        proc.stdin!.write(
+          JSON.stringify({ id, op, ...args }) + '\n',
+          (error) => {
+            if (!error || !pending.has(id)) return
+            cleanup()
+            reject(error)
+          },
+        )
+      },
     })
-    proc.stdin!.write(JSON.stringify({ id, op, ...args }) + '\n')
+    signal?.addEventListener('abort', abort, { once: true })
+    if (signal?.aborted) abort()
+    else dispatchNext()
   })
 }
 
@@ -143,6 +182,7 @@ async function act<T>(
   args: Record<string, unknown>,
   timeoutMs?: number,
 ): Promise<T> {
+  executionSignal.getStore()?.throwIfAborted()
   if (!turn.cursor) {
     turn.cursor = true
     hooks.petVisible(false)
@@ -150,7 +190,10 @@ async function act<T>(
       show: true,
       sheet: await hooks.sheet(),
       rate: hooks.rate(),
-    }).catch((error: unknown) => console.error('Pet cursor failed', error))
+    }).catch((error: unknown) => {
+      if (executionSignal.getStore()?.aborted) throw new Error('已停止')
+      console.error('Pet cursor failed', error)
+    })
   }
   return control<T>(op, { ...args, global: turn.global }, timeoutMs)
 }
@@ -257,7 +300,7 @@ async function readWindow(
 
 /** The window again after an action, so the model sees what changed without another step. */
 async function after(message: string, app?: string): Promise<string> {
-  await new Promise((r) => setTimeout(r, 700))
+  await delay(700, undefined, { signal: executionSignal.getStore() })
   const target = app || known.bundleId
   if (!target) return message
   try {
@@ -373,6 +416,100 @@ export function withLatestScreenshot(
   }
   const kept = (list: ModelMessage[]) => list.filter((m) => !injected(m))
   return [...kept(messages.slice(0, end)), image, ...kept(messages.slice(end))]
+}
+
+/** Prune model input only; stored tool results keep their complete window contents. */
+export function withLatestWindowTree(messages: ModelMessage[]): ModelMessage[] {
+  let latest = false
+  const treeTools = new Set([
+    'read_window',
+    'click',
+    'type_text',
+    'press_key',
+    'set_value',
+    'scroll',
+    'open_app',
+    'drag',
+  ])
+  const prune = (text: string, toolName: string): string => {
+    const tree =
+      toolName === 'read_window'
+        ? /^「[^\n]+」(?:的窗口「[^\n]+」)?(?:：|几乎读不到界面元素)/.test(text)
+        : /\n\n现在「[^\n]+」/.test(text)
+    if (!tree) return text
+    if (!latest) {
+      latest = true
+      return text
+    }
+    return `${text.split('\n')[0]}\n（旧的窗口内容已省略，以最新一次为准）`
+  }
+  return messages
+    .toReversed()
+    .map((message): ModelMessage => {
+      if (message.role !== 'tool') return message
+      return {
+        ...message,
+        content: message.content
+          .toReversed()
+          .map((part) => {
+            if (part.type !== 'tool-result' || !treeTools.has(part.toolName))
+              return part
+            const output = part.output
+            if (output.type === 'text')
+              return {
+                ...part,
+                output: {
+                  ...output,
+                  value: prune(output.value, part.toolName),
+                },
+              }
+            if (output.type === 'json') {
+              if (typeof output.value === 'string')
+                return {
+                  ...part,
+                  output: {
+                    ...output,
+                    value: prune(output.value, part.toolName),
+                  },
+                }
+              const text = computerOutputText(output.value)
+              if (
+                text !== undefined &&
+                output.value &&
+                typeof output.value === 'object'
+              )
+                return {
+                  ...part,
+                  output: {
+                    ...output,
+                    value: {
+                      ...output.value,
+                      text: prune(text, part.toolName),
+                    },
+                  },
+                }
+            }
+            if (output.type === 'content')
+              return {
+                ...part,
+                output: {
+                  ...output,
+                  value: output.value
+                    .toReversed()
+                    .map((item) =>
+                      item.type === 'text'
+                        ? { ...item, text: prune(item.text, part.toolName) }
+                        : item,
+                    )
+                    .reverse(),
+                },
+              }
+            return part
+          })
+          .reverse(),
+      }
+    })
+    .reverse()
 }
 
 /** Whether the main loop's protocol can carry an image inside a tool result. */
@@ -616,8 +753,12 @@ function explained(tools: ToolSet): ToolSet {
     if (!execute) continue
     t.execute = async (input, options) => {
       try {
-        return await execute(input, options)
+        options.abortSignal?.throwIfAborted()
+        return await executionSignal.run(options.abortSignal, () =>
+          execute(input, options),
+        )
       } catch (error) {
+        if (options.abortSignal?.aborted) return '已停止'
         return `没做成：${error instanceof Error ? error.message : String(error)}`
       }
     }

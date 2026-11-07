@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, open, readFile, readdir, rename, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { sensitiveReason } from './sensitive'
 
@@ -170,8 +170,12 @@ export class MemoryStore {
   }
 
   file(category: MemoryCategory, key?: string): string {
-    if (category === 'topic')
-      return join(this.dir, 'topics', `${topicFileName(key ?? '')}.md`)
+    if (category === 'topic') {
+      // Existing files may have spaces from a manual rename.
+      const name =
+        key && /^[\p{L}\p{N}\s_-]+$/u.test(key) ? key : topicFileName(key ?? '')
+      return join(this.dir, 'topics', `${name}.md`)
+    }
     if (category === 'timeline') {
       if (!key || !period.test(key)) throw new Error('时间线时段无效')
       return join(this.dir, 'timeline', `${key}.md`)
@@ -214,6 +218,18 @@ export class MemoryStore {
   topics(): Promise<string[]> {
     return this.names('topics')
   }
+  private async topicName(topic: string): Promise<string> {
+    const name = topicFileName(topic)
+    const topics = await this.topics()
+    if (topics.includes(topic)) return topic
+    if (topics.includes(name)) return name
+    const normalize = (value: string) =>
+      value.replace(/[\s_-]/g, '').toLowerCase()
+    return (
+      topics.find((existing) => normalize(existing) === normalize(topic)) ??
+      name
+    )
+  }
   async periods(): Promise<string[]> {
     return (await this.names('timeline')).filter((p) => period.test(p))
   }
@@ -253,18 +269,70 @@ export class MemoryStore {
     return entries
   }
 
-  private async append(entry: MemoryEntry): Promise<void> {
-    const path = this.file(entry.category, entry.key)
+  /** Stage and sync before checking for an editor save, then publish in one rename. */
+  private async replaceFile(
+    path: string,
+    text: string,
+    unchanged: () => Promise<boolean>,
+  ): Promise<boolean> {
     await mkdir(dirname(path), { recursive: true })
-    const lines =
-      (await this.lines(path)) ??
-      this.header(entry.category, entry.key).split('\n')
-    while (lines.length && lines.at(-1) === '') lines.pop()
-    const last = parseLines(lines).at(-1)?.line
-    // Keep the list together: append after the last item, or after the header block.
-    if (last === undefined) lines.push('', formatLine(entry))
-    else lines.splice(last + 1, 0, formatLine(entry))
-    await writeFile(path, `${lines.join('\n')}\n`)
+    const temporary = `${path}.${randomBytes(8).toString('hex')}.tmp`
+    try {
+      const file = await open(temporary, 'wx', 0o600)
+      try {
+        await file.writeFile(text, 'utf8')
+        await file.sync()
+      } finally {
+        await file.close()
+      }
+      if ((await readFile(temporary, 'utf8')) !== text)
+        throw new Error('记忆文件写入校验失败')
+      if (!(await unchanged())) return false
+      await rename(temporary, path)
+      const directory = await open(dirname(path), 'r')
+      try {
+        await directory.sync()
+      } finally {
+        await directory.close()
+      }
+      return true
+    } finally {
+      await rm(temporary, { force: true })
+    }
+  }
+
+  private async update<T>(
+    path: string,
+    change: (lines: string[] | null) => { text: string; result: T },
+  ): Promise<T> {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const before = await this.lines(path)
+      const { text, result } = change(before?.slice() ?? null)
+      if (text === (before?.join('\n') ?? '')) return result
+      if (
+        await this.replaceFile(
+          path,
+          text,
+          async () =>
+            (await this.lines(path))?.join('\n') === before?.join('\n'),
+        )
+      )
+        return result
+    }
+    throw new Error('记忆文件正在被其他程序修改，请稍后再试')
+  }
+
+  private async append(entry: MemoryEntry): Promise<void> {
+    await this.update(this.file(entry.category, entry.key), (current) => {
+      const lines =
+        current ?? this.header(entry.category, entry.key).split('\n')
+      while (lines.length && lines.at(-1) === '') lines.pop()
+      const last = parseLines(lines).at(-1)?.line
+      // Keep the list together, before any notes below it.
+      if (last === undefined) lines.push('', formatLine(entry))
+      else lines.splice(last + 1, 0, formatLine(entry))
+      return { text: `${lines.join('\n')}\n`, result: undefined }
+    })
   }
   private async rewrite(
     id: string,
@@ -272,11 +340,15 @@ export class MemoryStore {
   ): Promise<MemoryEntry> {
     const found = await this.locate(id)
     if (!found) throw new Error(`没有找到记忆 ${id}`)
-    const next = change(found.entry)
-    if (next) found.lines[found.line] = formatLine(next)
-    else found.lines.splice(found.line, 1)
-    await writeFile(found.path, found.lines.join('\n'))
-    return found.entry
+    return this.update(found.path, (lines) => {
+      const item = lines && parseLines(lines).find((i) => i.entry.id === id)
+      if (!item) throw new Error(`没有找到记忆 ${id}`)
+      const entry = { ...found.entry, ...item.entry }
+      const next = change(entry)
+      if (next) lines![item.line] = formatLine(next)
+      else lines!.splice(item.line, 1)
+      return { text: lines!.join('\n'), result: entry }
+    })
   }
 
   /** Adds a confirmed memory; with `replaces`, marks that one superseded instead of deleting it. */
@@ -304,7 +376,7 @@ export class MemoryStore {
       text: checked(input.text),
       category: input.category,
       ...(input.category === 'topic'
-        ? { key: topicFileName(input.topic ?? '') }
+        ? { key: await this.topicName(input.topic ?? '') }
         : {}),
     }
     if (input.replaces) {
@@ -332,6 +404,8 @@ export class MemoryStore {
     confidence: number
     evidence: string
     conversation: string
+    /** False when reflection could not verify the quote against user text. */
+    userEvidence?: boolean
     sameAs?: string
   }): Promise<{ entry: MemoryEntry; promoted: boolean }> {
     return this.serial(async () => {
@@ -341,21 +415,33 @@ export class MemoryStore {
       const existing = input.sameAs
         ? (await this.locate(input.sameAs))?.entry
         : undefined
+      const isConversation = (id: string) =>
+        !!id.trim() && !id.startsWith('perception-')
+      const observed =
+        input.userEvidence !== false && isConversation(input.conversation)
+          ? [input.conversation]
+          : []
       if (existing?.status === 'pending') {
         const seen = [
-          ...new Set([...(existing.seen ?? []), input.conversation]),
+          ...new Set([
+            ...(existing.seen ?? []).filter(isConversation),
+            ...observed,
+          ]),
         ]
-        if (seen.length >= promoteAfter) {
-          await this.rewrite(existing.id, () => null)
-          return { entry: await this.keep(existing), promoted: true }
-        }
-        const updated = await this.rewrite(existing.id, (e) => ({
+        const revise = (e: MemoryEntry): MemoryEntry => ({
           ...e,
+          text,
           seen,
           confidence: Math.max(e.confidence ?? 0, input.confidence),
           evidence: evidence || e.evidence,
-        }))
-        return { entry: { ...updated, seen }, promoted: false }
+        })
+        if (observed.length && seen.length >= promoteAfter) {
+          const kept = await this.keep(revise(existing))
+          await this.rewrite(existing.id, () => null)
+          return { entry: kept, promoted: true }
+        }
+        const previous = await this.rewrite(existing.id, revise)
+        return { entry: revise(previous), promoted: false }
       }
       const entry: MemoryEntry = {
         id: newMemoryId(),
@@ -366,11 +452,11 @@ export class MemoryStore {
         category: 'pending',
         target: input.target,
         ...(input.target === 'topic'
-          ? { targetTopic: topicFileName(input.topic ?? '') }
+          ? { targetTopic: await this.topicName(input.topic ?? '') }
           : {}),
         confidence: Math.min(1, Math.max(0, input.confidence)),
         evidence,
-        seen: [input.conversation],
+        seen: observed,
       }
       await this.append(entry)
       return { entry, promoted: false }
@@ -463,48 +549,110 @@ export class MemoryStore {
       const removed: number[] = []
       for (const key of await this.periods()) {
         const path = this.file('timeline', key)
-        const lines = await this.lines(path)
-        if (!lines) continue
-        const hit = parseLines(lines).filter(
-          (i) => i.entry.activity && i.entry.activity.end > from,
-        )
-        if (!hit.length) continue
-        const drop = new Set(hit.map((i) => i.line))
-        removed.push(...hit.map((i) => i.entry.activity!.start))
-        await writeFile(path, lines.filter((_, i) => !drop.has(i)).join('\n'))
+        const starts = await this.update(path, (lines) => {
+          const current = lines ?? []
+          const hit = parseLines(current).filter(
+            (i) => i.entry.activity && i.entry.activity.end > from,
+          )
+          const drop = new Set(hit.map((i) => i.line))
+          return {
+            text: current.filter((_, i) => !drop.has(i)).join('\n'),
+            result: hit.map((i) => i.entry.activity!.start),
+          }
+        })
+        removed.push(...starts)
       }
       return removed
     })
   }
 
-  /** Replaces finer timeline files with one coarser summary (the old files stay in git history). */
+  /** Read the exact files used for a roll-up, including an existing destination. */
+  timelineSnapshot(keys: string[]): Promise<Record<string, string | null>> {
+    return this.serial(() => this.readTimeline(keys))
+  }
+  private async readTimeline(
+    keys: string[],
+  ): Promise<Record<string, string | null>> {
+    const result: Record<string, string | null> = {}
+    for (const key of keys)
+      result[key] =
+        (await this.lines(this.file('timeline', key)))?.join('\n') ?? null
+    return result
+  }
+
+  /** Publish a durable summary before removing its unchanged sources. */
   rollUp(
     into: string,
     from: string[],
     lines: string[],
     conversations: string[] = [],
-  ): Promise<void> {
+    expected?: Record<string, string | null>,
+  ): Promise<boolean> {
     return this.serial(async () => {
-      // Check everything before removing anything; `from` may include `into` itself.
       const texts = lines.map(checked)
-      if (
-        !from.includes(into) &&
-        (await this.lines(this.file('timeline', into)))
-      )
+      if (!texts.length) return false
+      const keys = [...new Set([...from, into])]
+      const before = await this.readTimeline(keys)
+      if (expected && keys.some((key) => before[key] !== expected[key]))
+        return false
+      if (!from.includes(into) && before[into] !== null)
         throw new Error(`时间线 ${into} 已存在`)
-      for (const key of from)
-        await rm(this.file('timeline', key), { force: true })
-      for (const text of texts)
-        await this.append({
+      const entries = from
+        .flatMap((key) => parseLines((before[key] ?? '').split('\n')))
+        .map((i) => i.entry)
+        .filter((e) => e.status === 'confirmed')
+      const origins = [
+        ...new Set([
+          ...conversations,
+          ...entries.flatMap((e) => [
+            ...(e.conversation ? [e.conversation] : []),
+            ...(e.conversations ?? []),
+          ]),
+        ]),
+      ]
+      const activities = entries.flatMap((e) =>
+        e.activity ? [e.activity] : [],
+      )
+      const activity = activities.length
+        ? {
+            title: `时间线：${into}`,
+            start: Math.min(...activities.map((a) => a.start)),
+            end: Math.max(...activities.map((a) => a.end)),
+            apps: [
+              ...new Map(
+                activities.flatMap((a) => a.apps).map((a) => [a.bundleId, a]),
+              ).values(),
+            ],
+          }
+        : undefined
+      const body = texts.map((text) =>
+        formatLine({
           id: newMemoryId(),
           at: today(),
           source: 'reflection',
           status: 'confirmed',
           text,
-          category: 'timeline',
-          key: into,
-          ...(conversations.length ? { conversations } : {}),
-        })
+          ...(origins.length ? { conversations: origins } : {}),
+          ...(activity ? { activity } : {}),
+        }),
+      )
+      const saved = await this.replaceFile(
+        this.file('timeline', into),
+        `${this.header('timeline', into)}\n${body.join('\n')}\n`,
+        async () => {
+          const current = await this.readTimeline(keys)
+          return keys.every((key) => current[key] === before[key])
+        },
+      )
+      if (!saved) return false
+      for (const key of from) {
+        if (key === into) continue
+        // An external editor may have saved again while the destination was being synced.
+        const path = this.file('timeline', key)
+        if ((await this.lines(path))?.join('\n') === before[key])
+          await rm(path, { force: true })
+      }
+      return true
     })
   }
 

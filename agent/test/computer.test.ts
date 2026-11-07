@@ -5,7 +5,7 @@ import { modelHistory } from '../src/session'
 // Reported 2026-11-06: the next turn did not see the previous turn's steps, so the model said
 // it had never opened WeChat (it had) and invented a sandbox block.
 describe('earlier turns carry what they did', () => {
-  test('a reply goes to the model with its steps and their first result line', () => {
+  test('a reply goes to the model with steps but no external result text', () => {
     const history = modelHistory({
       messages: [
         { role: 'user', content: '打开微信', createdAt: 0 },
@@ -16,6 +16,7 @@ describe('earlier turns carry what they did', () => {
         {
           id: 'a',
           name: '打开 com.tencent.xinWeChat',
+          tool: 'open_app',
           done: true,
           turn: 1,
           output: '已在后台打开「WeChat」\n\n现在「WeChat」的窗口…',

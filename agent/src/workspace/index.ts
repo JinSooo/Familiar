@@ -12,18 +12,39 @@ import { dataDir, moveToTrash } from '../system'
 import { snapshotsEnabled } from '../settings'
 
 const exec = promisify(execFile)
+const repositories = new Map<string, Promise<unknown>>()
+/** Keep init and each add/diff/commit transaction together, including aliases of a path. */
+function inRepository<T>(path: string, work: () => Promise<T>): Promise<T> {
+  const key = normalizePath(path)
+  const next = (repositories.get(key) ?? Promise.resolve()).then(work, work)
+  const settled = next.catch(() => {})
+  repositories.set(key, settled)
+  void settled.then(() => {
+    if (repositories.get(key) === settled) repositories.delete(key)
+  })
+  return next
+}
 async function git(path: string, args: string[]): Promise<string> {
-  return (
-    await exec('/usr/bin/git', [
-      '-C',
-      path,
-      '-c',
-      'user.name=Familiar',
-      '-c',
-      'user.email=familiar@localhost',
-      ...args,
-    ])
-  ).stdout
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return (
+        await exec('/usr/bin/git', [
+          '-C',
+          path,
+          '-c',
+          'user.name=Familiar',
+          '-c',
+          'user.email=familiar@localhost',
+          ...args,
+        ])
+      ).stdout
+    } catch (error) {
+      // An external git process may briefly hold the lock. Never remove its lock file.
+      if (attempt || !/index\.lock.*File exists/s.test(String(error)))
+        throw error
+      await new Promise((resolve) => setTimeout(resolve, 150))
+    }
+  }
 }
 /**
  * Everything lives under ~/.familiar: config at the top (off limits to the model), and the
@@ -45,7 +66,7 @@ function snapshotRoots(workspacePath: string): string[] {
   return within(workspace, root) ? [root] : [root, workspace]
 }
 
-async function ensureRepo(path: string, ignore?: string): Promise<void> {
+async function ensureRepo(path: string, ignore?: string): Promise<boolean> {
   if (ignore) {
     // Rewritten only when it differs, so a user's additions below the rules would be lost; keep it ours.
     const current = await readFile(join(path, '.gitignore'), 'utf8').catch(
@@ -59,7 +80,9 @@ async function ensureRepo(path: string, ignore?: string): Promise<void> {
   } catch {
     /* Not a repository yet. */
   }
-  if (!top || normalizePath(top) !== path) await git(path, ['init'])
+  const created = !top || normalizePath(top) !== path
+  if (created) await git(path, ['init'])
+  return created
 }
 
 export async function ensureWorkspace(settings: Settings): Promise<string> {
@@ -98,35 +121,48 @@ Familiar 的全部数据都在这里：
   // With snapshots off, no repository is created; an existing .git is left as it is.
   if (!settings.workspaceSnapshots) return path
   for (const root of snapshotRoots(path))
-    await ensureRepo(root, root === familiarRoot() ? gitignore : undefined)
-  await snapshot(path, 'Initialize Familiar')
+    await inRepository(root, async () => {
+      const created = await ensureRepo(
+        root,
+        root === familiarRoot() ? gitignore : undefined,
+      )
+      if (created && snapshotsEnabled())
+        await snapshotRepo(root, 'Initialize Familiar')
+    })
   return path
 }
+
+async function snapshotRepo(path: string, message: string): Promise<void> {
+  try {
+    // Never add without the whitelist: ~/.familiar also holds config with tokens.
+    if (path === familiarRoot()) {
+      const current = await readFile(join(path, '.gitignore'), 'utf8').catch(
+        () => '',
+      )
+      if (current !== gitignore)
+        await writeFile(join(path, '.gitignore'), gitignore)
+    }
+    await git(path, ['add', '-A'])
+    if (!(await git(path, ['diff', '--cached', '--name-only'])).trim()) return
+    await git(path, ['commit', '-m', message])
+  } catch (error) {
+    console.error('Familiar snapshot failed:', error)
+  }
+}
+
 export async function snapshot(
   workspacePath: string,
   message: string,
 ): Promise<void> {
   if (!snapshotsEnabled()) return
   for (const path of snapshotRoots(workspacePath))
-    try {
-      // Never add without the whitelist in place: ~/.familiar also holds config with tokens.
-      if (path === familiarRoot()) {
-        const current = await readFile(join(path, '.gitignore'), 'utf8').catch(
-          () => '',
-        )
-        if (current !== gitignore)
-          await writeFile(join(path, '.gitignore'), gitignore)
-      }
-      await git(path, ['add', '-A'])
-      if (!(await git(path, ['diff', '--cached', '--name-only'])).trim())
-        continue
-      await git(path, ['commit', '-m', message])
-    } catch (error) {
-      console.error('Familiar snapshot failed:', error)
-    }
+    await inRepository(path, () => snapshotRepo(path, message))
 }
 
-export function createWorkspaceTools(settings: Settings): ToolSet {
+export function createWorkspaceTools(
+  settings: Settings,
+  currentSettings: () => Settings = () => settings,
+): ToolSet {
   const pathSchema = z.object({ path: z.string().min(1) })
   function fileTool<S extends z.ZodType<{ path: string }>>(
     name: string,
@@ -139,15 +175,13 @@ export function createWorkspaceTools(settings: Settings): ToolSet {
       inputSchema: schema,
       execute: async (input) => {
         try {
+          const settings = currentSettings()
           const decision = await decideToolCall(
             { id: '', toolName: name, input },
             settings,
           )
           if (decision.decision === 'deny') return { error: decision.reason }
-          return await action(
-            input as z.output<S>,
-            normalizePath(input.path, normalizePath(settings.workspacePath)),
-          )
+          return await action(input as z.output<S>, decision.resolvedPath!)
         } catch (error) {
           return { error: String(error) }
         }
@@ -232,17 +266,16 @@ export function createWorkspaceTools(settings: Settings): ToolSet {
         network: z.boolean().optional(),
         timeoutMs: z.number().int().positive().max(600000).optional(),
       }),
-      execute: async (input) => {
+      execute: async (input, { abortSignal }) => {
         try {
+          abortSignal?.throwIfAborted()
+          const settings = currentSettings()
           const decision = await decideToolCall(
             { id: '', toolName: 'run_shell', input },
             settings,
           )
           if (decision.decision === 'deny') return { error: decision.reason }
-          const cwd = normalizePath(
-            input.cwd ?? settings.workspacePath,
-            normalizePath(settings.workspacePath),
-          )
+          const cwd = decision.resolvedPath!
           const full =
             settings.permissionMode === 'full' || !settings.shellSandbox
           const args = full
@@ -254,6 +287,7 @@ export function createWorkspaceTools(settings: Settings): ToolSet {
                 '-c',
                 input.command,
               ]
+          abortSignal?.throwIfAborted()
           return await new Promise((resolve) => {
             const child = spawn(
               full ? '/bin/zsh' : '/usr/bin/sandbox-exec',
@@ -262,35 +296,81 @@ export function createWorkspaceTools(settings: Settings): ToolSet {
             )
             let output = ''
             let timedOut = false
+            let stopped = false
+            let closed:
+              { exitCode: number | null; signal: string | null } | undefined
+            let escalation: ReturnType<typeof setTimeout> | undefined
             const append = (data: Buffer): void => {
               output = (output + data.toString()).slice(0, 20000)
             }
-            child.stdout.on('data', append)
-            child.stderr.on('data', append)
-            const timer = setTimeout(() => {
-              timedOut = true
+            const killGroup = (signal: NodeJS.Signals) => {
               try {
-                process.kill(-child.pid!, 'SIGKILL')
+                if (child.pid) process.kill(-child.pid, signal)
               } catch {
-                child.kill('SIGKILL')
+                child.kill(signal)
               }
-            }, input.timeoutMs ?? 60000)
-            child.on('error', (error) => {
+            }
+            const cleanup = () => {
               clearTimeout(timer)
-              resolve({ error: String(error) })
-            })
-            child.on('close', (exitCode, signal) => {
-              clearTimeout(timer)
-              // Say where the refusal came from, for the user and so the model explains it right.
+              clearTimeout(escalation)
+              abortSignal?.removeEventListener('abort', abort)
+              child.stdout.off('data', append)
+              child.stderr.off('data', append)
+            }
+            const finish = () => {
+              if (!closed || escalation) return
+              cleanup()
               const blocked =
                 !full && /Operation not permitted/.test(output)
                   ? '\n（被 Familiar 的命令沙箱拦下：沙箱只能写工作目录，~/.familiar 里大部分位置和密钥读不到。需要时可以在设置「权限」里关掉命令沙箱。）'
                   : ''
-              resolve({ output: output + blocked, exitCode, signal, timedOut })
+              resolve({
+                output: output + blocked + (stopped ? '\n已停止' : ''),
+                ...closed,
+                timedOut,
+                stopped,
+              })
+            }
+            const terminate = () => {
+              if (escalation) return
+              killGroup('SIGTERM')
+              // The shell may exit before children that ignore TERM; still kill the group.
+              escalation = setTimeout(() => {
+                killGroup('SIGKILL')
+                escalation = undefined
+                finish()
+              }, 300)
+            }
+            const abort = () => {
+              stopped = true
+              terminate()
+            }
+            const timer = setTimeout(() => {
+              timedOut = true
+              terminate()
+            }, input.timeoutMs ?? 60000)
+            child.stdout.on('data', append)
+            child.stderr.on('data', append)
+            abortSignal?.addEventListener('abort', abort, { once: true })
+            if (abortSignal?.aborted) abort()
+            child.once('error', (error) => {
+              cleanup()
+              resolve({
+                error: String(error),
+                ...(stopped
+                  ? { stopped, output: '已停止', exitCode: null }
+                  : {}),
+              })
+            })
+            child.once('close', (exitCode, signal) => {
+              closed = { exitCode, signal }
+              finish()
             })
           })
         } catch (error) {
-          return { error: String(error) }
+          return abortSignal?.aborted
+            ? { output: '已停止', exitCode: null, stopped: true }
+            : { error: String(error) }
         }
       },
     }),

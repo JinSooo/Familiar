@@ -179,6 +179,14 @@ export function onActivityDigest(
 ) {
   onDigest = listener
 }
+let clearGeneration = 0
+let writes: Promise<unknown> = Promise.resolve()
+/** Publication and clearing are ordered; model requests never hold this queue. */
+function writeSummary<T>(work: () => Promise<T>): Promise<T> {
+  const next = writes.then(work, work)
+  writes = next.catch(() => {})
+  return next
+}
 let summarizing: Promise<void> | undefined
 /** Summarizes buffered activity when `summaryMinutes` have passed, or now when forced. */
 export function summarizeDue(force = false): Promise<void> {
@@ -194,6 +202,8 @@ let failing = { from: 0, runs: 0 }
 async function summarize(force: boolean) {
   const p = getSettings().perception
   if (!p.enabled) return changed()
+  const generation = await writeSummary(async () => clearGeneration)
+  const current = () => generation === clearGeneration
   const now = Date.now()
   let from = Math.max(await summarizedUntil(), now - keepHours * 3600000)
   if (!force && periodEnd(from, p.summaryMinutes) > now) return
@@ -204,6 +214,7 @@ async function summarize(force: boolean) {
   let ran = 0
   try {
     while (from < now && ran < perRun) {
+      if (!current()) return
       let to = periodEnd(from, p.summaryMinutes)
       // The period still under way waits for its end, unless asked for now.
       if (to > now) {
@@ -220,21 +231,30 @@ async function summarize(force: boolean) {
           from,
           to,
           conversations: conversationsBetween,
+          commit: (work) =>
+            writeSummary(async () => (current() ? work() : undefined)),
         })
       } catch (error) {
+        if (!current()) return
         failing = { from, runs: failing.from === from ? failing.runs + 1 : 1 }
         if (failing.runs < 3) throw error
         console.error('Skipping a period that keeps failing:', error)
         result = { ran: true, timeline: 0, pending: 0 }
       }
+      if (!current()) return
       if (result.ran) ran++
       if (result.digest && to >= now - 5 * 60000) onDigest(result.digest)
       timeline += result.timeline
       pending += result.pending
       from = to
-      await writeFile(stateFile(), JSON.stringify({ until: from }), {
-        mode: 0o600,
+      const advanced = await writeSummary(async () => {
+        if (!current()) return false
+        await writeFile(stateFile(), JSON.stringify({ until: from }), {
+          mode: 0o600,
+        })
+        return true
       })
+      if (!advanced || !current()) return
     }
     status.lastSummaryAt = now
     status.summary = { timeline, pending }
@@ -263,23 +283,27 @@ export async function recentEvents(): Promise<PerceptionEvent[]> {
  * is summarized again without the cleared minutes.
  */
 export async function clearEvents(minutes: number | 'all') {
-  await buffer.clear(minutes)
-  const removed = await openMemory().store.removeActivity(
-    minutes === 'all' ? 0 : Date.now() - minutes * 60000,
-  )
-  if (minutes === 'all') await writeFile(stateFile(), '{}', { mode: 0o600 })
-  else if (removed.length) {
-    const back = Math.min(...removed)
-    if (back < (await summarizedUntil()))
-      await writeFile(stateFile(), JSON.stringify({ until: back }), {
-        mode: 0o600,
-      })
-  }
-  if (removed.length)
-    await snapshot(
-      await ensureWorkspace(getSettings()),
-      'familiar: clear computer history',
+  await writeSummary(async () => {
+    clearGeneration++
+    failing = { from: 0, runs: 0 }
+    await buffer.clear(minutes)
+    const removed = await openMemory().store.removeActivity(
+      minutes === 'all' ? 0 : Date.now() - minutes * 60000,
     )
+    if (minutes === 'all') await writeFile(stateFile(), '{}', { mode: 0o600 })
+    else if (removed.length) {
+      const back = Math.min(...removed)
+      if (back < (await summarizedUntil()))
+        await writeFile(stateFile(), JSON.stringify({ until: back }), {
+          mode: 0o600,
+        })
+    }
+    if (removed.length)
+      await snapshot(
+        await ensureWorkspace(getSettings()),
+        'familiar: clear computer history',
+      )
+  })
 }
 
 const iconDir = () => join(dataDir, 'app-icons')

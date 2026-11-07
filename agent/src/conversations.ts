@@ -28,9 +28,11 @@ const validId = /^[0-9A-Za-z-]{1,64}$/
 interface MessageMeta {
   role: 'user' | 'assistant'
   at: number
+  bodyEncoding?: 'escaped-v1'
   attachments?: Attachment[]
   tools?: {
     name: string
+    tool?: string
     done: boolean
     at?: number
     detail?: string
@@ -104,8 +106,9 @@ export function serialize(
   const body = conversation.messages.map((m, i) => {
     const tools = conversation.tools
       .filter((t) => t.turn === i)
-      .map(({ name, done, at, detail, output }) => ({
+      .map(({ name, tool, done, at, detail, output }) => ({
         name,
+        ...(tool ? { tool } : {}),
         done,
         at,
         ...(detail ? { detail } : {}),
@@ -114,6 +117,7 @@ export function serialize(
     const meta: MessageMeta = {
       role: m.role,
       at: m.createdAt,
+      bodyEncoding: 'escaped-v1',
       ...(tools.length ? { tools } : {}),
       ...(m.error ? { error: m.error } : {}),
       ...(m.sources?.length ? { sources: m.sources } : {}),
@@ -129,9 +133,21 @@ export function serialize(
     const json = JSON.stringify(meta)
       .replace(/</g, '\\u003c')
       .replace(/>/g, '\\u003e')
-    return `<!-- familiar ${json} -->\n${header}\n\n${m.content}${attachmentLinks(m.attachments)}\n`
+    return `<!-- familiar ${json} -->\n${header}\n\n${encodeBody(m.content)}${attachmentLinks(m.attachments)}\n`
   })
   return `${head}\n${body.join('\n')}`
+}
+
+// Escape the escape character first, so literal entities round-trip too.
+function encodeBody(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/<!-- familiar/g, '&lt;!-- familiar')
+}
+function decodeBody(text: string): string {
+  return text
+    .replace(/&lt;!-- familiar/g, '<!-- familiar')
+    .replace(/&amp;/g, '&')
 }
 
 /** Links to a message's files, so the transcript opens them in any Markdown viewer. */
@@ -179,12 +195,16 @@ export function parse(id: string, text: string): StoredConversation {
     const attachments = (meta.attachments ?? []).filter(
       (a) => attachmentSchema.safeParse(a).success,
     )
-    const content = stripAttachmentLinks(
-      chunk
-        .slice(chunk.indexOf('\n') + 1)
-        .replace(/^\n/, '')
-        .replace(/\n+$/, ''),
-    )
+    const body = chunk.slice(chunk.indexOf('\n') + 1).replace(/^\n/, '')
+    let content: string
+    if (meta.bodyEncoding === 'escaped-v1') {
+      // Only remove the separator we wrote, preserving the message's own trailing newlines.
+      const raw = body.replace(i + 2 < parts.length ? /\n\n$/ : /\n$/, '')
+      const links = attachments.length ? raw.lastIndexOf(linksStart) : -1
+      content = decodeBody(links === -1 ? raw : raw.slice(0, links))
+    } else {
+      content = stripAttachmentLinks(body.replace(/\n+$/, ''))
+    }
     const turn = messages.length
     messages.push({
       role: meta.role,
@@ -204,6 +224,7 @@ export function parse(id: string, text: string): StoredConversation {
       tools.push({
         id: `${id}-${turn}-${k}`,
         name: String(t.name),
+        ...(typeof t.tool === 'string' && t.tool ? { tool: t.tool } : {}),
         done: Boolean(t.done),
         turn,
         ...(Number.isInteger(t.at) && t.at! >= 0 ? { at: t.at } : {}),

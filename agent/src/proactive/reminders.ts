@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Reminder } from '../../../src/shared'
 import { dataDir } from '../system'
@@ -24,6 +24,14 @@ const pad = (n: number) => String(n).padStart(2, '0')
 export function stamp(at: number): string {
   const d = new Date(at)
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+/** Reject normalized dates (including nonexistent local times at DST transitions). */
+export function parseReminderTime(value: string): number | undefined {
+  if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(value)) return undefined
+  const date = new Date(`${value.replace(' ', 'T')}:00`)
+  if (!Number.isFinite(date.getTime()) || stamp(date.getTime()) !== value)
+    return undefined
+  return date.getTime()
 }
 export const newReminderId = () =>
   `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`
@@ -59,8 +67,8 @@ export function parseReminders(text: string): Reminder[] {
     const trimmed = raw.trim()
     const m = line.exec(trimmed)
     if (m) {
-      const at = new Date(`${m[2]}T${m[3]}:00`).getTime()
-      if (!Number.isFinite(at)) continue
+      const at = parseReminderTime(`${m[2]} ${m[3]}`)
+      if (at === undefined) continue
       const meta = metaOf(m[5])
       list.push({
         id: unique(
@@ -109,29 +117,43 @@ export function formatReminders(list: Reminder[]): string {
 }
 
 let queue: Promise<unknown> = Promise.resolve()
-/** Read-modify-write, one at a time; finished reminders older than a day are dropped. */
+/** Serialized read-modify-write. The callback may be retried and must have no side effects. */
 export function updateReminders<T>(
   change: (list: Reminder[]) => { list: Reminder[]; result: T },
 ): Promise<T> {
   const work = async () => {
-    const { list, result } = change(await readReminders())
-    const day = Date.now() - 86400000
-    const kept = list.filter((r) => !r.done || r.done > day)
     await mkdir(dataDir, { recursive: true })
-    await writeFile(`${file()}.tmp`, formatReminders(kept), { mode: 0o600 })
-    await rename(`${file()}.tmp`, file())
-    return result
+    try {
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const before = await readText()
+        const { list, result } = change(parseReminders(before ?? ''))
+        const day = Date.now() - 86400000
+        const kept = list.filter((r) => !r.done || r.done > day)
+        await writeFile(`${file()}.tmp`, formatReminders(kept), { mode: 0o600 })
+        // Editors do not share our queue. Reapply the operation to their latest save.
+        if ((await readText()) !== before) continue
+        await rename(`${file()}.tmp`, file())
+        return result
+      }
+      throw new Error('提醒文件正在被修改，请稍后再试')
+    } finally {
+      await rm(`${file()}.tmp`, { force: true })
+    }
   }
   const next = queue.then(work, work)
   queue = next.catch(() => {})
   return next
 }
 
-export async function readReminders(): Promise<Reminder[]> {
+async function readText(): Promise<string | undefined> {
   try {
-    return parseReminders(await readFile(file(), 'utf8'))
+    return await readFile(file(), 'utf8')
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
     throw error
   }
+}
+
+export async function readReminders(): Promise<Reminder[]> {
+  return parseReminders((await readText()) ?? '')
 }

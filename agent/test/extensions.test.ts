@@ -93,7 +93,7 @@ describe('MCP', () => {
     expect(JSON.parse(await Bun.file(mcpFile()).text()).other).toBe(1)
   })
 
-  test('permission follows the server access and the mode', async () => {
+  test('undiscovered MCP tools cannot borrow configured server access', async () => {
     await writeFile(
       mcpFile(),
       JSON.stringify({
@@ -108,16 +108,13 @@ describe('MCP', () => {
     const settings = settingsSchema.parse({ permissionMode: 'auto' })
     const decide = (name: string, mode = settings) =>
       decideToolCall({ id: '', toolName: name, input: {} }, mode)
-    expect(await decide('mcp__ask__x')).toMatchObject({
-      decision: 'ask',
-      server: 'ask',
-    })
-    expect((await decide('mcp__ok__x')).decision).toBe('allow')
+    expect((await decide('mcp__ask__x')).decision).toBe('deny')
+    expect((await decide('mcp__ok__x')).decision).toBe('deny')
     expect((await decide('mcp__no__x')).decision).toBe('deny')
     expect(
       (await decide('mcp__ask__x', { ...settings, permissionMode: 'full' }))
         .decision,
-    ).toBe('allow')
+    ).toBe('deny')
     expect((await decide('use_skill')).decision).toBe('allow')
   })
 })

@@ -1,5 +1,6 @@
 import type { AgentEvent, Message } from '../../../src/shared'
-import { toModelMessage } from '../attachments'
+import { prepareModelContext } from './context'
+import { backgroundModel } from '../memory/jobs'
 import { createImageTools, imageInstructions } from './image'
 import { getSettings } from '../settings'
 import { decideToolCall } from '../permissions'
@@ -21,7 +22,6 @@ import {
 import { runAgentCore } from './core'
 import { createModel } from './provider'
 import { createPersona, personaText } from './persona'
-import { moodLine } from '../mood'
 import { createReminderTools, reminderInstructions } from '../proactive/state'
 import { proactiveChanged } from '../proactive'
 import { agentError } from './errors'
@@ -43,6 +43,7 @@ export async function runAgent(
     const settings = getSettings()
     const model = createModel(settings.model)
     const workspacePath = await ensureWorkspace(settings)
+    await snapshot(workspacePath, 'familiar: 保存之前的改动')
     const memory = openMemory()
     const skills = (await listSkills()).filter(
       (s) => !settings.disabledSkills.includes(s.name),
@@ -61,30 +62,46 @@ export async function runAgent(
           onImage: (attachment) => onEvent({ type: 'attachment', attachment }),
         })
       : {}
-    const modelMessages = await Promise.all(messages.map(toModelMessage))
+    const tools = {
+      ...createWorkspaceTools(settings, getSettings),
+      ...createMemoryTools(memory, await activeEmbedder(settings)),
+      ...createKnowledgeTools(settings),
+      ...createWebTools(settings),
+      ...createSkillTools(skills),
+      ...createReminderTools(() => void proactiveChanged()),
+      ...createComputerTools(settings),
+      ...images,
+      ...external,
+    }
+    const instructions = `${createPersona(
+      workspacePath,
+      settings.permissionMode,
+      settings.pet.name,
+      await personaText(),
+    )}\n\n${await memoryInstructions(memory.store)}\n\n${knowledgeInstructions(settings)}\n\n${reminderInstructions}\n\n${webInstructions}\n\n${computerInstructions}\n\n${skillInstructions(skills)}${'generate_image' in images ? `\n\n${imageInstructions}` : ''}`
+    const modelMessages = await prepareModelContext(messages, {
+      conversationId,
+      instructions,
+      tools,
+      summaryModel: backgroundModel,
+      signal,
+      canReadAttachment: async (path) =>
+        (
+          await decideToolCall(
+            { id: '', toolName: 'read_file', input: { path } },
+            getSettings(),
+          )
+        ).decision !== 'deny',
+    })
     await runAgentCore(modelMessages, onEvent, signal, {
       model,
-      tools: {
-        ...createWorkspaceTools(settings),
-        ...createMemoryTools(memory, await activeEmbedder(settings)),
-        ...createKnowledgeTools(settings),
-        ...createWebTools(settings),
-        ...createSkillTools(skills),
-        ...createReminderTools(() => void proactiveChanged()),
-        ...createComputerTools(settings),
-        ...images,
-        ...external,
-      },
+      protocol: settings.model.protocol,
+      tools,
+      instructions,
       sources: (name, output) => [
         ...sourcesOf(name, output),
         ...knowledgeSources(name, output),
       ],
-      instructions: `${createPersona(
-        workspacePath,
-        settings.permissionMode,
-        settings.pet.name,
-        await personaText(),
-      )}\n现在是 ${new Date().toLocaleString('zh-CN', { hour12: false, weekday: 'long' })}。${moodLine()}\n\n${await memoryInstructions(memory.store)}\n\n${knowledgeInstructions(settings)}\n\n${reminderInstructions}\n\n${webInstructions}\n\n${computerInstructions}\n\n${skillInstructions(skills)}${'generate_image' in images ? `\n\n${imageInstructions}` : ''}`,
       // The ChatGPT plan route keeps nothing (store:false). Told so, the SDK sends each step's
       // reasoning back encrypted instead of by id; by id the next step failed with 404 「Item
       // with id 'rs_…' not found」 (2026-11-07, a Computer Use turn on the plan).
@@ -92,7 +109,7 @@ export async function runAgent(
         ? { providerOptions: { openai: { store: false } } }
         : {}),
       workspacePath,
-      decide: (call) => decideToolCall(call, settings),
+      decide: (call) => decideToolCall(call, getSettings()),
       snapshot,
     })
   } catch (error) {

@@ -12,11 +12,13 @@ import type {
   ProactiveHeld,
   ProactiveMessage,
   ProactiveTrigger,
+  Reminder,
 } from '../../../src/shared'
 import { dataDir } from '../system'
 import type { Decision } from './decide'
 import {
   newReminderId,
+  parseReminderTime,
   readReminders,
   stamp,
   updateReminders,
@@ -32,6 +34,8 @@ import {
  */
 export interface ProactiveState {
   history: ProactiveMessage[]
+  /** Durable outbox, written before the reminder is marked done. */
+  delivering?: { reminder: Reminder; message: ProactiveMessage }
   /** Triggers that came to nothing, so the settings page can say why it stayed quiet. */
   held: ProactiveHeld[]
   fired: Record<string, number>
@@ -48,6 +52,7 @@ export async function readState(): Promise<ProactiveState> {
       await readFile(file(), 'utf8'),
     ) as Partial<ProactiveState>
     cache = {
+      ...(raw.delivering ? { delivering: raw.delivering } : {}),
       history: Array.isArray(raw.history) ? raw.history : [],
       held: Array.isArray(raw.held) ? raw.held : [],
       fired: raw.fired && typeof raw.fired === 'object' ? raw.fired : {},
@@ -66,7 +71,7 @@ export function updateState(
   change: (state: ProactiveState) => void,
 ): Promise<ProactiveState> {
   const work = async () => {
-    const state = await readState()
+    const state = structuredClone(await readState())
     change(state)
     const week = Date.now() - 7 * 86400000
     state.history = state.history
@@ -85,6 +90,7 @@ export function updateState(
       mode: 0o600,
     })
     await rename(`${file()}.tmp`, file())
+    cache = state
     return state
   }
   const next = queue.then(work, work)
@@ -181,8 +187,9 @@ export function createReminderTools(onChange: () => void): ToolSet {
         follow_up: z.boolean().optional(),
       }),
       execute: async ({ at, text, follow_up }) => {
-        const time = new Date(at.replace(' ', 'T') + ':00').getTime()
-        if (!Number.isFinite(time)) return { error: '时间无效' }
+        const time = parseReminderTime(at)
+        if (time === undefined)
+          return { error: '日期或时间不存在，请检查年月日和时分' }
         if (time < Date.now() - 60000) return { error: '这个时间已经过去了' }
         const id = newReminderId()
         await updateReminders((list) => ({

@@ -12,7 +12,7 @@ import {
   applyReflection,
   existingMemories,
   reflectOn,
-  transcript,
+  reflectionInput,
 } from './reflect'
 import { today } from './store'
 import { compressTimeline } from './timeline'
@@ -69,6 +69,7 @@ async function work(currentId: string, force: boolean): Promise<ReflectResult> {
   const ledger = await readLedger()
   const settings = getSettings()
   const workspace = await ensureWorkspace(settings)
+  await snapshot(workspace, 'familiar: 保存之前的改动')
   const { store } = openMemory()
   const due = (await listConversations())
     .filter(
@@ -83,7 +84,7 @@ async function work(currentId: string, force: boolean): Promise<ReflectResult> {
   try {
     model = backgroundModel()
   } catch (error) {
-    // No model configured yet: short weeks still roll up, nothing else can run.
+    // Without a model, roll-ups preserve every line; reflection must wait.
     if (due.length) throw error
   }
   for (const summary of due) {
@@ -93,9 +94,14 @@ async function work(currentId: string, force: boolean): Promise<ReflectResult> {
       const fresh = conversation.messages.slice(from)
       if (fresh.some((m) => m.role === 'user' && m.content.trim())) {
         const last = new Date(conversation.updatedAt)
+        const input = reflectionInput(
+          conversation.messages,
+          from,
+          settings.pet.name,
+        )
         const reflection = await reflectOn(
           model!,
-          transcript(conversation.messages, from, settings.pet.name),
+          input.text,
           await existingMemories(store, today(last)),
         )
         const applied = await applyReflection(
@@ -109,6 +115,7 @@ async function work(currentId: string, force: boolean): Promise<ReflectResult> {
           {
             // With Computer History on, the timeline is written per period, from activity and conversations together.
             timeline: !settings.perception.enabled,
+            userTexts: input.userTexts,
           },
         )
         result.pending += applied.pending

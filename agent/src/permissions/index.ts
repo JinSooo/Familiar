@@ -3,6 +3,7 @@ import { homedir } from 'node:os'
 import type { Settings } from '../../../src/shared'
 import {
   browserSecret,
+  credentialRoots,
   forbiddenRoots,
   normalizePath,
   protectedPathsIn,
@@ -21,6 +22,8 @@ export interface ToolCall {
 export type ToolDecision = {
   decision: 'allow' | 'ask' | 'deny'
   reason: string
+  /** Canonical target checked before approval; execution must use the same target. */
+  resolvedPath?: string
   /** The directory a rule saved on approval would cover (outside the workspace, or a network ask). */
   dir?: string
   /** For an MCP tool: the server an "always allow" would trust. */
@@ -52,17 +55,27 @@ const memoryTools = new Set([
   'read_knowledge',
 ])
 // Read-only web access: allowed in auto and full mode, asked in ask mode (shell network still asks).
-// save_page fetches like fetch_page and writes only to ~/.familiar/knowledge/web.
-const webTools = new Set(['web_search', 'fetch_page', 'save_page'])
+// save_page and generate_image write only to their managed knowledge/conversation folders.
+const webTools = new Set([
+  'web_search',
+  'fetch_page',
+  'save_page',
+  'generate_image',
+])
 
 export async function decideToolCall(
   call: ToolCall,
   settings: Settings,
 ): Promise<ToolDecision> {
+  let resolvedPath: string | undefined
   const result = (
     decision: ToolDecision['decision'],
     reason: string,
-  ): ToolDecision => ({ decision, reason })
+  ): ToolDecision => ({
+    decision,
+    reason,
+    ...(resolvedPath ? { resolvedPath } : {}),
+  })
   try {
     if (memoryTools.has(call.toolName))
       return result('allow', '记忆由 Familiar 自己维护')
@@ -103,29 +116,11 @@ export async function decideToolCall(
       network?: boolean
     } | null
     const workspace = normalizePath(settings.workspacePath)
-    // Out of the sandbox, a command that names a protected place asks first.
-    if (
-      call.toolName === 'run_shell' &&
-      settings.permissionMode !== 'full' &&
-      !settings.shellSandbox &&
-      typeof input?.command === 'string'
-    ) {
-      const hits = await protectedPathsIn(input.command, [
-        workspace,
-        ...readableFamiliarDirs(),
-      ])
-      if (hits.length)
-        return result(
-          'ask',
-          `这条命令不在沙箱里运行，会访问存放登录凭据、密钥的位置：${hits
-            .map((p) => p.replace(homedir(), '~'))
-            .join('、')}`,
-        )
-    }
     const shell = call.toolName === 'run_shell'
     const value = shell ? (input?.cwd ?? workspace) : input?.path
     if (typeof value !== 'string' || !value) return result('deny', '路径无效')
     const path = normalizePath(value, workspace)
+    resolvedPath = path
     // ~/.familiar is off limits except the workspace (read-write) and the folders the model may
     // read: memory, conversations, knowledge, skills. Config such as mcp.json stays out of reach.
     const familiarRead =
@@ -133,6 +128,11 @@ export async function decideToolCall(
       readableFamiliarDirs().some((dir) => within(path, dir))
     const inWorkspace = within(path, workspace)
     if (
+      credentialRoots().some(
+        (root) =>
+          within(path, root) ||
+          (call.toolName === 'delete_path' && within(root, path)),
+      ) ||
       (!familiarRead &&
         !inWorkspace &&
         (await forbiddenRoots()).some(
@@ -161,6 +161,25 @@ export async function decideToolCall(
       return result('deny', '目录包含禁止访问的子目录')
     const rule = rules[0]
     if (rule?.access === 'deny') return result('deny', '目录规则禁止访问')
+    // Out of the sandbox, a command that names a protected place asks first.
+    if (
+      call.toolName === 'run_shell' &&
+      settings.permissionMode !== 'full' &&
+      !settings.shellSandbox &&
+      typeof input?.command === 'string'
+    ) {
+      const hits = await protectedPathsIn(input.command, [
+        workspace,
+        ...readableFamiliarDirs(),
+      ])
+      if (hits.length)
+        return result(
+          'ask',
+          `这条命令不在沙箱里运行，会访问存放登录凭据、密钥的位置：${hits
+            .map((p) => p.replace(homedir(), '~'))
+            .join('、')}`,
+        )
+    }
     if (settings.permissionMode === 'full')
       return result('allow', '完全访问模式')
     // Auto mode lets sandboxed commands go online like web_search and fetch_page; ask mode asks,
@@ -172,7 +191,12 @@ export async function decideToolCall(
       settings.permissionMode === 'ask' &&
       !(rule?.access === 'allow' && rule.network)
     )
-      return { decision: 'ask', reason: '执行命令需要联网授权', dir: path }
+      return {
+        decision: 'ask',
+        reason: '执行命令需要联网授权',
+        dir: path,
+        resolvedPath,
+      }
     if (within(path, workspace)) {
       return settings.permissionMode === 'auto' || reads.has(call.toolName)
         ? result('allow', '工作目录内允许此操作')
@@ -193,6 +217,7 @@ export async function decideToolCall(
     return {
       decision: 'ask',
       reason: '工作目录外的访问需要授权',
+      resolvedPath,
       dir: shell || call.toolName === 'list_dir' ? path : dirname(path),
     }
   } catch {

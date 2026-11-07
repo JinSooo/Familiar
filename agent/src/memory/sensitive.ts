@@ -12,7 +12,7 @@ export function sensitiveReason(text: string): string | null {
     return '包含 API 密钥或访问令牌'
   if (/\bBearer\s+[A-Za-z0-9._~+/=-]{16,}/i.test(text)) return '包含访问令牌'
   if (
-    /(密码|口令|密钥|验证码|password|passwd|pwd|passcode|secret|token|api[ _-]?key)\s*(是|为|：|:|=)\s*\S+/i.test(
+    /(密码|口令|密钥|验证码|password|passwd|pwd|passcode|secret|token|api[ _-]?key)["']?\s*(是|为|：|:|=)\s*["']?\S+/i.test(
       text,
     )
   )

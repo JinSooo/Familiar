@@ -29,7 +29,7 @@ tests:
     assert:
       - type: javascript
         value: output.candidates.some(c => c.target === 'habits' && /跑步/.test(c.text))
-  - description: 正在做的项目进主题
+  - description: 项目定位和存储决定进主题
     vars:
       kind: reflect
       conversation: |
@@ -41,6 +41,42 @@ tests:
         value: output.candidates.some(c => c.target === 'topic' && /Familiar|桌面宠物/.test(c.text + (c.topic || '')))
       - type: javascript
         value: output.summary.length > 0
+  - description: 纯推进进度只进时间线不进主题
+    vars:
+      kind: reflect
+      existing: |
+        已有主题：
+        - Familiar
+        已确认：
+        - [Familiar] 用户的 Familiar 是桌面宠物项目
+        待确认：
+        （无）
+      conversation: |
+        用户：今天继续推进 Familiar，上午在调试快捷问答，下午接着开发记忆模块。
+        小黑：现在进展怎么样？
+        用户：还在调，明天继续。
+    assert:
+      - type: javascript
+        value: output.candidates.every(c => c.target !== 'topic')
+      - type: javascript
+        value: output.summary.length > 0
+  - description: 项目关键决定进主题并沿用待确认中的主题名
+    vars:
+      kind: reflect
+      existing: |
+        已有主题：
+        - Familiar
+        已确认：
+        （无）
+        待确认：
+        - m-abc123：用户的 Familiar（代码仓库名 all-in-pet）是桌面宠物项目
+      conversation: |
+        用户：all-in-pet 的记忆存储定下来了：Markdown 是唯一真实数据，SQLite 只做可重建的索引。
+        小黑：以后修改记忆以哪个为准？
+        用户：以 Markdown 为准，要让我能直接编辑文件。
+    assert:
+      - type: javascript
+        value: output.candidates.some(c => c.target === 'topic' && c.topic === 'Familiar' && /Markdown/.test(c.text) && /SQLite|索引|直接编辑/.test(c.text))
   # --- reflection: what should not be kept ---
   - description: 一次性请求不产生记忆
     vars:

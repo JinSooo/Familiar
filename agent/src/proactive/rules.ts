@@ -147,6 +147,7 @@ export function budget(input: {
  * unseen (missed), and once the countdown runs out unanswered it was ignored.
  */
 export function bubbleProgress(input: {
+  /** Monotonic milliseconds, in the same clock domain as now and startedAt. */
   shownAt: number
   /** When the countdown started; undefined while still waiting for the user. */
   startedAt?: number

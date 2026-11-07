@@ -19,11 +19,43 @@ const maxText = 12000
 
 export function privateAddress(ip: string): boolean {
   if (isIP(ip) === 6) {
-    const v6 = ip.toLowerCase()
-    if (v6 === '::1' || v6 === '::') return true
-    if (/^(fc|fd|fe8|fe9|fea|feb)/.test(v6)) return true
-    const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(v6)
-    return mapped ? privateAddress(mapped[1]!) : false
+    // URL normalization turns dotted tails into hex; inspect the full 128 bits.
+    const hex = ip.toLowerCase().replace(/\d+\.\d+\.\d+\.\d+$/, (tail) => {
+      const bytes = tail.split('.').map(Number)
+      return `${((bytes[0]! << 8) | bytes[1]!).toString(16)}:${((bytes[2]! << 8) | bytes[3]!).toString(16)}`
+    })
+    const halves = hex.split('::')
+    const left = halves[0] ? halves[0].split(':') : []
+    const right = halves[1] ? halves[1].split(':') : []
+    const words = (
+      halves.length === 2
+        ? [
+            ...left,
+            ...Array<string>(8 - left.length - right.length).fill('0'),
+            ...right,
+          ]
+        : left
+    ).map((word) => parseInt(word, 16))
+    const bytes = words.flatMap((word) => [word >> 8, word & 255])
+    if (bytes.slice(0, 15).every((b) => b === 0) && bytes[15]! <= 1) return true
+    if (
+      (bytes[0]! & 0xfe) === 0xfc ||
+      (bytes[0] === 0xfe && (bytes[1]! & 0xc0) === 0x80)
+    )
+      return true
+    const zero = (end: number) => bytes.slice(0, end).every((b) => b === 0)
+    const embedded =
+      (zero(10) && bytes[10] === 255 && bytes[11] === 255) || // IPv4-mapped
+      (zero(8) &&
+        bytes[8] === 255 &&
+        bytes[9] === 255 &&
+        bytes[10] === 0 &&
+        bytes[11] === 0) || // IPv4-translated
+      zero(12) || // IPv4-compatible
+      (words[0] === 0x64 &&
+        words[1] === 0xff9b &&
+        words.slice(2, 6).every((w) => w === 0)) // NAT64 /96
+    return embedded ? privateAddress(bytes.slice(12).join('.')) : false
   }
   const [a, b] = ip.split('.').map(Number) as [number, number]
   return (

@@ -97,6 +97,7 @@ export function reduceSession(session: Session, event: AgentEvent): Session {
       {
         id: event.id,
         name: toolDescription(event.toolName, event.input),
+        tool: event.toolName,
         ...(toolDetail(event.toolName, event.input)
           ? { detail: toolDetail(event.toolName, event.input) }
           : {}),
@@ -318,6 +319,61 @@ function toolDescription(name: string, input: unknown): string {
  * steps a later turn cannot see its own work, so it disowned real actions and made up reasons
  * (reported 2026-11-06: 「前面说已经操作微信……没有依据」 after it had opened and read WeChat).
  */
+/** Tools whose result line is Familiar's own report of what it did, not outside text. */
+const actionTools = new Set([
+  'click',
+  'type_text',
+  'press_key',
+  'set_value',
+  'scroll',
+  'open_app',
+  'drag',
+  'take_over',
+  'write_file',
+  'edit_file',
+  'delete_path',
+  'make_dir',
+  'remember',
+  'forget',
+  'remind',
+  'add_todo',
+  'cancel_reminder',
+])
+/** Set by the agent core when a tool threw or was denied. */
+const coreOutcomes = new Set([
+  '工具执行失败，请检查输入和访问权限。',
+  '工具执行已拒绝',
+])
+
+/**
+ * How a step ended, for the record above. Action tools keep their result line (「已…」「没做成…」)
+ * and built-in tools keep their errors, so a later turn knows what failed. Anything else may be
+ * outside text (pages, files, MCP, window contents) and must not be restated under a system heading.
+ */
+function stepOutcome(
+  tool: string | undefined,
+  output: string | undefined,
+): string {
+  const first = (output ?? '')
+    .split('\n')
+    .find((line) => line.trim())
+    ?.trim()
+  if (!first) return ''
+  const builtIn = tool !== undefined && !tool.startsWith('mcp__')
+  const error = builtIn
+    ? /^\{"error":"((?:[^"\\]|\\.)*)"/.exec(first)?.[1]
+    : undefined
+  const own = coreOutcomes.has(first)
+    ? first
+    : error !== undefined
+      ? `出错：${error.replace(/\\(.)/g, '$1')}`
+      : actionTools.has(tool ?? '')
+        ? first
+        : ''
+  if (!own) return ' → 已返回结果'
+  return ` → ${own.length > 120 ? `${own.slice(0, 119)}…` : own}`
+}
+
 export function modelHistory(session: Pick<Session, 'messages' | 'tools'>): {
   role: 'user' | 'assistant'
   content: string
@@ -331,17 +387,9 @@ export function modelHistory(session: Pick<Session, 'messages' | 'tools'>): {
         const steps = session.tools.filter((t) => t.turn === i && t.done)
         if (steps.length) {
           let record = steps
-            .map((t, n) => {
-              const result = (t.output ?? '')
-                .split('\n')
-                .find((line) => line.trim())
-                ?.trim()
-              const short =
-                result && result.length > 120
-                  ? `${result.slice(0, 119)}…`
-                  : result
-              return `${n + 1}. ${t.name}${short ? ` → ${short}` : ''}`
-            })
+            .map(
+              (t, n) => `${n + 1}. ${t.name}${stepOutcome(t.tool, t.output)}`,
+            )
             .join('\n')
           if (record.length > perTurn)
             record = `${record.slice(0, perTurn)}\n…（后面还有）`

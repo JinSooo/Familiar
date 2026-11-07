@@ -1,6 +1,7 @@
 import { tmpdir } from 'node:os'
 import {
   forbiddenRoots,
+  credentialRoots,
   normalizePath,
   readableFamiliarDirs,
 } from '../permissions/paths'
@@ -25,7 +26,6 @@ export async function sandboxProfile(
     '(allow mach-lookup)',
     '(allow file-read*)',
     `(allow file-write* (subpath ${quote(normalizePath(settings.workspacePath))}) (subpath ${quote(normalizePath(tmpdir()))}) (literal "/dev/null"))`,
-    '(deny file-read* file-write* (regex #"/(Login Data(-journal|-wal|-shm)?|logins[.]json|key4[.]db(-wal|-shm)?)$"))',
     ...roots.map(
       (root) => `(deny file-read* file-write* (subpath ${quote(root)}))`,
     ),
@@ -35,6 +35,11 @@ export async function sandboxProfile(
       (dir) => `(allow file-read* (subpath ${quote(dir)}))`,
     ),
     `(allow file-read* file-write* (subpath ${quote(normalizePath(settings.workspacePath))}))`,
+    // Credential denials must win even when the workspace contains them.
+    ...credentialRoots().map(
+      (root) => `(deny file-read* file-write* (subpath ${quote(root)}))`,
+    ),
+    '(deny file-read* file-write* (regex #"/(Login Data(-journal|-wal|-shm)?|logins[.]json|key4[.]db(-wal|-shm)?)$"))',
     ...(network ? ['(allow network*)'] : []),
   ].join('\n')
 }

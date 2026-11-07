@@ -286,7 +286,19 @@ export class KnowledgeIndex {
     const limit = options.limit ?? 6
     const ranked: number[][] = []
     const text = this.fullText(query)
-    if (text.length) ranked.push(text)
+    const identity = this.db.query<
+      {
+        path: string
+        hash: string
+        heading: string
+        start: number
+        end: number
+      },
+      [number]
+    >('SELECT path, hash, heading, start, end FROM kchunks WHERE id = ?')
+    const before = new Map(
+      text.map((id) => [id, JSON.stringify(identity.get(id))]),
+    )
     if (options.embedder) {
       try {
         // 20 s: a local model may have to start first.
@@ -316,6 +328,11 @@ export class KnowledgeIndex {
         )
       }
     }
+    // Incremental sync can reuse rowids while the embedding request is in flight.
+    const currentText = text.filter(
+      (id) => before.get(id) === JSON.stringify(identity.get(id)),
+    )
+    if (currentText.length) ranked.unshift(currentText)
     // Reciprocal rank fusion: a chunk high in either list, or present in both, comes first.
     const fused = new Map<number, number>()
     for (const list of ranked)

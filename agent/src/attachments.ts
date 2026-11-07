@@ -3,6 +3,11 @@ import { extname, join } from 'node:path'
 import type { ModelMessage } from 'ai'
 import type { Attachment, Message } from '../../src/shared'
 import { conversationsDir } from './system'
+import {
+  normalizePath,
+  readableFamiliarDirs,
+  within,
+} from './permissions/paths'
 
 /**
  * Files kept with a conversation: what the user sends and what tools make (generated images).
@@ -139,7 +144,13 @@ export async function readAttachment(attachment: Attachment): Promise<Buffer> {
  * The model's view of a message: text plus its attachments as parts. Images and PDFs go in as
  * they are; text files are inlined; anything else is named so the model knows it was there.
  */
-export async function toModelMessage(message: Message): Promise<ModelMessage> {
+export async function toModelMessage(
+  message: Message,
+  options: {
+    includeAttachments?: boolean
+    canReadAttachment?: (path: string) => Promise<boolean>
+  } = {},
+): Promise<ModelMessage> {
   if (!message.attachments?.length)
     return { role: message.role, content: message.content }
   if (message.role === 'assistant') {
@@ -155,6 +166,29 @@ export async function toModelMessage(message: Message): Promise<ModelMessage> {
   > = []
   if (message.content) parts.push({ type: 'text', text: message.content })
   for (const a of message.attachments) {
+    if (options.includeAttachments === false) {
+      let path: string | undefined
+      try {
+        const file = attachmentFile(a.path)
+        // read_file currently understands UTF-8 text only, not images or PDFs.
+        if (
+          isText(a.mediaType) &&
+          (options.canReadAttachment
+            ? await options.canReadAttachment(file)
+            : readableFamiliarDirs().some((dir) =>
+                within(normalizePath(file), dir),
+              ))
+        )
+          path = file
+      } catch {
+        // Invalid or inaccessible paths still leave a file name in the history.
+      }
+      parts.push({
+        type: 'text',
+        text: `（之前附上过：${a.name}${path ? `。要再看可以用 read_file 读 ${path}` : ''}）`,
+      })
+      continue
+    }
     let bytes: Buffer
     try {
       bytes = await readAttachment(a)

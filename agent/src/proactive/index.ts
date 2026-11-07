@@ -24,6 +24,7 @@ import {
   bubbleProgress,
   budget,
   candidates,
+  inQuietHours,
   missedLines,
   pace,
 } from './rules'
@@ -53,6 +54,8 @@ const meetingApps = new Set([
 export interface Speaker {
   /** The pet is already talking with the user (a turn running, capsule or chat open). */
   busy(): boolean
+  /** The pet window can actually display a bubble. */
+  visible(): boolean
   /** Put the message in the bubble. */
   say(message: ProactiveMessage): void
   /** The status changed (settings page, panel). */
@@ -80,6 +83,7 @@ async function inTheWay(): Promise<string | undefined> {
 
 let speaker: Speaker | undefined
 let timer: ReturnType<typeof setInterval> | undefined
+let startupTimer: ReturnType<typeof setTimeout> | undefined
 let ticking = false
 /**
  * The message on screen, so a click can answer it and the watch can end it: ignored when the
@@ -153,42 +157,82 @@ const showFor = (m: ProactiveMessage) =>
 const waitFor = 10 * minute
 const watchEvery = 5000
 
-async function show(message: ProactiveMessage, idle: number, reopened = false) {
+async function show(
+  message: ProactiveMessage,
+  idle: number,
+  reopened = false,
+  claim?: () => Promise<boolean>,
+) {
   await updateState((s) => {
     if (reopened) {
       const m = s.history.find((x) => x.id === message.id)
       if (m) delete m.response
-    } else s.history.unshift(message)
+    } else {
+      s.history = s.history.filter((m) => m.id !== message.id)
+      s.history.unshift(message)
+    }
   })
-  clearInterval(showing?.timer)
-  const now = Date.now()
+  // Settings and visibility can change even while the history write is pending.
+  const currentIdle = reopened
+    ? speaker?.visible() && !showing
+      ? 0
+      : undefined
+    : await readyToShow(message.trigger, message.id)
+  const claimed = currentIdle !== undefined && (!claim || (await claim()))
+  if (
+    !claimed ||
+    showing ||
+    !speaker?.visible() ||
+    (!reopened && speaker.busy())
+  ) {
+    await updateState((s) => {
+      if (reopened) {
+        const m = s.history.find((x) => x.id === message.id)
+        if (m) m.response = 'missed'
+      } else s.history = s.history.filter((m) => m.id !== message.id)
+    })
+    return false
+  }
+  // Bun on macOS uses CLOCK_UPTIME_RAW, like HIDIdleTime: neither counts sleep.
+  const now = performance.now()
   showing = {
     message,
     shownAt: now,
-    idleAtShow: Math.round(idle),
+    idleAtShow: Math.round(currentIdle ?? idle),
     // Brought back by a click: the user is plainly there.
     ...(reopened ? { startedAt: now } : {}),
     timer: setInterval(() => void watch(), watchEvery),
   }
   speaker?.say(message)
   void changed()
+  return true
 }
 
 async function watch() {
   const current = showing
   if (!current) return
-  const idle = await idleSeconds().catch(() => 0)
+  const idle = await idleSeconds().catch(() => Number.POSITIVE_INFINITY)
   if (showing !== current) return
+  if (!speaker?.visible()) {
+    await respond(current.message.id, 'missed', idle)
+    return
+  }
   const progress = bubbleProgress({
     shownAt: current.shownAt,
     startedAt: current.startedAt,
     idle,
-    now: Date.now(),
+    now: performance.now(),
     showFor: showFor(current.message),
     waitFor,
   })
   current.startedAt = progress.startedAt
   if (progress.end) await respond(current.message.id, progress.end, idle)
+}
+
+/** A hidden interval is never evidence that the user ignored the bubble. */
+export function petVisibilityChanged(visible: boolean) {
+  if (!visible && showing)
+    void respond(showing.message.id, 'missed').catch(console.error)
 }
 
 /** Shows an unseen line again (the dot on the pet, the menu bar panel). */
@@ -199,7 +243,8 @@ export async function reopen(id: string): Promise<void> {
   )
   if (!message) throw new Error('这句话已经过期了')
   if (showing) throw new Error('正在说另一句话')
-  await show({ ...message, response: undefined }, 0, true)
+  if (!(await show({ ...message, response: undefined }, 0, true)))
+    throw new Error('宠物已隐藏，请先显示宠物')
 }
 
 /** What the user did with a bubble. 别烦我 holds for the rest of the day. */
@@ -224,6 +269,7 @@ export async function respond(
     const m = s.history.find((x) => x.id === id)
     if (!m || m.response) return
     m.response = response
+    if (s.delivering?.message.id === id) delete s.delivering
     answered = { ...m }
     if (response === 'quiet') {
       const end = new Date()
@@ -270,18 +316,17 @@ export function noteConversation() {
   }).catch(console.error)
 }
 
-const newId = () => `p${Date.now().toString(36)}`
+const newId = () =>
+  `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`
 
 /** The model's take on the latest activity summary, waiting for a good moment to be said. */
-let queued:
-  | {
-      text: string
-      reason: string
-      facts: string
-      decision: string
-      expires: number
-    }
-  | undefined
+const queued: {
+  trigger: ProactiveTrigger
+  text: string
+  reason: string
+  decision: string
+  expires: number
+}[] = []
 /** A line about what the user is doing goes stale after this. */
 const freshFor = 40 * minute
 
@@ -432,13 +477,13 @@ export async function noticeActivity(digest: {
         reason: decision.reason || '觉得没什么要说的',
       })
     if (decision.speak)
-      queued = {
+      queued.push({
+        trigger: 'activity',
         text: decision.text,
         reason: decision.reason || digest.title,
-        facts,
         decision: id,
         expires: now + freshFor,
-      }
+      })
   } catch (error) {
     console.error('Proactive look at activity failed', error)
   }
@@ -452,68 +497,136 @@ async function dueReminders(now: number) {
   )
 }
 
+/** Read slow probes first, then check all current synchronous gates together. */
+async function readyToShow(trigger: ProactiveTrigger, messageId?: string) {
+  if (await inTheWay()) return undefined
+  const idle = await idleSeconds().catch(() => Number.POSITIVE_INFINITY)
+  const state = await readState()
+  const settings = getSettings().proactive
+  const now = Date.now()
+  if (showing || !speaker?.visible() || speaker.busy() || idle >= awayAfter)
+    return undefined
+  if (trigger === 'reminder') {
+    if (inQuietHours(settings.quiet, new Date(now))) return undefined
+  } else if (
+    budget({
+      settings,
+      history: state.history.filter((m) => m.id !== messageId),
+      days: state.days,
+      now,
+      quietUntil: state.quietUntil,
+    }).reason
+  )
+    return undefined
+  return idle
+}
+
+const sameReminder = (a: Reminder, b: Reminder) =>
+  a.id === b.id && a.at === b.at && a.text === b.text && a.kind === b.kind
+
+/** The outbox survives both sides of the reminders.md write. */
+async function deliver(idle: number) {
+  const state = await readState()
+  const pending = state.delivering
+  if (!pending) return
+  if (state.history.some((m) => m.id === pending.message.id && m.response)) {
+    await updateState((s) => {
+      delete s.delivering
+    })
+    return
+  }
+  await show({ ...pending.message, at: Date.now() }, idle, false, async () => {
+    // No context probe after claiming: cancellation during a probe must win.
+    const claimed = await updateReminders((list) => {
+      const current = list.find(
+        (r) =>
+          sameReminder(r, pending.reminder) &&
+          r.at !== undefined &&
+          r.at <= Date.now() &&
+          (!r.done || r.done === pending.message.at),
+      )
+      return {
+        list: list.map((r) =>
+          r === current ? { ...r, done: pending.message.at } : r,
+        ),
+        result: current,
+      }
+    })
+    if (!claimed)
+      await updateState((s) => {
+        delete s.delivering
+      })
+    return Boolean(claimed)
+  })
+}
+
 async function tick() {
   if (ticking || !speaker) return
   ticking = true
   try {
     const now = Date.now()
+    // Expiration must run even while busy, hidden, muted or away.
+    for (let i = queued.length - 1; i >= 0; i--) {
+      const line = queued[i]!
+      if (line.expires >= now) continue
+      await hold({
+        at: now,
+        trigger: line.trigger,
+        kind: 'expired',
+        reason: '一直没等到不打扰你的时机',
+        text: line.text,
+      })
+      queued.splice(i, 1)
+    }
     const settings = getSettings()
     const state = await readState()
-    if (showing || speaker.busy()) return
-    // Nobody at the Mac: a bubble would time out unseen and count as ignored. Due reminders
-    // wait and show within a minute of the user coming back.
-    const idle = await idleSeconds().catch(() => 0)
+    if (showing || speaker.busy() || !speaker.visible()) return
+    const idle = await idleSeconds().catch(() => Number.POSITIVE_INFINITY)
     if (idle >= awayAfter) return
 
-    // 1. Reminders the user asked for: always, except quiet hours (they wait).
+    if (state.delivering) {
+      if (inQuietHours(settings.proactive.quiet, new Date(now))) return
+      return await deliver(idle)
+    }
     const due = await dueReminders(now)
     const asked = due.find((r) => r.kind === 'reminder')
-    const silence = budget({
-      settings: settings.proactive,
-      history: state.history,
-      days: state.days,
-      now,
-      quietUntil: state.quietUntil,
-    })
     if (asked) {
-      if (silence.reason === '免打扰时段') return
-      if (await inTheWay()) return
-      await updateReminders((list) => ({
-        list: list.map((r) => (r.id === asked.id ? { ...r, done: now } : r)),
-        result: undefined,
-      }))
-      const late = now - asked.at > 5 * minute
-      return await show(
-        {
-          id: newId(),
-          at: now,
-          trigger: 'reminder',
-          text: asked.text,
-          reason: late ? `你设的提醒（${stamp(asked.at)}）` : '你设的提醒',
-        },
-        idle,
-      )
+      if (inQuietHours(settings.proactive.quiet, new Date(now))) return
+      // Persist the intent before marking done. The claim below revalidates the file.
+      const at = Date.now()
+      await updateState((s) => {
+        s.delivering = {
+          reminder: asked,
+          message: {
+            id: newId(),
+            at,
+            trigger: 'reminder',
+            text: asked.text,
+            reason:
+              at - asked.at > 5 * minute
+                ? `你设的提醒（${stamp(asked.at)}）`
+                : '你设的提醒',
+          },
+        }
+      })
+      return await deliver(idle)
     }
 
-    // 2. The pet's own ideas. Budget first; then only at a moment that costs little to interrupt.
-    if (silence.reason) return
+    if (
+      budget({
+        settings: settings.proactive,
+        history: state.history,
+        days: state.days,
+        now,
+        quietUntil: state.quietUntil,
+      }).reason
+    )
+      return
     const watching = settings.perception.enabled && !settings.perception.paused
     const events = watching
       ? await buffer.read(now - 4 * 60 * minute).catch(() => [])
       : []
     const moment = breakpoint({ events, now, idle })
-    if (queued && queued.expires < now) {
-      await hold({
-        at: now,
-        trigger: 'activity',
-        kind: 'expired',
-        reason: '一直没等到不打扰你的时机',
-        text: queued.text,
-      })
-      queued = undefined
-    }
-
-    // The day's start and coming back are good moments in themselves.
     const care = watching
       ? candidates({
           events,
@@ -525,23 +638,25 @@ async function tick() {
       : []
     const opening = care.find((c) => c.breakpoint)
     if (!opening && !moment) return
-    if (await inTheWay()) return
+    if ((await readyToShow('activity')) === undefined) return
 
-    // A line already decided from what the user is doing goes first: it is about now.
-    if (queued && !opening) {
-      const line = queued
-      queued = undefined
-      return await show(
-        {
-          id: newId(),
-          at: now,
-          trigger: 'activity',
-          text: line.text,
-          reason: line.reason,
-          decision: line.decision,
-        },
-        idle,
+    if (queued.length && !opening) {
+      const line = queued[0]!
+      if (
+        await show(
+          {
+            id: newId(),
+            at: Date.now(),
+            trigger: line.trigger,
+            text: line.text,
+            reason: line.reason,
+            decision: line.decision,
+          },
+          idle,
+        )
       )
+        queued.splice(queued.indexOf(line), 1)
+      return
     }
 
     const followUp = due.find((r) => r.kind === 'follow-up')
@@ -552,22 +667,33 @@ async function tick() {
       facts = opening.facts
     } else if (followUp && settings.proactive.triggers.followUp) {
       trigger = 'follow-up'
-      // Said as "now is the time": an absolute date invites the model to second-guess it.
-      facts = `到了之前记下要跟进的时候，该关心一下这件事了：${followUp.text}`
+      // Revalidate follow-ups too: the same editor/model race applies here.
+      const claimed = await updateReminders((list) => {
+        const current = list.find(
+          (r) =>
+            r.id === followUp.id &&
+            !r.done &&
+            r.kind === 'follow-up' &&
+            r.at !== undefined &&
+            r.at <= Date.now(),
+        )
+        return {
+          list: list.map((r) =>
+            r === current ? { ...r, done: Date.now() } : r,
+          ),
+          result: current,
+        }
+      })
+      if (!claimed) return
+      facts = `到了之前记下要跟进的时候，该关心一下这件事了：${claimed.text}`
     } else if (care[0]) {
       trigger = care[0].trigger
       facts = care[0].facts
     }
     if (!trigger) return
-    // Fired whether or not the model speaks, so a quiet "no" is not asked again every minute.
     await updateState((s) => {
       s.fired[trigger] = now
     })
-    if (followUp && trigger === 'follow-up')
-      await updateReminders((list) => ({
-        list: list.map((r) => (r.id === followUp.id ? { ...r, done: now } : r)),
-        result: undefined,
-      }))
     const { id, decision } = await consult(
       trigger,
       facts,
@@ -583,19 +709,29 @@ async function tick() {
       })
       return
     }
-    // Things may have changed while the model thought.
-    if (showing || speaker.busy()) return
-    await show(
-      {
-        id: newId(),
-        at: Date.now(),
-        trigger,
-        text: decision.text,
-        reason: decision.reason || facts.slice(0, 30),
-        decision: id,
-      },
-      await idleSeconds().catch(() => 0),
+    const line = {
+      trigger,
+      text: decision.text,
+      reason: decision.reason || facts.slice(0, 30),
+      decision: id,
+      expires: now + freshFor,
+    }
+    queued.push(line)
+    if (line.expires < Date.now()) return
+    if (
+      await show(
+        {
+          id: newId(),
+          at: Date.now(),
+          trigger,
+          text: line.text,
+          reason: line.reason,
+          decision: id,
+        },
+        idle,
+      )
     )
+      queued.splice(queued.indexOf(line), 1)
   } catch (error) {
     console.error('Proactive check failed', error)
   } finally {
@@ -607,9 +743,11 @@ export function startProactive(s: Speaker) {
   speaker = s
   clearInterval(timer)
   timer = setInterval(() => void tick(), minute)
-  setTimeout(() => void tick(), 15000)
+  clearTimeout(startupTimer)
+  startupTimer = setTimeout(() => void tick(), 15000)
 }
 export function stopProactive() {
+  clearTimeout(startupTimer)
   clearInterval(timer)
   clearInterval(showing?.timer)
 }

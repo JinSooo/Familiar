@@ -87,6 +87,7 @@ import { resolveState } from './pet-logic'
 import {
   checkNow,
   noteConversation,
+  petVisibilityChanged,
   noticeActivity,
   proactiveChanged,
   proactiveStatus,
@@ -189,9 +190,14 @@ function broadcast(channel: string, payload: unknown) {
 }
 /** Whether the quick-ask bar is on screen: every show and hide goes through ui(). */
 let quickShown = false
+let petShown = true
 function ui(action: UiAction) {
   if (action.type === 'show-quick') quickShown = true
   if (action.type === 'hide-quick') quickShown = false
+  if (action.type === 'pet-visible') {
+    petShown = action.visible
+    petVisibilityChanged(petShown)
+  }
   send({ kind: 'ui', action })
 }
 /** Window alpha for the floating panels and for the settings and big windows. */
@@ -209,6 +215,31 @@ let expandedTurn = false
 let resetRequested = false
 let bubbleTimer: ReturnType<typeof setTimeout> | undefined
 let controller: AbortController | undefined
+let operationDone: Promise<void> | undefined
+
+/** Reserve before any await, including attachment I/O and conversation changes. */
+async function withSessionOperation(
+  work: (run: AbortController) => Promise<void>,
+): Promise<void> {
+  if (controller || resetRequested) throw new Error('已有对话正在运行')
+  const own = new AbortController()
+  controller = own
+  let release!: () => void
+  const done = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  operationDone = done
+  try {
+    await work(own)
+  } catch (error) {
+    if (!own.signal.aborted) throw error
+  } finally {
+    if (controller === own) controller = undefined
+    if (operationDone === done) operationDone = undefined
+    release()
+  }
+}
+
 let state: PetState = 'idle'
 const activity: Partial<Record<PetState, boolean>> = {}
 let typingAt = 0
@@ -242,6 +273,7 @@ const idleRestart = 2 * 60 * 60 * 1000
 let openedAt = 0
 async function memory() {
   const workspace = await ensureWorkspace(getSettings())
+  await snapshot(workspace, 'familiar: 保存之前的改动')
   return { workspace, ...openMemory() }
 }
 function memoryChanged(change: MemoryChange = {}) {
@@ -302,7 +334,7 @@ function shortcut(action: ShortcutAction) {
       mode: settings.quickOpen,
       idleMinutes: settings.quickIdleMinutes,
       shown: quickShown,
-      running: Boolean(controller),
+      running: Boolean(controller) || resetRequested,
       messages: session.messages.length,
       lastActivity: Math.max(session.updatedAt, openedAt),
       now: Date.now(),
@@ -319,7 +351,7 @@ function shortcut(action: ShortcutAction) {
     return ui({ type: 'show-main' })
   }
   if (action === 'newChat') {
-    if (controller) return
+    if (controller || resetRequested) return
     startFresh()
   }
   // summon (and a new chat) put the user in the capsule, ready to type.
@@ -351,27 +383,31 @@ function startFresh() {
 function restartIfIdle() {
   if (
     !controller &&
+    !resetRequested &&
     session.messages.length &&
     Date.now() - Math.max(session.updatedAt, openedAt) > idleRestart
   )
     startFresh()
 }
 async function openConversation(id: string) {
-  if (controller) throw new Error('先停止正在进行的对话')
-  const stored = await loadConversation(id)
-  clearTimeout(bubbleTimer)
-  session = {
-    ...emptySession(),
-    id: stored.id,
-    updatedAt: stored.updatedAt,
-    messages: stored.messages,
-    tools: stored.tools,
-  }
-  // The idle restart must not set it aside again on the next message.
-  openedAt = Date.now()
-  publishSession()
-  reflectSoon()
+  return withSessionOperation(async (run) => {
+    const stored = await loadConversation(id)
+    run.signal.throwIfAborted()
+    clearTimeout(bubbleTimer)
+    session = {
+      ...emptySession(),
+      id: stored.id,
+      updatedAt: stored.updatedAt,
+      messages: stored.messages,
+      tools: stored.tools,
+    }
+    // The idle restart must not set it aside again on the next message.
+    openedAt = Date.now()
+    publishSession()
+    reflectSoon()
+  })
 }
+
 let failedAt: number | undefined
 let chattedAt: number | undefined
 /** Recomputes the mood from what already happened and tells the pet and the panel if it moved. */
@@ -400,13 +436,13 @@ async function refreshMood() {
     emit(IPC.petMood, next, 'panel')
   }
 }
-function refreshState() {
+function refreshState(force = false) {
   // A proactive bubble waiting for an answer keeps the pet in its waiting pose, like an approval.
   const next = resolveState({
     ...activity,
     'needs-you': activity['needs-you'] || Boolean(session.proactive),
   }) as PetState
-  if (next !== state) {
+  if (force || next !== state) {
     state = next
     emit(IPC.petState, state, 'pet')
     emit(IPC.petState, state, 'panel')
@@ -506,25 +542,31 @@ async function run(
   input: unknown,
   files: unknown = [],
 ) {
-  if (controller) throw new Error('已有对话正在运行')
+  if (controller || resetRequested) throw new Error('已有对话正在运行')
   const uploads = uploadSchema.parse(files ?? [])
   const text = messageText.parse(input ?? '')
   if (!text && !uploads.length) throw new Error('消息是空的')
   if (session.messages.length >= 498) throw new Error('请开启新对话')
   clearTimeout(bubbleTimer)
   if (window === 'pet') restartIfIdle()
-  // The conversation id exists before the files are written beside it.
-  if (!session.id) session = { ...session, id: newConversationId() }
-  const attachments = []
-  for (const u of uploads)
-    attachments.push(
-      await saveAttachment(session.id, u.name, Buffer.from(u.data, 'base64')),
-    )
-  noteConversation()
-  chattedAt = Date.now()
-  void refreshMood()
-  await turn(window, text, attachments)
+  return withSessionOperation(async (run) => {
+    // The conversation id exists before the files are written beside it.
+    if (!session.id) session = { ...session, id: newConversationId() }
+    const attachments = []
+    for (const u of uploads) {
+      run.signal.throwIfAborted()
+      attachments.push(
+        await saveAttachment(session.id, u.name, Buffer.from(u.data, 'base64')),
+      )
+    }
+    run.signal.throwIfAborted()
+    noteConversation()
+    chattedAt = Date.now()
+    void refreshMood()
+    await turn(window, text, attachments, run)
+  })
 }
+
 /**
  * Runs again from one of the user's messages: it and everything after it go, and it is sent
  * again, edited when `input` is given, with the files it had. Retry, regenerate and edit.
@@ -534,71 +576,79 @@ async function resend(
   index: unknown,
   input: unknown,
 ) {
-  if (controller) throw new Error('已有对话正在运行')
-  const at = z.number().int().min(0).parse(index)
-  const { session: before, message } = rewind(session, at)
-  const text = optionalArg(messageText).parse(input) ?? message.content
-  if (!text && !message.attachments?.length) throw new Error('消息是空的')
-  clearTimeout(bubbleTimer)
-  session = before
-  await turn(window, text, message.attachments ?? [])
+  return withSessionOperation(async (run) => {
+    const at = z.number().int().min(0).parse(index)
+    const { session: before, message } = rewind(session, at)
+    const text = optionalArg(messageText).parse(input) ?? message.content
+    if (!text && !message.attachments?.length) throw new Error('消息是空的')
+    clearTimeout(bubbleTimer)
+    session = before
+    await turn(window, text, message.attachments ?? [], run)
+  })
 }
+
 /**
  * A new conversation holding this one up to and including message `index`; its files are
  * copied so either can be deleted on its own. The copy opens; the original stays as it was.
  */
 async function branch(index: unknown) {
-  if (controller) throw new Error('先停止正在进行的对话')
-  const at = z
-    .number()
-    .int()
-    .min(0)
-    .max(session.messages.length - 1)
-    .parse(index)
-  if (!session.id) throw new Error('这个对话还没有内容')
-  persist()
-  const id = newConversationId()
-  const messages = []
-  for (const m of session.messages.slice(0, at + 1)) {
-    const attachments = []
-    for (const a of m.attachments ?? []) {
-      try {
-        const copy = await saveAttachment(
-          id,
-          a.name,
-          await readAttachment(a),
-          a.mediaType,
-        )
-        attachments.push(a.at === undefined ? copy : { ...copy, at: a.at })
-      } catch {
-        // A file already gone stays gone in the copy too.
+  return withSessionOperation(async (run) => {
+    const at = z
+      .number()
+      .int()
+      .min(0)
+      .max(session.messages.length - 1)
+      .parse(index)
+    if (!session.id) throw new Error('这个对话还没有内容')
+    persist()
+    const id = newConversationId()
+    const messages = []
+    for (const m of session.messages.slice(0, at + 1)) {
+      run.signal.throwIfAborted()
+      const attachments = []
+      for (const a of m.attachments ?? []) {
+        try {
+          const copy = await saveAttachment(
+            id,
+            a.name,
+            await readAttachment(a),
+            a.mediaType,
+          )
+          attachments.push(a.at === undefined ? copy : { ...copy, at: a.at })
+        } catch {
+          // A file already gone stays gone in the copy too.
+        }
       }
+      messages.push({
+        ...m,
+        ...(m.attachments ? { attachments } : {}),
+      })
     }
-    messages.push({
-      ...m,
-      ...(m.attachments ? { attachments } : {}),
-    })
-  }
-  const copy: Session = {
-    ...emptySession(),
-    id,
-    updatedAt: Date.now(),
-    messages,
-    tools: session.tools
-      .filter((t) => t.turn <= at)
-      .map((t) => ({ ...t, id: `${id}-${t.id}` })),
-  }
-  await saveConversation(copy, getSettings().pet.name)
-  clearTimeout(bubbleTimer)
-  session = copy
-  openedAt = Date.now()
-  publishSession()
+    const copy: Session = {
+      ...emptySession(),
+      id,
+      updatedAt: Date.now(),
+      messages,
+      tools: session.tools
+        .filter((t) => t.turn <= at)
+        .map((t) => ({ ...t, id: `${id}-${t.id}` })),
+    }
+    await saveConversation(copy, getSettings().pet.name)
+    run.signal.throwIfAborted()
+    clearTimeout(bubbleTimer)
+    session = copy
+    openedAt = Date.now()
+    publishSession()
+  })
 }
+
 async function turn(
   window: WindowLabel | 'tray',
   text: string,
   attachments: Attachment[],
+  run: AbortController,
 ) {
+  run.signal.throwIfAborted()
   expandedTurn = window === 'chat' || window === 'main'
   turnWindow = window
   session = beginTurn(
@@ -610,9 +660,6 @@ async function turn(
   persist()
   const messages = modelHistory(session)
   publishSession()
-  resetRequested = false
-  const run = new AbortController()
-  controller = run
   Object.assign(activity, {
     thinking: true,
     talking: false,
@@ -621,7 +668,7 @@ async function turn(
   })
   refreshState()
   const emit = (item: AgentEvent): void => {
-    if (resetRequested) return
+    if (resetRequested || controller !== run) return
     session = reduceSession(session, item)
     publishSession()
     const target = expandTo({
@@ -677,28 +724,29 @@ async function turn(
       message: error instanceof Error ? error.message : '运行失败，请重试。',
     })
   } finally {
-    if (!resetRequested) {
-      session = {
-        ...session,
-        running: false,
-        approvals: [],
-        updatedAt: Date.now(),
+    if (controller === run) {
+      if (!resetRequested) {
+        session = {
+          ...session,
+          running: false,
+          approvals: [],
+          updatedAt: Date.now(),
+        }
+        persist()
       }
-      persist()
-    }
-    publishSession()
-    bubbleTimer = setTimeout(() => {
-      session = { ...session, bubble: '' }
-      refreshState()
       publishSession()
-    }, bubbleTimeout(session.bubble))
-    controller = undefined
-    memoryChanged()
-    pendingApprovals.clear()
-    activity.thinking = false
-    activity.talking = false
-    activity['needs-you'] = false
-    refreshState()
+      bubbleTimer = setTimeout(() => {
+        session = { ...session, bubble: '' }
+        refreshState()
+        publishSession()
+      }, bubbleTimeout(session.bubble))
+      memoryChanged()
+      pendingApprovals.clear()
+      activity.thinking = false
+      activity.talking = false
+      activity['needs-you'] = false
+      refreshState()
+    }
   }
 }
 function requireSender(window: string, allowed: string[]) {
@@ -753,12 +801,16 @@ async function request(
     }
     case IPC.sessionGet:
       return session
-    case IPC.sessionNew:
+    case IPC.sessionNew: {
       requireSender(window, ['chat', 'pet', 'tray', 'main', 'panel', 'quick'])
-      resetRequested = Boolean(controller)
+      if (resetRequested) throw new Error('正在新建对话')
+      resetRequested = true
+      if (controller && session.messages.length) persist()
       controller?.abort()
+      await operationDone
       pendingApprovals.clear()
       startFresh()
+      resetRequested = false
       // From the tray, the pet menu or the menu bar panel: put the user somewhere they can type.
       if (window === 'tray' || window === 'panel') {
         if (chatVisible) emit(IPC.view, 'chat', 'chat')
@@ -774,6 +826,7 @@ async function request(
       refreshState()
       publishSession()
       return
+    }
     case IPC.conversationsList:
       requireSender(window, ['chat', 'settings', 'main', 'panel'])
       return listConversations(optionalArg(z.string().max(200)).parse(input))
@@ -785,23 +838,26 @@ async function request(
       const id = z.string().parse(input)
       if (id === session.id && controller)
         throw new Error('正在进行的对话不能删除，先停止它')
-      await deleteConversation(id)
-      if (id === session.id) {
-        clearTimeout(bubbleTimer)
-        session = emptySession()
-      } else if (session.previous?.id === id)
-        session = { ...session, previous: undefined }
-      publishSession()
-      return
+      return withSessionOperation(async (run) => {
+        await deleteConversation(id)
+        run.signal.throwIfAborted()
+        if (id === session.id) {
+          clearTimeout(bubbleTimer)
+          session = emptySession()
+        } else if (session.previous?.id === id)
+          session = { ...session, previous: undefined }
+        publishSession()
+      })
     }
     case IPC.conversationsClear:
       requireSender(window, ['settings'])
-      if (controller) throw new Error('先停止正在进行的对话')
-      await clearConversations()
-      clearTimeout(bubbleTimer)
-      session = emptySession()
-      publishSession()
-      return
+      return withSessionOperation(async (run) => {
+        await clearConversations()
+        run.signal.throwIfAborted()
+        clearTimeout(bubbleTimer)
+        session = emptySession()
+        publishSession()
+      })
     case IPC.conversationsReveal:
       requireSender(window, ['chat', 'settings', 'main'])
       await mkdir(conversationsDir, { recursive: true })
@@ -881,6 +937,7 @@ async function request(
       const id = z.string().parse(input)
       const choice = z.enum(['approve', 'deny', 'always']).parse(args[1])
       if (!pendingApprovals.has(id)) throw new Error('Unknown approval')
+      const owner = controller
       const approval = session.approvals.find((a) => a.id === id)
       if (choice === 'always' && approval?.server) {
         const server = approval.server
@@ -902,6 +959,12 @@ async function request(
         })
         broadcast(IPC.dirRulesChanged, saved.dirRules)
       }
+      if (
+        controller !== owner ||
+        owner?.signal.aborted ||
+        !pendingApprovals.has(id)
+      )
+        return
       const decision = choice === 'deny' ? 'deny' : 'approve'
       session = {
         ...session,
@@ -1536,18 +1599,32 @@ async function start() {
     /* First launch. */
   }
   await restoreLatest()
+  // The shell may keep its WebViews alive across an agent restart.
+  session = { ...session, running: false, bubble: '', proactive: undefined }
+  refreshState(true)
+  broadcast(IPC.petMood, currentMood())
+  emit(IPC.capsule, capsuleOpen, 'pet')
+  publishSession()
+  broadcast(IPC.proactiveChanged, await proactiveStatus())
   updatePet()
   rebuildTray()
   sendShortcuts()
   applyOpacity()
-  if (!getSettings().showPetOnLaunch) setPetVisible(false)
+  setPetVisible(getSettings().showPetOnLaunch)
   startPerception((status) => broadcast(IPC.perceptionChanged, status))
   onLocalModelChanged((status) => broadcast(IPC.localModelChanged, status))
   void stopLeftoverServer().catch(console.error)
   startKnowledge((status) => broadcast(IPC.knowledgeChanged, status))
   onActivityDigest((digest) => void noticeActivity(digest))
   startProactive({
-    busy: () => Boolean(controller) || capsuleOpen || chatVisible || hasDraft,
+    busy: () =>
+      Boolean(controller) ||
+      capsuleOpen ||
+      chatVisible ||
+      mainVisible ||
+      quickShown ||
+      hasDraft,
+    visible: () => petShown,
     say: (message) => {
       clearTimeout(bubbleTimer)
       session = { ...session, proactive: message }

@@ -1,4 +1,23 @@
+const relayBodies = ['> ❌ 没有可用token', '❌ 没有可用token']
+
+/** Hold only the known relay envelope until its step supplies failure evidence. */
+export function mayBeRelayReply(text: string): boolean {
+  const value = text.trim()
+  return relayBodies.some((body) => body.startsWith(value) || body === value)
+}
+export function relayReplyError(
+  text: string,
+  failed: boolean,
+): Error | undefined {
+  if (!failed || !relayBodies.includes(text.trim())) return undefined
+  return Object.assign(
+    new Error(`中转站返回了错误：没有可用token\n原文：${text}`),
+    { name: 'RelayReplyError' },
+  )
+}
+
 export function agentError(error: unknown): Error {
+  if (error instanceof Error && error.name === 'RelayReplyError') return error
   const chain: string[] = []
   let current = error
   for (let i = 0; i < 6 && current; i++) {

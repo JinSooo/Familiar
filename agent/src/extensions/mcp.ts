@@ -90,6 +90,9 @@ export async function updateMcpServer(
   const text = `${JSON.stringify({ ...raw, mcpServers: servers }, null, 2)}\n`
   await writeFile(`${mcpFile()}.tmp`, text, { mode: 0o600 })
   await rename(`${mcpFile()}.tmp`, mcpFile())
+  const parsed = serverSchema.safeParse(next)
+  if (parsed.success) latest.servers[name] = parsed.data
+  else delete latest.servers[name]
 }
 
 /** Tool names must match [A-Za-z0-9_-]{1,64}; the server goes into the name so access can be checked. */
@@ -120,9 +123,48 @@ interface Connection {
 }
 const connections = new Map<string, Connection>()
 let latest: McpConfig = { servers: {}, invalid: {} }
+const opening = new Map<string, { key: string; promise: Promise<Connection> }>()
+const prefixes = new Map<string, string>()
+const usedPrefixes = new Set<string>()
+const toolOwners = new Map<string, string>()
+const toolNames = new Map<string, string>()
+
+function uniqueName(
+  base: string,
+  used: { has(name: string): boolean },
+  limit: number,
+): string {
+  let candidate = base.slice(0, limit)
+  for (let n = 2; used.has(candidate); n++) {
+    const suffix = `_${n}`
+    candidate = base.slice(0, limit - suffix.length) + suffix
+  }
+  return candidate
+}
+function nameForTool(server: string, tool: string): string {
+  let prefix = prefixes.get(server)
+  if (!prefix) {
+    prefix = uniqueName(slug(server), usedPrefixes, 24)
+    prefixes.set(server, prefix)
+    usedPrefixes.add(prefix)
+  }
+  const key = JSON.stringify([server, tool])
+  let name = toolNames.get(key)
+  if (!name) {
+    const base = `mcp__${prefix}__${tool.replace(/[^A-Za-z0-9_-]+/g, '_') || 'tool'}`
+    name = uniqueName(base, toolOwners, 64)
+    toolNames.set(key, name)
+    toolOwners.set(name, server)
+  }
+  return name
+}
+function connectionKey({ access: _, ...transport }: McpServer): string {
+  return JSON.stringify(transport)
+}
 
 async function connect(name: string, server: McpServer): Promise<Connection> {
-  const key = JSON.stringify(server)
+  const key = connectionKey(server)
+  let client: MCPClient | undefined
   try {
     const transport =
       'command' in server
@@ -142,7 +184,7 @@ async function connect(name: string, server: McpServer): Promise<Connection> {
             headers: server.headers,
             fetch: systemFetch,
           }
-    const client = await createMCPClient({
+    client = await createMCPClient({
       transport,
       clientName: 'familiar',
       initializationOptions: { timeout: 20000 },
@@ -151,10 +193,10 @@ async function connect(name: string, server: McpServer): Promise<Connection> {
     const raw = await client.tools()
     const tools: ToolSet = {}
     for (const [tool, definition] of Object.entries(raw))
-      tools[`mcp__${slug(name)}__${tool}`.slice(0, 64)] =
-        definition as ToolSet[string]
+      tools[nameForTool(name, tool)] = definition as ToolSet[string]
     return { key, name, client, tools }
   } catch (error) {
+    await client?.close().catch(() => {})
     return {
       key,
       name,
@@ -170,17 +212,30 @@ export async function mcpTools(): Promise<ToolSet> {
   const wanted = Object.entries(latest.servers).filter(
     ([, s]) => s.access !== 'off',
   )
-  for (const [name, c] of connections)
-    if (!wanted.some(([n, s]) => n === name && JSON.stringify(s) === c.key)) {
-      connections.delete(name)
-      void c.client?.close().catch(() => {})
-    }
+  for (const [name, c] of [...connections, ...opening])
+    if (!wanted.some(([n, s]) => n === name && connectionKey(s) === c.key))
+      resetMcp(name)
   await Promise.all(
-    wanted
-      .filter(([name]) => !connections.has(name))
-      .map(async ([name, server]) =>
-        connections.set(name, await connect(name, server)),
-      ),
+    wanted.map(([name, server]) => {
+      if (connections.has(name)) return
+      const existing = opening.get(name)
+      if (existing) return existing.promise
+      const pending = {
+        key: connectionKey(server),
+        promise: connect(name, server).then(async (connection) => {
+          if (opening.get(name) === pending) {
+            opening.delete(name)
+            connections.set(name, connection)
+          } else {
+            // Reset or reconfiguration happened while connecting.
+            await connection.client?.close().catch(() => {})
+          }
+          return connection
+        }),
+      }
+      opening.set(name, pending)
+      return pending.promise
+    }),
   )
   const tools: ToolSet = {}
   for (const c of connections.values()) Object.assign(tools, c.tools)
@@ -189,6 +244,7 @@ export async function mcpTools(): Promise<ToolSet> {
 
 /** Drop a server's connection so the next run reconnects (after an error, or on request). */
 export function resetMcp(name?: string): void {
+  for (const n of opening.keys()) if (!name || n === name) opening.delete(n)
   for (const [n, c] of connections)
     if (!name || n === name) {
       connections.delete(n)
@@ -196,22 +252,26 @@ export function resetMcp(name?: string): void {
     }
 }
 
-export function closeMcp(): Promise<unknown> {
-  return Promise.all(
-    [...connections.values()].map((c) => c.client?.close().catch(() => {})),
-  )
+export async function closeMcp(): Promise<void> {
+  const pending = [...opening.values()].map((p) => p.promise)
+  opening.clear()
+  const clients = [...connections.values()]
+  connections.clear()
+  await Promise.all([
+    ...pending,
+    ...clients.map((c) => c.client?.close().catch(() => {})),
+  ])
 }
 
-/** Access for a prefixed MCP tool name, from the config read at the start of this run. */
+/** Only discovered tools have an owner; permissions follow the current saved config. */
 export function mcpAccess(
   toolName: string,
 ): { server: string; access: 'allow' | 'ask' | 'off' } | undefined {
-  const s = serverOfTool(toolName)
-  if (!s) return undefined
-  const name = Object.keys(latest.servers).find((n) => slug(n) === s)
-  return name
-    ? { server: name, access: latest.servers[name]!.access }
-    : { server: s, access: 'off' }
+  if (!toolName.startsWith('mcp__')) return undefined
+  const server = toolOwners.get(toolName)
+  return server
+    ? { server, access: latest.servers[server]?.access ?? 'off' }
+    : { server: serverOfTool(toolName) ?? '', access: 'off' }
 }
 
 export async function mcpStatus(): Promise<McpServerStatus[]> {

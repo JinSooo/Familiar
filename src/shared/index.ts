@@ -921,6 +921,8 @@ export interface Session {
   tools: {
     id: string
     name: string
+    /** The tool that ran (rows saved before 2026-11-07 have none). */
+    tool?: string
     done: boolean
     turn: number
     at?: number

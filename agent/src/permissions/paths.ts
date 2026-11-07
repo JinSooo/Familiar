@@ -30,17 +30,20 @@ export function within(path: string, root: string): boolean {
   return path === root || path.startsWith(root + sep)
 }
 
+export function credentialRoots(): string[] {
+  return ['Library/Keychains', '.ssh', '.gnupg'].map((p) =>
+    normalizePath(join(homedir(), p)),
+  )
+}
+
 export async function forbiddenRoots(): Promise<string[]> {
   const roots = [
-    'Library/Keychains',
-    '.ssh',
-    '.gnupg',
     // The old data folder (before 2026-10-28) and the current one.
     'Library/Application Support/Familiar',
     '.familiar',
   ].map((p) => normalizePath(join(homedir(), p)))
   roots.push(normalizePath(dataDir))
-  return roots
+  return [...credentialRoots(), ...roots]
 }
 
 /**
@@ -67,7 +70,12 @@ export async function protectedPathsIn(
     } catch {
       continue
     }
-    if (allowed.some((dir) => within(path, dir))) continue
+    if (
+      !credentialRoots().some((root) => within(path, root)) &&
+      !browserSecret(path) &&
+      allowed.some((dir) => within(path, dir))
+    )
+      continue
     if (roots.some((root) => within(path, root)) || browserSecret(path))
       found.add(path)
   }

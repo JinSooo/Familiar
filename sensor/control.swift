@@ -26,6 +26,44 @@ private let blockedApps: Set<String> = [
 private struct ControlError: Error { let message: String }
 private func fail(_ message: String) -> ControlError { ControlError(message: message) }
 
+/// The reader can cancel while the serial worker is inside an action.
+private final class ControlCancellation {
+  private let lock = NSLock()
+  private var through = 0
+  private var received = 0
+  private var active = 0
+  func receive(_ id: Int) { lock.lock(); received = max(received, id); lock.unlock() }
+  func begin(_ id: Int) { lock.lock(); active = id; lock.unlock() }
+  func cancel(_ id: Int? = nil) {
+    lock.lock(); through = max(through, id ?? received); lock.unlock()
+  }
+  func check() throws {
+    lock.lock(); let stopped = active > 0 && active <= through; lock.unlock()
+    if stopped { throw fail("已停止") }
+  }
+}
+private let cancellation = ControlCancellation()
+
+/// Window order is front to back; ignore only the helper's non-interactive cursor.
+private func allowPoint(_ point: CGPoint) throws {
+  guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+    as? [[String: Any]] else { throw fail("无法确认这个坐标所属的应用") }
+  for window in windows {
+    guard let pid = window[kCGWindowOwnerPID as String] as? Int32, pid != getpid(),
+      (window[kCGWindowAlpha as String] as? Double ?? 1) > 0,
+      let bounds = window[kCGWindowBounds as String] as? NSDictionary,
+      let frame = CGRect(dictionaryRepresentation: bounds), frame.contains(point)
+    else { continue }
+    guard let app = NSRunningApplication(processIdentifier: pid) else {
+      throw fail("无法确认这个坐标所属的应用")
+    }
+    if blockedApps.contains(app.bundleIdentifier ?? "") {
+      throw fail("「\(app.localizedName ?? "这个应用")」不能操作（钥匙串、密码和 Familiar 自己永远不碰）")
+    }
+    return
+  }
+}
+
 private func reply(_ fields: [String: Any]) {
   guard let data = try? JSONSerialization.data(withJSONObject: fields),
     let line = String(data: data, encoding: .utf8)
@@ -124,13 +162,15 @@ private func window(of target: Target, index: Int?) throws -> AXUIElement {
 }
 
 /// Brings the app forward through Accessibility (works from a background helper, unlike activate()).
-private func bringForward(_ target: Target, window: AXUIElement? = nil) {
+private func bringForward(_ target: Target, window: AXUIElement? = nil) throws {
+  try cancellation.check()
   if target.app.isHidden { target.app.unhide() }
   AXUIElementSetAttributeValue(target.element, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
   if let window {
     AXUIElementPerformAction(window, kAXRaiseAction as CFString)
   }
   for _ in 0..<20 where NSWorkspace.shared.frontmostApplication != target.app {
+    try cancellation.check()
     usleep(50_000)
   }
 }
@@ -280,7 +320,8 @@ private func windowCenter(_ target: Target) -> CGPoint? {
 }
 
 /// Glides the pet cursor there and waits until it arrives.
-private func arrive(_ point: CGPoint?) {
+private func arrive(_ point: CGPoint?) throws {
+  try cancellation.check()
   guard let point else { return }
   let duration = cursor.glide(to: point)
   if mode.global {
@@ -288,6 +329,7 @@ private func arrive(_ point: CGPoint?) {
     let from = CGEvent(source: nil)?.location ?? point
     let steps = max(1, Int(duration * 60))
     for n in 1...steps {
+      try cancellation.check()
       let t = Double(n) / Double(steps)
       let eased = t < 0.5 ? 2 * t * t : 1 - pow(-2 * t + 2, 2) / 2
       let p = CGPoint(x: from.x + (point.x - from.x) * eased, y: from.y + (point.y - from.y) * eased)
@@ -310,10 +352,12 @@ private func key(_ event: CGEvent?, _ pid: pid_t) {
   if mode.global { event.post(tap: .cghidEventTap) } else { event.postToPid(pid) }
 }
 
-private func realClick(_ point: CGPoint, button: String, count: Int) {
+private func realClick(_ point: CGPoint, button: String, count: Int) throws {
   let (down, up, mouse): (CGEventType, CGEventType, CGMouseButton) =
     button == "right" ? (.rightMouseDown, .rightMouseUp, .right) : (.leftMouseDown, .leftMouseUp, .left)
   for n in 1...max(1, count) {
+    try cancellation.check()
+    try allowPoint(point)
     for type in [down, up] {
       let event = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point, mouseButton: mouse)
       event?.setIntegerValueField(.mouseEventClickState, value: Int64(n))
@@ -326,7 +370,7 @@ private func realClick(_ point: CGPoint, button: String, count: Int) {
 
 /// The nearest relative that can be pressed and covers the same spot: a parent row or cell up to
 /// four levels up, or a child (three levels down). Background clicks have no other way in.
-private func pressableNear(_ element: AXUIElement) -> (AXUIElement, String)? {
+private func pressableNear(_ element: AXUIElement) throws -> (AXUIElement, String)? {
   let point = center(element)
   let covers = { (e: AXUIElement) -> Bool in
     guard let point, let f = axFrame(e) else { return true }
@@ -339,6 +383,7 @@ private func pressableNear(_ element: AXUIElement) -> (AXUIElement, String)? {
   var node = axElement(element, kAXParentAttribute)
   for _ in 0..<4 {
     guard let current = node else { break }
+    try cancellation.check()
     let role = axString(current, kAXRoleAttribute) ?? ""
     if role == "AXWindow" || role == "AXApplication" { break }
     if let how = press(current), covers(current) { return (current, how) }
@@ -372,15 +417,18 @@ private func click(_ request: [String: Any]) throws -> String {
     let (target, element) = try registered(id)
     let name = registry.elements[id]?.2 ?? ""
     let actions = axActions(element)
-    arrive(center(element))
+    try arrive(center(element))
+    try cancellation.check()
     if button == "left" && count == 1 {
       for action in ["AXPress", "AXConfirm", "AXPick", "AXOpen"] where actions.contains(action) {
+        try cancellation.check()
         if AXUIElementPerformAction(element, action as CFString) == .success {
           cursor.pulse()
           return "已点击「\(name)」"
         }
       }
     }
+    try cancellation.check()
     if button == "left" && count == 1 {
       if inputRoles.contains(axString(element, kAXRoleAttribute) ?? ""),
         AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue) == .success
@@ -388,7 +436,7 @@ private func click(_ request: [String: Any]) throws -> String {
         cursor.pulse()
         return "已把焦点放到「\(name)」"
       }
-      if let (pressable, how) = pressableNear(element),
+      if let (pressable, how) = try pressableNear(element),
         how == "selected" || AXUIElementPerformAction(pressable, how as CFString) == .success
       {
         cursor.pulse()
@@ -411,8 +459,8 @@ private func click(_ request: [String: Any]) throws -> String {
     guard let point = center(element) else {
       throw fail("「\(name)」读不到位置；可以 screenshot 后按坐标点")
     }
-    bringForward(target)
-    realClick(point, button: button, count: count)
+    try bringForward(target)
+    try realClick(point, button: button, count: count)
     cursor.pulse()
     return "已在「\(name)」上\(verb(button, count))"
   }
@@ -424,10 +472,10 @@ private func click(_ request: [String: Any]) throws -> String {
   let point = CGPoint(x: shot.frame.minX + x / shot.scale, y: shot.frame.minY + y / shot.scale)
   guard shot.frame.insetBy(dx: -1, dy: -1).contains(point) else { throw fail("坐标在截图范围外") }
   if shot.pid != 0, let app = NSRunningApplication(processIdentifier: shot.pid) {
-    bringForward(try findApp(app.bundleIdentifier))
+    try bringForward(try findApp(app.bundleIdentifier))
   }
-  arrive(point)
-  realClick(point, button: button, count: count)
+  try arrive(point)
+  try realClick(point, button: button, count: count)
   cursor.pulse()
   return "已在截图的 (\(Int(x)), \(Int(y))) 处\(verb(button, count))"
 }
@@ -448,19 +496,28 @@ private func drag(_ request: [String: Any]) throws -> String {
   guard mode.global else { throw fail("拖拽会用到真鼠标。\(needsGlobal)") }
   let from = try point(of: request, "from")
   let to = try point(of: request, "to")
-  arrive(from)
+  try allowPoint(from)
+  try allowPoint(to)
+  try arrive(from)
+  try cancellation.check()
+  try allowPoint(from)
+  var last = from
+  defer { hid(CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: last, mouseButton: .left)) }
   hid(CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: from, mouseButton: .left))
   usleep(120_000)
   cursor.glide(to: to)
   let steps = 30
   for n in 1...steps {
+    try cancellation.check()
     let t = Double(n) / Double(steps)
     let p = CGPoint(x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t)
+    try allowPoint(p)
+    last = p
     hid(CGEvent(mouseEventSource: nil, mouseType: .leftMouseDragged, mouseCursorPosition: p, mouseButton: .left))
     usleep(15_000)
   }
   usleep(80_000)
-  hid(CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: to, mouseButton: .left))
+  try cancellation.check()
   cursor.pulse()
   return "已从 (\(Int(from.x)), \(Int(from.y))) 拖到 (\(Int(to.x)), \(Int(to.y)))（屏幕坐标）"
 }
@@ -501,10 +558,11 @@ private func pressKeys(_ request: [String: Any]) throws -> String {
     }
   }
   guard let code else { throw fail("「\(keys)」里没有主键") }
-  if mode.global { bringForward(target) }
+  if mode.global { try bringForward(target) }
   // A shortcut can't leak a password, but typed characters could: plain keys skip secure fields.
   if flags.isEmpty && code < 50 && focusedIsSecure(target) { throw fail("焦点在密码框里，不往里输入") }
-  arrive(cursor.isPlaced ? nil : windowCenter(target))
+  try arrive(cursor.isPlaced ? nil : windowCenter(target))
+  try cancellation.check()
   for down in [true, false] {
     let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)
     event?.flags = flags
@@ -514,12 +572,13 @@ private func pressKeys(_ request: [String: Any]) throws -> String {
   return "已在「\(target.name)」按下 \(keys)"
 }
 
-private func keystrokes(_ text: String, _ pid: pid_t) {
+private func keystrokes(_ text: String, _ pid: pid_t) throws {
   let lines = text.components(separatedBy: "\n")
   for (n, line) in lines.enumerated() {
     let units = Array(line.utf16)
     var start = 0
     while start < units.count {
+      try cancellation.check()
       let chunk = Array(units[start..<min(start + 16, units.count)])
       for down in [true, false] {
         let event = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: down)
@@ -530,6 +589,7 @@ private func keystrokes(_ text: String, _ pid: pid_t) {
       start += 16
     }
     if n < lines.count - 1 {
+      try cancellation.check()
       for down in [true, false] {
         let event = CGEvent(keyboardEventSource: nil, virtualKey: 36, keyDown: down)
         event?.flags = .maskShift
@@ -547,19 +607,23 @@ private func typeText(_ request: [String: Any]) throws -> String {
     let (t, element) = try registered(id)
     target = t
     if isSecure(element) { throw fail("那是密码框，不往里输入") }
-    arrive(center(element))
+    try arrive(center(element))
+    try cancellation.check()
     if mode.global {
-      bringForward(target)
+      try bringForward(target)
+      try cancellation.check()
       if AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue) != .success,
         let point = center(element)
       {
-        realClick(point, button: "left", count: 1)
+        try realClick(point, button: "left", count: 1)
       }
       usleep(80_000)
     } else {
+      try cancellation.check()
       AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
       // Insert at the caret through Accessibility: no keystrokes, works with the app behind.
       let before = axString(element, kAXValueAttribute)
+      try cancellation.check()
       if AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, text as CFString) == .success {
         let after = axString(element, kAXValueAttribute)
         if after != before || (before == nil && after == nil) {
@@ -570,11 +634,12 @@ private func typeText(_ request: [String: Any]) throws -> String {
     }
   } else {
     target = try findApp(request["app"] as? String)
-    if mode.global { bringForward(target) }
-    arrive(cursor.isPlaced ? nil : windowCenter(target))
+    if mode.global { try bringForward(target) }
+    try arrive(cursor.isPlaced ? nil : windowCenter(target))
   }
+  try cancellation.check()
   if focusedIsSecure(target) { throw fail("焦点在密码框里，不往里输入") }
-  keystrokes(text, target.app.processIdentifier)
+  try keystrokes(text, target.app.processIdentifier)
   return "已在「\(target.name)」输入 \(text.count) 个字"
 }
 
@@ -584,7 +649,8 @@ private func setValue(_ request: [String: Any]) throws -> String {
   }
   let (_, element) = try registered(id)
   if isSecure(element) { throw fail("那是密码框，不往里填") }
-  arrive(center(element))
+  try arrive(center(element))
+  try cancellation.check()
   let result = AXUIElementSetAttributeValue(element, kAXValueAttribute as CFString, value as CFString)
   guard result == .success else { throw fail("这个元素的值改不了（\(result.rawValue)），可以点它再用 type_text 输入") }
   return "已把「\(registry.elements[id]?.2 ?? "")」设为「\(clip(value, 60))」"
@@ -626,7 +692,7 @@ private func scroll(_ request: [String: Any]) throws -> String {
     name = target.name
   }
   let point = center(element)
-  arrive(point)
+  try arrive(point)
   let words = ["up": "上", "left": "左", "right": "右"][direction] ?? "下"
   if !mode.global {
     // In the background: move the scroll bar through Accessibility, about a tenth per 5 lines.
@@ -636,12 +702,13 @@ private func scroll(_ request: [String: Any]) throws -> String {
     else { throw fail("「\(name)」在后台滚不了（找不到滚动条）。\(needsGlobal)") }
     let sign: Double = direction == "up" || direction == "left" ? -1 : 1
     let next = min(1, max(0, current + sign * Double(amount) * 0.02))
+    try cancellation.check()
     let result = AXUIElementSetAttributeValue(bar, kAXValueAttribute as CFString, next as CFNumber)
     guard result == .success else { throw fail("「\(name)」在后台滚不了（\(result.rawValue)）。\(needsGlobal)") }
     return "已在「\(name)」往\(words)滚动（位置 \(Int(current * 100))% → \(Int(next * 100))%）"
   }
   guard let point else { throw fail("读不到「\(name)」的位置") }
-  bringForward(target)
+  try bringForward(target)
   let (dy, dx): (Int32, Int32) =
     switch direction {
     case "up": (amount, 0)
@@ -652,6 +719,8 @@ private func scroll(_ request: [String: Any]) throws -> String {
   let event = CGEvent(
     scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: dy, wheel2: dx, wheel3: 0)
   event?.location = point
+  try cancellation.check()
+  try allowPoint(point)
   hid(event)
   return "已在「\(name)」往\(words)滚动 \(amount) 行"
 }
@@ -672,15 +741,17 @@ private func openApp(_ request: [String: Any]) throws -> String {
   // -g: launch or reopen without bringing it forward, so the user keeps what they are doing.
   open.arguments = (mode.global ? [] : ["-g"]) + (url.map { [$0.path] } ?? ["-a", name])
   open.standardError = FileHandle.nullDevice
+  try cancellation.check()
   try open.run()
   open.waitUntilExit()
   guard open.terminationStatus == 0 else { throw fail("找不到应用「\(name)」") }
   for _ in 0..<50 {
+    try cancellation.check()
     if let target = try? findApp(url.flatMap { Bundle(url: $0)?.bundleIdentifier } ?? name),
       !windows(of: target).isEmpty
     {
-      if mode.global { bringForward(target) }
-      arrive(windowCenter(target))
+      if mode.global { try bringForward(target) }
+      try arrive(windowCenter(target))
       return mode.global ? "已打开「\(target.name)」" : "已在后台打开「\(target.name)」（没有切到前台）"
     }
     usleep(100_000)
@@ -701,17 +772,18 @@ private func wait<T>(_ work: @escaping @Sendable () async throws -> T) throws ->
   return try result.get()
 }
 
-/// The main display, for global control without an app: everything on screen except our cursor.
+/// Exclude every window of blocked applications, including our own cursor.
 private func screenshotScreen(_ request: [String: Any]) throws -> [String: Any] {
   let maxSide = CGFloat(request["maxSide"] as? Int ?? 1600)
-  let ours = cursor.windowNumber
   let (image, scale, frame): (CGImage, CGFloat, CGRect) = try wait {
     let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
     let main = CGMainDisplayID()
     guard let display = content.displays.first(where: { $0.displayID == main }) ?? content.displays.first
     else { throw fail("找不到屏幕") }
-    let mine = content.windows.filter { $0.windowID == CGWindowID(ours ?? -1) }
-    let filter = SCContentFilter(display: display, excludingWindows: mine)
+    let excluded = content.applications.filter {
+      blockedApps.contains($0.bundleIdentifier) || $0.processID == getpid()
+    }
+    let filter = SCContentFilter(display: display, excludingApplications: excluded, exceptingWindows: [])
     let config = SCStreamConfiguration()
     let scale = min(CGFloat(filter.pointPixelScale), maxSide / CGFloat(max(display.width, display.height)))
     config.width = Int(CGFloat(display.width) * scale)
@@ -788,51 +860,62 @@ nonisolated(unsafe) private var escTap: CFMachPort?
 
 func runControl() -> Never {
   setvbuf(stdout, nil, _IOLBF, 0)
+  let worker = DispatchQueue(label: "familiar.control.actions")
   Thread.detachNewThread {
     while let line = readLine() {
       guard let data = line.data(using: .utf8),
-        let request = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-        let id = request["id"] as? Int
+        let request = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
       else { continue }
-      do {
-        if !AXIsProcessTrusted() {
-          throw fail("Familiar 还没有「辅助功能」权限：请在系统设置 › 隐私与安全性 › 辅助功能 里打开 Familiar")
-        }
-        let result: Any
-        if let global = request["global"] as? Bool, global != mode.global {
-          mode.global = global
-          cursor.setGlobal(global)
-        }
-        switch request["op"] as? String ?? "" {
-        case "cursor":
-          if request["show"] as? Bool == true {
-            cursor.show(sheet: request["sheet"] as? String, rate: request["rate"] as? Double ?? 1)
-          } else {
-            cursor.hide()
+      if request["op"] as? String == "cancel" {
+        if let through = request["through"] as? Int { cancellation.cancel(through) }
+        continue
+      }
+      guard let id = request["id"] as? Int else { continue }
+      cancellation.receive(id)
+      worker.async {
+        cancellation.begin(id)
+        do {
+          try cancellation.check()
+          if !AXIsProcessTrusted() {
+            throw fail("Familiar 还没有「辅助功能」权限：请在系统设置 › 隐私与安全性 › 辅助功能 里打开 Familiar")
           }
-          result = "ok"
-        case "drag": result = try drag(request)
-        case "apps": result = appList()
-        case "read":
-          let target = try findApp(request["app"] as? String)
-          let w = try window(of: target, index: request["window"] as? Int)
-          // Only when the model asked to read (not the re-read after each action).
-          if request["shown"] as? Bool == true { arrive(center(w)) }
-          result = readWindow(target, w, limit: request["limit"] as? Int ?? 400)
-        case "click": result = try click(request)
-        case "type": result = try typeText(request)
-        case "key": result = try pressKeys(request)
-        case "set": result = try setValue(request)
-        case "scroll": result = try scroll(request)
-        case "open": result = try openApp(request)
-        case "screenshot": result = try screenshot(request)
-        default: throw fail("未知操作")
+          let result: Any
+          if let global = request["global"] as? Bool, global != mode.global {
+            mode.global = global
+            cursor.setGlobal(global)
+          }
+          switch request["op"] as? String ?? "" {
+          case "cursor":
+            if request["show"] as? Bool == true {
+              cursor.show(sheet: request["sheet"] as? String, rate: request["rate"] as? Double ?? 1)
+            } else {
+              cursor.hide()
+            }
+            result = "ok"
+          case "drag": result = try drag(request)
+          case "apps": result = appList()
+          case "read":
+            let target = try findApp(request["app"] as? String)
+            let w = try window(of: target, index: request["window"] as? Int)
+            // Only when the model asked to read (not the re-read after each action).
+            if request["shown"] as? Bool == true { try arrive(center(w)) }
+            result = readWindow(target, w, limit: request["limit"] as? Int ?? 400)
+          case "click": result = try click(request)
+          case "type": result = try typeText(request)
+          case "key": result = try pressKeys(request)
+          case "set": result = try setValue(request)
+          case "scroll": result = try scroll(request)
+          case "open": result = try openApp(request)
+          case "screenshot": result = try screenshot(request)
+          default: throw fail("未知操作")
+          }
+          try cancellation.check()
+          reply(["id": id, "ok": true, "result": result])
+        } catch let error as ControlError {
+          reply(["id": id, "ok": false, "error": error.message])
+        } catch {
+          reply(["id": id, "ok": false, "error": error.localizedDescription])
         }
-        reply(["id": id, "ok": true, "result": result])
-      } catch let error as ControlError {
-        reply(["id": id, "ok": false, "error": error.message])
-      } catch {
-        reply(["id": id, "ok": false, "error": error.localizedDescription])
       }
     }
     exit(0)
@@ -850,6 +933,7 @@ func runControl() -> Never {
     if type == .keyDown, mode.global, event.getIntegerValueField(.keyboardEventKeycode) == 53,
       event.getIntegerValueField(.eventSourceUserData) != ourEvents
     {
+      cancellation.cancel()
       reply(["event": "escape"])
     }
     return Unmanaged.passUnretained(event)

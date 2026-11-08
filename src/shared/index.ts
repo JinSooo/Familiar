@@ -677,14 +677,14 @@ export interface ProactiveMessage {
 export function proactiveChoices(trigger: ProactiveTrigger) {
   return trigger === 'reminder'
     ? {
-        opensChat: false,
+        addsToChat: false,
         buttons: [
           ['ok', '知道了'],
           ['later', '10 分钟后'],
         ] as const,
       }
     : {
-        opensChat: true,
+        addsToChat: true,
         buttons: [
           ['ok', '好'],
           ['later', '稍后'],

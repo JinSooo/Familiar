@@ -350,10 +350,10 @@ describe('bubble', () => {
   test("a reminder only closes or comes back later; the pet's own line can open the chat", () => {
     const reminder = proactiveChoices('reminder')
     expect(reminder.buttons.map(([c]) => c)).toEqual(['ok', 'later'])
-    expect(reminder.opensChat).toBe(false)
+    expect(reminder.addsToChat).toBe(false)
     const own = proactiveChoices('lateNight')
     expect(own.buttons.map(([c]) => c)).toEqual(['ok', 'later', 'quiet'])
-    expect(own.opensChat).toBe(true)
+    expect(own.addsToChat).toBe(true)
   })
 
   // Reported 2026-11-02: 1 小时 24 分 and 21 分钟 did not line up in the menu bar panel. The

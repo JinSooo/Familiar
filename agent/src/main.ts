@@ -1384,12 +1384,13 @@ async function request(
       session = { ...session, proactive: undefined }
       sizePet()
       refreshState()
-      // 好: the line becomes part of the conversation, so the reply has something to answer.
+      // 好: the line joins the conversation as context for the next message. No window opens
+      // (user, 2026-11-09: the panel popping up after 好 was unnecessary).
       if (
         choice === 'ok' &&
         answered &&
         message &&
-        proactiveChoices(message.trigger).opensChat &&
+        proactiveChoices(message.trigger).addsToChat &&
         !controller
       ) {
         const now = Date.now()
@@ -1405,8 +1406,8 @@ async function request(
           ],
         }
         persist()
-        showChat()
-      } else publishSession()
+      }
+      publishSession()
       return
     }
     case IPC.proactiveCheck:

@@ -17,7 +17,7 @@ import { api } from '../api'
 import { observeSnapshot } from '../shared-ui/synchronization'
 import { PetAvatar } from '../pet/PetAvatar'
 import { Icon } from '../shared-ui/Icon'
-import { installUpdate, useUpdate } from '../shared-ui/update'
+import { installUpdate, updateProgress, useUpdate } from '../shared-ui/update'
 import { prettyShortcut } from '../settings/Shortcuts'
 
 const stateLabel: Record<PetState, string> = {
@@ -337,31 +337,40 @@ export function TrayPanel() {
           </button>
         )}
 
-        {update?.available && (
-          <button
-            type="button"
-            className="tray-card tray-pending"
-            disabled={update.installing}
-            onClick={() => {
-              setUpdateError('')
-              installUpdate().catch((e: unknown) =>
-                setUpdateError(e instanceof Error ? e.message : String(e)),
-              )
-            }}
-          >
-            <span>
-              {update.installing ? '正在更新到 ' : '更新到 '}
-              <strong>{update.available}</strong>
-            </span>
-            {updateError ? (
-              <span className="error">{updateError}</span>
-            ) : (
-              <span className="muted">
-                {update.installing ? '完成后自动重启' : '更新后会重启'}
+        {update?.available &&
+          (update.installing ? (
+            <div className="tray-card tray-update" role="status">
+              <span>
+                正在更新到 <strong>{update.available}</strong>
               </span>
-            )}
-          </button>
-        )}
+              <span className="muted">{updateProgress(update).text}</span>
+              <progress
+                className="local-progress"
+                max={100}
+                value={updateProgress(update).percent}
+              />
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="tray-card tray-pending"
+              onClick={() => {
+                setUpdateError('')
+                installUpdate().catch((e: unknown) =>
+                  setUpdateError(e instanceof Error ? e.message : String(e)),
+                )
+              }}
+            >
+              <span>
+                更新到 <strong>{update.available}</strong>
+              </span>
+              {updateError ? (
+                <span className="error">{updateError}</span>
+              ) : (
+                <span className="muted">更新后会重启</span>
+              )}
+            </button>
+          ))}
 
         {usage && usage.activeMinutes > 0 && (
           <section>

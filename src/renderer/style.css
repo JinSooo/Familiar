@@ -1939,6 +1939,12 @@ form.setting-row input {
   background: var(--accent-soft);
   box-shadow: none;
 }
+.tray-update {
+  background: var(--accent-soft);
+}
+.tray-update .local-progress {
+  margin: 4px 0 0;
+}
 .tray-reminder {
   min-width: 0;
   overflow: hidden;

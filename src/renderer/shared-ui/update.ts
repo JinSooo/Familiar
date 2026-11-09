@@ -7,6 +7,31 @@ export interface UpdateState {
   current: string
   available: string | null
   installing: boolean
+  /** Bytes downloaded so far, and the archive size when the server sent it. */
+  received: number
+  total: number | null
+  /** Download done; verifying and replacing the app. */
+  unpacking: boolean
+}
+
+const mb = (bytes: number) => `${Math.round(bytes / 1024 / 1024)} MB`
+
+/** While installing: the line under the version, and the bar's value (undefined: no known end). */
+export function updateProgress(state: UpdateState): {
+  text: string
+  percent?: number
+} {
+  if (state.unpacking) return { text: '正在安装，完成后自动重启' }
+  if (!state.received) return { text: '正在连接…' }
+  if (!state.total) return { text: `已下载 ${mb(state.received)}` }
+  const percent = Math.min(
+    100,
+    Math.floor((state.received / state.total) * 100),
+  )
+  return {
+    text: `下载中 ${percent}%（${mb(state.received)} / ${mb(state.total)}）`,
+    percent,
+  }
 }
 
 export const checkUpdate = () => invoke<UpdateState>('update_check')

@@ -1,5 +1,10 @@
 import { useState } from 'react'
-import { checkUpdate, installUpdate, useUpdate } from '../shared-ui/update'
+import {
+  checkUpdate,
+  installUpdate,
+  updateProgress,
+  useUpdate,
+} from '../shared-ui/update'
 
 const failure = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
@@ -25,30 +30,36 @@ export function UpdateRow() {
       setNote({ text: failure(e), error: true }),
     )
   }
-  const hint = update?.available
-    ? update.installing
-      ? '下载完会自动重启'
-      : '更新后会自动重启'
-    : undefined
+  const progress = update?.installing ? updateProgress(update) : undefined
+  const hint = progress?.text ?? (update?.available && '更新后会自动重启')
   return (
-    <div className="setting-row">
-      <div className="ch-label">
-        <span>Familiar {update?.current}</span>
-        {(note ?? hint) && (
-          <span className={note?.error ? 'error' : 'muted'}>
-            {note?.text ?? hint}
-          </span>
+    <>
+      <div className="setting-row">
+        <div className="ch-label">
+          <span>Familiar {update?.current}</span>
+          {(note ?? hint) && (
+            <span className={note?.error ? 'error' : 'muted'}>
+              {note?.text ?? hint}
+            </span>
+          )}
+        </div>
+        {update?.available ? (
+          <button type="button" disabled={update.installing} onClick={install}>
+            {update.installing ? '正在更新…' : `更新到 ${update.available}`}
+          </button>
+        ) : (
+          <button type="button" disabled={checking} onClick={check}>
+            {checking ? '正在检查…' : '检查更新'}
+          </button>
         )}
       </div>
-      {update?.available ? (
-        <button type="button" disabled={update.installing} onClick={install}>
-          {update.installing ? '正在更新…' : `更新到 ${update.available}`}
-        </button>
-      ) : (
-        <button type="button" disabled={checking} onClick={check}>
-          {checking ? '正在检查…' : '检查更新'}
-        </button>
+      {progress && (
+        <progress
+          className="local-progress"
+          max={100}
+          value={progress.percent}
+        />
       )}
-    </div>
+    </>
   )
 }

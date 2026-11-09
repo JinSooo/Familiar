@@ -1,8 +1,9 @@
 //! In-app updates from GitHub Releases (tauri-plugin-updater). The shell checks 30 s after
 //! launch and then once a day; the menu bar panel and 设置 › 通用 offer 更新到 x.y.z, which
 //! downloads the signed archive, verifies it, replaces the app and restarts. Nothing installs
-//! until the user asks. Debug builds never check on their own and cannot install.
-use std::sync::atomic::{AtomicBool, Ordering};
+//! until the user asks. While it runs, the windows get the bytes received so far, then a
+//! separate 「正在安装」 step. Debug builds never check on their own and cannot install.
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
@@ -19,6 +20,11 @@ pub struct Updates {
     found: Mutex<Option<Update>>,
     checked: Mutex<Option<SystemTime>>,
     installing: AtomicBool,
+    /// Bytes downloaded so far and the archive size (0 while unknown).
+    received: AtomicU64,
+    total: AtomicU64,
+    /// The download is done; the archive is being verified and the app replaced.
+    unpacking: AtomicBool,
 }
 
 #[derive(Clone, Serialize)]
@@ -26,6 +32,9 @@ pub struct UpdateState {
     current: String,
     available: Option<String>,
     installing: bool,
+    received: u64,
+    total: Option<u64>,
+    unpacking: bool,
 }
 
 fn snapshot(app: &AppHandle) -> UpdateState {
@@ -40,6 +49,9 @@ fn snapshot(app: &AppHandle) -> UpdateState {
         current: app.package_info().version.to_string(),
         available,
         installing: updates.installing.load(Ordering::SeqCst),
+        received: updates.received.load(Ordering::SeqCst),
+        total: Some(updates.total.load(Ordering::SeqCst)).filter(|&t| t > 0),
+        unpacking: updates.unpacking.load(Ordering::SeqCst),
     }
 }
 
@@ -132,20 +144,45 @@ pub async fn update_install(window: WebviewWindow) -> Result<(), String> {
     let Some(update) = update else {
         return Err("没有可用的更新".into());
     };
-    if app.state::<Updates>().installing.swap(true, Ordering::SeqCst) {
+    let updates = app.state::<Updates>();
+    if updates.installing.swap(true, Ordering::SeqCst) {
         return Ok(());
     }
+    updates.received.store(0, Ordering::SeqCst);
+    updates.total.store(0, Ordering::SeqCst);
+    updates.unpacking.store(false, Ordering::SeqCst);
     broadcast(&app);
-    match update.download_and_install(|_, _| {}, || {}).await {
+    // Tell the windows at each whole percent (each MB when the size is unknown), not per chunk.
+    let mut shown = 0;
+    let on_chunk = |chunk: usize, total: Option<u64>| {
+        let updates = app.state::<Updates>();
+        let received = updates.received.fetch_add(chunk as u64, Ordering::SeqCst) + chunk as u64;
+        updates.total.store(total.unwrap_or(0), Ordering::SeqCst);
+        let step = match total {
+            Some(t) if t > 0 => received * 100 / t,
+            _ => received >> 20,
+        };
+        if step != shown {
+            shown = step;
+            broadcast(&app);
+        }
+    };
+    let on_finish = || {
+        app.state::<Updates>()
+            .unpacking
+            .store(true, Ordering::SeqCst);
+        broadcast(&app);
+    };
+    match update.download_and_install(on_chunk, on_finish).await {
         // ExitRequested and Exit still run, so window state is saved and the agent stops.
         Ok(()) => {
             app.request_restart();
             Ok(())
         }
         Err(e) => {
-            app.state::<Updates>()
-                .installing
-                .store(false, Ordering::SeqCst);
+            let updates = app.state::<Updates>();
+            updates.installing.store(false, Ordering::SeqCst);
+            updates.unpacking.store(false, Ordering::SeqCst);
             broadcast(&app);
             Err(format!("更新没有完成：{e}"))
         }

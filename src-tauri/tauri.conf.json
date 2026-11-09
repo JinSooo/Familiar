@@ -43,7 +43,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUyMDI1MjdFRjYyMjAzNTEKUldSUkF5TDJmbElDVXZzRk1iUlNzcmd5MHFVWjlLdzZZSVFEaG1iOFJKUTlXMXIzNWN0eVZ3ZzYK",
       "endpoints": [
-        "https://github.com/JinSooo/all-in-pet/releases/latest/download/latest.json"
+        "https://github.com/JinSooo/Familiar/releases/latest/download/latest.json"
       ]
     }
   }

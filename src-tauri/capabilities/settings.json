@@ -1,10 +1,9 @@
 {
   "identifier": "familiar-settings-window",
-  "windows": [
-    "settings"
-  ],
+  "windows": ["settings"],
   "permissions": [
     "core:window:allow-internal-toggle-maximize",
-    "allow-login-item"
+    "allow-login-item",
+    "allow-update"
   ]
 }

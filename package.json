@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",
+    "release": "sh scripts/release.sh",
     "agent": "bun agent/src/main.ts",
     "sensor:build": "mkdir -p sensor/.build && ([ sensor/.build/familiar-sensor -nt sensor/main.swift ] && [ sensor/.build/familiar-sensor -nt sensor/pdf.swift ] && [ sensor/.build/familiar-sensor -nt sensor/control.swift ] && [ sensor/.build/familiar-sensor -nt sensor/cursor.swift ] || swiftc -O -swift-version 5 sensor/main.swift sensor/pdf.swift sensor/control.swift sensor/cursor.swift -o sensor/.build/familiar-sensor) && cp sensor/.build/familiar-sensor src-tauri/binaries/familiar-sensor-$(rustc -vV | sed -n 's/^host: //p')",
     "llama:build": "sh scripts/build-llama.sh",

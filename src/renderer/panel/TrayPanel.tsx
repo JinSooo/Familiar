@@ -17,6 +17,7 @@ import { api } from '../api'
 import { observeSnapshot } from '../shared-ui/synchronization'
 import { PetAvatar } from '../pet/PetAvatar'
 import { Icon } from '../shared-ui/Icon'
+import { installUpdate, useUpdate } from '../shared-ui/update'
 import { prettyShortcut } from '../settings/Shortcuts'
 
 const stateLabel: Record<PetState, string> = {
@@ -82,6 +83,8 @@ export function TrayPanel() {
   const [icons, setIcons] = useState<Record<string, string>>({})
   /** Bumped on every open: the window loads at launch, possibly before the pet skin is known. */
   const [opened, setOpened] = useState(0)
+  const [update] = useUpdate()
+  const [updateError, setUpdateError] = useState('')
 
   // Everything is read again each time the panel opens (the window takes focus).
   const load = useCallback(() => {
@@ -331,6 +334,32 @@ export function TrayPanel() {
               有 <strong>{pending}</strong> 条判断等你确认
             </span>
             <span className="muted">去看看 ›</span>
+          </button>
+        )}
+
+        {update?.available && (
+          <button
+            type="button"
+            className="tray-card tray-pending"
+            disabled={update.installing}
+            onClick={() => {
+              setUpdateError('')
+              installUpdate().catch((e: unknown) =>
+                setUpdateError(e instanceof Error ? e.message : String(e)),
+              )
+            }}
+          >
+            <span>
+              {update.installing ? '正在更新到 ' : '更新到 '}
+              <strong>{update.available}</strong>
+            </span>
+            {updateError ? (
+              <span className="error">{updateError}</span>
+            ) : (
+              <span className="muted">
+                {update.installing ? '完成后自动重启' : '更新后会重启'}
+              </span>
+            )}
           </button>
         )}
 

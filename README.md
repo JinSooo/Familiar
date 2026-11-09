@@ -48,6 +48,7 @@ pnpm typecheck
 pnpm lint
 pnpm test
 pnpm eval          # 记忆和主动发言评测，会用配置好的后台模型发真实请求
+pnpm release notes.md  # 发版到 GitHub Releases，需要更新密钥，见 docs/design.md §10
 ```
 
 - `src-tauri/`：窗口、托盘、点击穿透、全局快捷键，启动并守护 agent。只做系统集成，不放业务逻辑。

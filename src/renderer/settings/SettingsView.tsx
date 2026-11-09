@@ -24,6 +24,7 @@ import { KnowledgePage } from './KnowledgePage'
 import { LocalModel } from './LocalModel'
 import { ShortcutsSection } from './Shortcuts'
 import { Switch } from './Switch'
+import { UpdateRow } from './UpdateRow'
 import { Icon } from '../shared-ui/Icon'
 import { presetOf, providerPresets } from '../../shared/presets'
 
@@ -820,6 +821,10 @@ export function SettingsView() {
                   在 Finder 中打开
                 </button>
               </div>
+            </div>
+            <h3 className="memory-heading">版本</h3>
+            <div className="group">
+              <UpdateRow />
             </div>
           </section>
           <section hidden={tab !== 'proactive'}>

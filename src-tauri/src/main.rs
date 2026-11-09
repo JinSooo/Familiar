@@ -5,6 +5,7 @@ mod login;
 mod protocol;
 mod shortcuts;
 mod tray;
+mod update;
 mod walk;
 mod windows;
 use tauri::Manager;
@@ -14,11 +15,13 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(shortcuts::plugin())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(shortcuts::Bindings::default())
         .manage(agent::Agent::default())
         .manage(hit::Hit::default())
         .manage(edge::Edge::default())
         .manage(walk::Walk::default())
+        .manage(update::Updates::default())
         .invoke_handler(tauri::generate_handler![
             agent::familiar_invoke,
             hit::pet_hit,
@@ -28,7 +31,10 @@ fn main() {
             tray::pet_menu,
             login::login_item,
             login::set_login_item,
-            windows::quick_fit
+            windows::quick_fit,
+            update::update_state,
+            update::update_check,
+            update::update_install
         ])
         .register_uri_scheme_protocol("familiar-pet", |ctx, request| {
             let paths = ctx.app_handle().state::<windows::Paths>();
@@ -67,6 +73,7 @@ fn main() {
             tray::setup(app.handle())?;
             agent::start(app.handle());
             hit::start(app.handle());
+            update::start(app.handle());
             Ok(())
         })
         .build(tauri::generate_context!())

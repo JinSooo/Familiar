@@ -1,29 +1,20 @@
-# Familiar Tauri shell (T10)
+# Familiar Tauri shell
 
 macOS only. Wire types mirror `src/shared/protocol.ts`; TypeScript remains the
 contract. Rust owns system integration, while the agent owns business state.
 
 ## Integration
 
-Add these scripts to the root `package.json` (outside T10's write scope):
-
-```json
-{
-  "dev": "tauri dev",
-  "build": "tauri build",
-  "agent:build": "bun build --compile agent/src/main.ts --outfile src-tauri/binaries/familiar-agent-$(rustc -vV | sed -n 's/^host: //p')"
-}
-```
-
-This agent command targets the current host. For cross compilation, Bun's
-`--target` and the sidecar suffix must both match Tauri's target. On this machine
-the output is `binaries/familiar-agent-aarch64-apple-darwin`.
+`pnpm agent:build` (root `package.json`) compiles the agent into a sidecar for
+the current host. For cross compilation, Bun's `--target` and the sidecar suffix
+must both match Tauri's target. On Apple Silicon the output is
+`binaries/familiar-agent-aarch64-apple-darwin`.
 
 Run `pnpm agent:build` before raw Cargo builds or the first `tauri dev`:
 tauri-build validates/copies `externalBin` even for debug. `tauri build` runs it
 through `beforeBuildCommand`. Debug actually launches Bun directly, while release
 uses the sidecar and needs no installed Bun. The sidecar is a generated artifact,
-not a checked-in executable. Rebuild it after the parallel agent task finishes.
+not a checked-in executable. Rebuild it after changing the agent.
 
 Tauri CLI enables `custom-protocol` for production asset embedding. Raw embedded
 frontend builds must pass `--features custom-protocol` explicitly.

@@ -1,6 +1,10 @@
 # Familiar
 
-macOS 桌面宠物：Tauri 壳（Rust）加一个用 Bun 运行的 TypeScript agent 进程。产品设计见 [docs/design.md](docs/design.md)，进程划分与消息流见 [docs/architecture.md](docs/architecture.md)。
+一只住在 macOS 桌面上的宠物，内部是一个 agent：陪你聊天、记住你、看你在电脑上做什么，在合适的时候主动开口，经你同意替你操作别的应用。
+
+这是个人学习项目，目前只有作者自己在用，只支持 macOS，没有发布安装包。
+
+技术上是 Tauri 壳（Rust）加一个用 Bun 运行的 TypeScript agent 进程。产品设计见 [docs/design.md](docs/design.md)，进程划分与消息流见 [docs/architecture.md](docs/architecture.md)。
 
 ## 开发
 
@@ -18,6 +22,8 @@ pnpm eval          # 记忆评测，会用配置好的后台模型发真实请�
 pnpm build
 ```
 
+`pnpm build` 用钥匙串里的 Apple Development 证书签名。没有证书时用 `APPLE_SIGNING_IDENTITY=- pnpm build` 做临时签名，但每次重新构建后，辅助功能权限都要在系统设置里重新勾选。
+
 首次启动只显示宠物和菜单栏图标。单击宠物打开聊天，拖动超过 4px 移动宠物。
 
 ## 目录
@@ -32,3 +38,7 @@ pnpm build
 可用 `FAMILIAR_DATA_DIR="$PWD/.smoke-user-data" pnpm dev` 把冒烟测试数据放进仓库，测完删掉该目录。用 UI 自动化工具操控开发版时，加 `FAMILIAR_SHOW_DOCK=1` 显示 Dock 图标（默认隐藏，自动化工具找不到它）。
 
 全屏 Spaces 之上可见、透明区域点击穿透、跨屏拖动以及钥匙串读写，需要在 macOS 真机验收；源码里的窗口配置不能替代这些实测。
+
+## 许可证
+
+[MIT](LICENSE)

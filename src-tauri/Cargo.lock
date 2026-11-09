@@ -988,7 +988,7 @@ dependencies = [
 
 [[package]]
 name = "familiar"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "objc2-service-management",
  "serde",
